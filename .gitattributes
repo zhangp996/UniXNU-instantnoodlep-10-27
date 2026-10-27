@@ -1,0 +1,9 @@
+# Keep the files that run on Linux, the device or CI at LF: a CRLF shell script
+# fails to parse on Android and on the macOS runner.
+* text=auto
+*.sh    text eol=lf
+*.dts   text eol=lf
+*.dtsi  text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.py    text eol=lf
