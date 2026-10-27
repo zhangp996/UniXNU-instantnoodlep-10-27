@@ -1,0 +1,30 @@
+# Host: WSL2 Ubuntu 22.04.5, kernel 5.15.150.1-microsoft-standard-WSL2, Python 3.12.16
+# date: 2026-10-27T22:56:21+08:00
+PS> unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep
+unixnu: on Linux the kernel step uses the toolchain of scripts/linux/setup-toolchain.py; --skip-setup and seed-data-grow need macOS hdiutil
+== configuration instantnoodlep_defconfig -> /mnt/c/Users/132/Documents/oneplus/unixnu/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/.config
+PS> unixnu tree -D ../UniXNU-instantnoodlep
+unixnu: on Linux the kernel step uses the toolchain of scripts/linux/setup-toolchain.py; --skip-setup and seed-data-grow need macOS hdiutil
+== submodules /mnt/c/Users/132/Documents/oneplus/unixnu
+== tree /mnt/c/Users/132/Documents/oneplus/unixnu/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree
+PS> ls tree/
+build
+components.toml
+drivers
+kits
+package
+patches
+refer
+scripts
+PS> ls tree/kits tree/drivers | head
+out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/drivers:
+ArmCpu
+ArmDTPlatform
+DarwinBoot
+NativeAES
+SoftwareAES
+
+out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/kits:
+NativePrelink
+XnuPrelink
+instantnoodlep

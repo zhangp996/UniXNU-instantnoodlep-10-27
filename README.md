@@ -20,6 +20,14 @@ the component catalog live in [UniXNU](https://github.com/UniXNU/UniXNU).
 `board.example = true` until the `REQUIRED` values are measured. `build` and
 `bootimg` refuse an example repository on purpose.
 
+## Build pipeline
+
+Two lanes, because the official flow needs both hosts: configuration, tree and the
+UEFI firmware build run locally in WSL, and the kernel (which calls Xcode) runs on
+a GitHub `macos-26` runner through `.github/workflows/macos-kernel.yml`. See
+[docs/build-pipeline.md](docs/build-pipeline.md) for the commands and the current
+gates.
+
 ## Requirements
 
 The bootloader must be unlocked: this unit reports `unlocked:no`, `secure:yes` and

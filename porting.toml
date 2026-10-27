@@ -37,6 +37,8 @@ procedure = [
 findings = [
   "The resolver reports the arch, soc, os and device profiles, the five selected components with their owners, and the arm64 patch series in order; the soc profile resolves to the local UniXNU-sm8250-common checkout.",
   "The device defconfig carries only board differences because the arch fragment already sets PAN, the crypto sources and the build-archive switch.",
+  "The CLI refuses Python older than 3.11 and Ubuntu 22.04 ships 3.10, so the WSL lane installs a standalone 3.12 with uv; no root password is needed.",
+  "Tree assembly creates symbolic links, which a non-elevated Windows session rejects with WinError 1314, so tree runs in WSL.",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
@@ -54,6 +56,7 @@ evidence = [
   { kind = "source", reference = "board.toml", result = "Format 2 board configuration: SM8250 SoC source, iPadOS 17.7.11 profile, five components, four-series patch order." },
   { kind = "host", reference = "docs/evidence/host-config-resolution.log", command = "unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep; unixnu status -D ../UniXNU-instantnoodlep; python3 scripts/porting-record.py check --device ../UniXNU-instantnoodlep", revision = "f242ec461d5aba013ac7c6a68058511f90f4415a", result = "The resolver reports arch, soc, os and device profiles, five components with their owners, the ordered arm64 series, and the record checker passes 13 areas." },
   { kind = "host", reference = "docs/evidence/host-dts-compile.log", command = "scripts/build-dts.sh ../UniXNU-sm8250-common/dts dts/instantnoodlep.dts /tmp/in2020/board.dtb", revision = "f242ec461d5aba013ac7c6a68058511f90f4415a", result = "dtc 1.6.1 compiles the board DTS against the SM8250 DTSI without warnings; the blob carries the oneplus,instantnoodlep compatible, eight tagged CPUs and the 19.2 MHz timer." },
+  { kind = "host", reference = "docs/evidence/host-tree-wsl.log", command = "unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep; unixnu tree -D ../UniXNU-instantnoodlep", revision = "REQUIRED_TREE_REVISION", result = "On WSL2 Ubuntu 22.04 with a uv-installed Python 3.12 the tree assembles at out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree with drivers ArmCpu, ArmDTPlatform, DarwinBoot, NativeAES and SoftwareAES and kits NativePrelink, XnuPrelink and instantnoodlep." },
 ]
 
 [[area]]

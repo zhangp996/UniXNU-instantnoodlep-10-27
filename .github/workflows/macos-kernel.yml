@@ -1,0 +1,147 @@
+name: macOS kernel build
+
+# Thin, self-contained copy of UniXNU's .github/workflows/macos.yml for this device.
+# The upstream workflow is workflow_dispatch only, so another repository cannot call it.
+# This runs the documented kernel path (docs/building.md: macos-26, Xcode 26 line) and
+# publishes text logs only: no image is produced or uploaded.
+on:
+  workflow_dispatch:
+    inputs:
+      unixnu_repository:
+        description: UniXNU repository as owner/name
+        required: true
+        default: UniXNU/UniXNU
+      unixnu_ref:
+        description: UniXNU ref
+        required: true
+        default: main
+      soc_repository:
+        description: SoC repository as owner/name (checked out at ../UniXNU-sm8250-common)
+        required: true
+        default: REQUIRED_OWNER/UniXNU-sm8250-common
+      soc_ref:
+        description: SoC repository ref
+        required: true
+        default: main
+      device_repository:
+        description: Device repository as owner/name (empty uses this repository)
+        required: false
+        default: ""
+      defconfig:
+        description: Defconfig name under device/configs
+        required: true
+        default: instantnoodlep_defconfig
+      xcode:
+        description: Xcode version of the macos-26 image
+        required: true
+        default: "26.6"
+      pre_build:
+        description: Optional shell commands run in the UniXNU checkout before the kernel build
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-kernel-${{ github.ref }}-${{ inputs.defconfig }}
+  cancel-in-progress: false
+
+env:
+  HOMEBREW_NO_AUTO_UPDATE: 1
+  HOMEBREW_NO_INSTALL_CLEANUP: 1
+  HOMEBREW_NO_ENV_HINTS: 1
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  kernel:
+    # macos-latest moves between images; macos-26 is arm64 and carries the Xcode line
+    # the kernel build is developed against.
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_${{ inputs.xcode }}.app/Contents/Developer
+      DEFCONFIG: ${{ inputs.defconfig }}
+      DEVICE_DIR: ${{ github.workspace }}/device
+      SOC_DIR: ${{ github.workspace }}/UniXNU-sm8250-common
+    steps:
+      - name: Check out UniXNU
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.unixnu_repository }}
+          ref: ${{ inputs.unixnu_ref }}
+          path: unixnu
+          persist-credentials: false
+
+      - name: Check out the SoC repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.soc_repository }}
+          ref: ${{ inputs.soc_ref }}
+          path: UniXNU-sm8250-common
+          persist-credentials: false
+
+      - name: Check out the device repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.device_repository || github.repository }}
+          path: device
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Check the inputs
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [ -f device/board.toml ] || fail 'device/board.toml is missing'
+          [ -f "device/configs/$DEFCONFIG" ] || fail "device/configs/$DEFCONFIG is missing"
+          [ -f UniXNU-sm8250-common/soc.toml ] || fail 'UniXNU-sm8250-common/soc.toml is missing; set soc_repository'
+          [ -d "$DEVELOPER_DIR" ] || fail "Xcode not found at $DEVELOPER_DIR"
+          # feeds.toml resolves the SoC source as ../UniXNU-sm8250-common from device/.
+          [ "$SOC_DIR" = "$(cd device/.. && pwd)/UniXNU-sm8250-common" ] || fail 'SoC checkout is not beside device/'
+          if grep -q 'board.example = true' device/board.toml; then
+            echo "::warning::board.example is true: REQUIRED hardware values are still unfilled"
+          fi
+
+      - name: Install host tools
+        run: |
+          brew install llvm lld mtools dtc
+          if ! command -v unifdef >/dev/null; then brew install unifdef; echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"; fi
+
+      - name: Report the runner toolchain
+        run: |
+          sw_vers; uname -m; xcodebuild -version; python3 --version
+          for tool in git make clang cmake ninja unifdef ld.lld mformat mcopy dtc xcodebuild; do
+            printf '%-10s %s\n' "$tool" "$(command -v "$tool" || echo MISSING)"
+          done
+
+      - name: Run pre-build steps
+        if: inputs.pre_build != ''
+        env:
+          PRE_BUILD: ${{ inputs.pre_build }}
+        run: bash -euo pipefail -c "$PRE_BUILD"
+
+      - name: Resolve the configuration and fetch sources
+        run: |
+          set -o pipefail
+          ./unixnu defconfig "$DEFCONFIG" -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/defconfig.log"
+          ./unixnu status -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/status.log"
+          ./unixnu fetch -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/fetch.log"
+
+      - name: Build the kernel
+        run: |
+          set -o pipefail
+          ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
+
+      - name: Publish logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-logs
+          path: ${{ runner.temp }}/*.log
+          if-no-files-found: warn
