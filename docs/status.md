@@ -22,14 +22,41 @@ Last updated: 2026-10-28. Everything below was measured on the target unit
 | userdata | LBA 4133800..30513146, 4096-byte sectors, 100.63 GiB | `docs/evidence/device-gpt.json` |
 | UFS | host 0x1d84000/0x3000 + ICE 0x1d90000/0x8000, PHY 0x1d87000, SPI 265 | `docs/evidence/device-fdt.dts` |
 | Panel | `qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd`, 1440x3168 | bootargs + `docs/evidence/device-fdt.dts` |
-| Touch | Synaptics `synaptics-s3908` on QUPv3 GENI SPI | `docs/evidence/device-fdt.dts` |
+| Touch | Synaptics S3908 at I2C 0x4B on `i2c@a94000`, irq-gpio TLMM 39, reset-gpio TLMM 38, 1080x2400, 16 TX / 36 RX, 10 contacts | `docs/evidence/device-fdt.dts` + `in2020-permissive-delta.txt` |
 | WLAN | `qcom,cnss-qca6390` at 0xb0000000, `wlan-en` TLMM GPIO 20 | `docs/evidence/device-fdt.dts` |
 | GPU | `kgsl-3d0` 0x3d00000, `kgsl-smmu` 0x3da0000 | `docs/evidence/device-fdt.dts` |
 | Bootloader | unlocked (`verifiedbootstate=orange`), verity enforcing | `docs/evidence/device-fastboot-inventory.log` |
 
-Raw captures: `docs/evidence/in2020-raw.txt` (shell), `docs/evidence/in2020-root-raw.txt`
-(root, 4219 lines), `docs/evidence/device-fdt.bin` (live FDT), `docs/evidence/dtbo/`
-(19 overlays from `dtbo_a`, split with `scripts/extract-dtbo.py`).
+Raw captures, first pass with SELinux enforcing:
+
+| File | Lines | Content |
+| --- | --- | --- |
+| `docs/evidence/in2020-raw.txt` | 2494 | shell inventory |
+| `docs/evidence/in2020-root-raw.txt` | 4219 | root inventory |
+
+Second pass after `setenforce 0`, which is what makes `/proc/device-tree` and
+`/proc/bus/input/devices` readable as `shell` on this build:
+
+| File | Lines | Content |
+| --- | --- | --- |
+| `docs/evidence/in2020-raw-permissive.txt` | 4537 | shell inventory |
+| `docs/evidence/in2020-root-raw-permissive.txt` | 4217 | root inventory |
+| `docs/evidence/in2020-permissive-delta.txt` | 909 | inputs, I2C/SPI bus nodes, display, power |
+
+Binary captures: `docs/evidence/device-fdt.bin` (live FDT, 900355 bytes),
+`docs/evidence/device-gpt.bin` + `device-gpt.json`, and `docs/evidence/dtbo/`
+(19 overlays from `dtbo_a`, split with `scripts/extract-dtbo.py`; the raw `.dtb`
+files are not committed because the partition dump regenerates them).
+
+## Device state at archive time
+
+| Item | Value |
+| --- | --- |
+| Active slot | `_a`, stock boot image |
+| Bootloader | unlocked (`verifiedbootstate=orange`) |
+| SELinux | `Permissive` (session only; a reboot restores `Enforcing`) |
+| Root | only while running `fastboot boot boot_patched.img` with the Magisk app in the foreground; `su` is denied when the app is not open |
+| Slot B | `boot`, `dtbo`, `vbmeta`, `vbmeta_system`, `modem`, `recovery`, `multiimgqti` written with slot A's bytes; the other 22 critical partitions were refused by the bootloader and were never modified |
 
 ## The blocker for the firmware
 
