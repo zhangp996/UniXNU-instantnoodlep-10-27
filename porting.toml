@@ -170,13 +170,16 @@ completion = [
   "All handoff regions are accounted for and every enabled DMA engine reaches its allocated range with the documented cache policy.",
 ]
 limits = [
-  "DRAM size, splash region and reserved ranges are REQUIRED values in board.toml and zero in the DTS.",
+  "The board hands off one contiguous range while the stock tree has three banks; the carveout between 0xbbb00000 and 0xc0000000 stays inside the handed-off span.",
   "No SMMU stream has been read from this board.",
 ]
 next_action = [
-  "Read the memory map over ADB and replace the zeroed reg values in board.toml and dts/instantnoodlep.dts.",
+  "Compare the firmware's published memory map with the stock reservations once the firmware builds.",
 ]
-evidence = []
+evidence = [
+  { kind = "device", reference = "docs/evidence/device-fdt.bin", command = "adb shell su -c 'cp /sys/firmware/fdt /data/local/tmp/fdt.bin'; adb pull; dtc -I dtb -O dts", revision = "7704d31be86e3d8c5f268bf617e8b0d6c05848f9", result = "The live device tree reports model kona MTP 19811, three DRAM banks 0x80000000+0x3bb00000, 0xc0000000+0xc0000000 and 0x180000000+0x100000000, and cont_splash_region at 0x9c000000 with size 0x2300000." },
+  { kind = "device", reference = "docs/evidence/device-gpt.json", command = "adb shell su -c 'dd if=/dev/block/sda of=/data/local/tmp/gpt.bin bs=4096 skip=1 count=64'; adb pull", revision = "7704d31be86e3d8c5f268bf617e8b0d6c05848f9", result = "The 4096-byte-sector GPT puts userdata at LBA 4133800..30513146 (26379347 sectors, 100.63 GiB), matching the bootloader's partition-size report." },
+]
 
 [[area]]
 id = "storage"
