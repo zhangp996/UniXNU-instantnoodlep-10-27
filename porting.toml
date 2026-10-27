@@ -89,7 +89,8 @@ completion = [
 ]
 limits = [
   "The platform package does not exist; the configured paths are the ones the port must create.",
-  "The ABL memory map, splash region and boot partition size are unmeasured.",
+  "The ABL memory map and the splash region are unmeasured.",
+  "The bootloader is locked (unlocked:no, secure:yes, verity true), so fastboot refuses to boot an unsigned image until it is unlocked.",
 ]
 next_action = [
   "Read the memory map and splash region over ADB, create Platforms/OnePlus/instantnoodlepPkg, then build and boot.",
@@ -204,7 +205,7 @@ completion = [
   "Root: the configured volume mounts and launchd starts; writes survive reboot inside the Data region.",
 ]
 limits = [
-  "userdata first_lba and last_lba are zero and the boot partition size is unmeasured.",
+  "userdata first_lba and last_lba are zero: only its length is measured (26379347 4096-byte sectors); the GPT entry's start is still unread.",
   "No UFS register read or link-state observation exists for this board.",
 ]
 next_action = [
@@ -428,7 +429,7 @@ inputs = [
   "An Android boot image the stock ABL accepts.",
 ]
 configuration = [
-  "payload.volume INSTNPDLP, loader firmware, title Boot; size_mib is REQUIRED until the boot partition is measured.",
+  "payload.volume INSTNPDLP, loader firmware, title Boot; size_mib is 80 because boot_a measures 96 MiB and the image keeps 8 MiB of it free.",
   "payload.adt sets chip_id 0x164 for kona, owned_memory_size 0x100000000 and unique_chip_id required.",
   "patches/xnu/series is empty: kona needs no XNU patch beyond the arch, SoC and OS series.",
 ]

@@ -68,9 +68,11 @@ BUILDID_STRING = "instantnoodlep-research"
 
 [payload]
 volume = "INSTNPDLP"
-# REQUIRED: the ramdisk, the boot shim, the firmware volume and the appended device
-# tree must fit boot_a with 8 MiB to spare. Read the partition size first.
-size_mib = 128
+# boot_a and boot_b are 96 MiB each (measured with fastboot getvar all). The ramdisk,
+# the boot shim, the firmware volume and the appended device tree all live in one of
+# them, and the image keeps 8 MiB of the partition free, so the volume is bounded here
+# at 80 MiB. Re-measure once the shim and firmware volume sizes are known.
+size_mib = 80
 loader = "firmware"
 title = "Boot"
 # REQUIRED: total DRAM of this board (8 GiB = 0x200000000, 12 GiB = 0x300000000).

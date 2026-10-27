@@ -22,6 +22,11 @@ the component catalog live in [UniXNU](https://github.com/UniXNU/UniXNU).
 
 ## Requirements
 
+The bootloader must be unlocked: this unit reports `unlocked:no`, `secure:yes` and
+`Verity mode: true`, and a locked bootloader refuses to boot an unsigned image.
+Measured partition sizes: `boot_a`/`boot_b` 96 MiB, `super` 14 GiB, `userdata`
+100.63 GiB (see `docs/evidence/device-fastboot-getvar-all.log`).
+
 Follow [Port a device](https://unixnu.com/porting/) in order. The host needs the
 [build requirements](https://unixnu.com/guide/requirements); this port was
 prepared on Windows, where only the configuration steps run.
@@ -54,8 +59,7 @@ fastboot boot out/instantnoodlep/<profile>/boot/boot.img
 
 | Input | Consumed by |
 | --- | --- |
-| GPT extent of `userdata`, LUN block size | `[userdata]` in `board.toml` |
-| `boot_a` size | `[payload].size_mib` |
+| GPT start LBA of `userdata`, LUN block size | `[userdata]` in `board.toml` |
 | DRAM size and reserved ranges | `dts/instantnoodlep.dts`, `[payload].dram_size` |
 | `cont_splash_region` address and size | `dts/instantnoodlep.dts`, `[bootimg].dtb_node` |
 | Panel timing, backlight, touch, WLAN, GPU facts | display, input, network and GPU areas of `porting.toml` |
