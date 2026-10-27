@@ -95,7 +95,9 @@ limits = [
 next_action = [
   "Read the memory map and splash region over ADB, create Platforms/OnePlus/instantnoodlepPkg, then build and boot.",
 ]
-evidence = []
+evidence = [
+  { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device unlocked: false, Device critical unlocked: false, secure:yes, Verity mode: true, slot-count 2; an unsigned UniXNU boot image cannot be started until the bootloader is unlocked." },
+]
 
 [[area]]
 id = "cpu"
@@ -209,9 +211,11 @@ limits = [
   "No UFS register read or link-state observation exists for this board.",
 ]
 next_action = [
-  "Collect the partition table and the UFS link data over ADB, then review ShengUfs's kona constants.",
+  "Collect the GPT start of userdata and the UFS link data over ADB, then review ShengUfs's kona constants.",
 ]
-evidence = []
+evidence = [
+  { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device fa8620b3 (product kona, hw-revision 20001, current-slot a of 2): boot_a and boot_b 96 MiB, userdata 100.63 GiB (26379347 4096-byte sectors), super 14 GiB; the bootloader is locked with verity on, so the storage path cannot run yet." },
+]
 
 [[area]]
 id = "display"
