@@ -18,7 +18,7 @@ on:
       soc_repository:
         description: SoC repository as owner/name (checked out at ../UniXNU-sm8250-common)
         required: true
-        default: REQUIRED_OWNER/UniXNU-sm8250-common
+        default: zhangp996/UniXNU-sm8250-common
       soc_ref:
         description: SoC repository ref
         required: true

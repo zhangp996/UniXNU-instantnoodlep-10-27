@@ -47,10 +47,10 @@ completion = [
 ]
 limits = [
   "Partition geometry, the splash reservation and the DRAM size are still REQUIRED: they need the board's own GPT and device tree.",
-  "UniXNU-sm8250-common is committed locally (95152263) but not published, so feeds.toml still resolves it as a local checkout.",
+  "UniXNU-sm8250-common is published at commit 5b190cb and feeds.toml pins that commit, so a fresh checkout resolves the SoC source without a local path.",
 ]
 next_action = [
-  "Collect the board inputs over ADB (docs/hardware-inventory.md), replace each REQUIRED value, then re-resolve and publish the SoC repository.",
+  "Fill each REQUIRED value from the board in docs/hardware-inventory.md, then re-resolve and clear board.example.",
 ]
 evidence = [
   { kind = "source", reference = "board.toml", result = "Format 2 board configuration: SM8250 SoC source, iPadOS 17.7.11 profile, five components, four-series patch order." },

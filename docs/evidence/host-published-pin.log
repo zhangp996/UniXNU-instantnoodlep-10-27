@@ -1,0 +1,101 @@
+# Host: WSL2 Ubuntu 22.04, Python 3.12.16; feeds.toml pins the published SoC repository
+# date: 2026-10-27T23:07:56+08:00
+PS> unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep
+unixnu: on Linux the kernel step uses the toolchain of scripts/linux/setup-toolchain.py; --skip-setup and seed-data-grow need macOS hdiutil
+== fetch https://github.com/zhangp996/UniXNU-sm8250-common 5b190cb13a9d
++ git -C /mnt/c/Users/132/Documents/oneplus/unixnu/out/feeds/UniXNU-sm8250-common-91e20bbb fetch -q --depth 1 origin 5b190cb13a9d247aa42f56dd00b2910d42d73f60
+== configuration instantnoodlep_defconfig -> /mnt/c/Users/132/Documents/oneplus/unixnu/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/.config
+PS> unixnu status -D ../UniXNU-instantnoodlep
+unixnu: on Linux the kernel step uses the toolchain of scripts/linux/setup-toolchain.py; --skip-setup and seed-data-grow need macOS hdiutil
+device   /mnt/c/Users/132/Documents/oneplus/UniXNU-instantnoodlep (instantnoodlep)  [EXAMPLE]
+output   /mnt/c/Users/132/Documents/oneplus/unixnu/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep
+config   /mnt/c/Users/132/Documents/oneplus/unixnu/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/.config
+profile  arch                     /mnt/c/Users/132/Documents/oneplus/unixnu/profiles/arch/arm64
+profile  soc                      /mnt/c/Users/132/Documents/oneplus/unixnu/out/feeds/UniXNU-sm8250-common-91e20bbb
+profile  os                       /mnt/c/Users/132/Documents/oneplus/unixnu/profiles/os/ipados-17.7.11-21H461
+profile  device                   /mnt/c/Users/132/Documents/oneplus/UniXNU-instantnoodlep
+component ArmCpu                  arm64
+component ArmDTPlatform           arm64
+component DarwinBoot              firmware
+component SoftwareAES             os
+component XnuPrelink              tool
+patch    01 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/apple-only-cpu-tunables.patch
+patch    02 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/architectural-timer-entry.patch
+patch    03 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/armvirt-platform-personality.patch
+patch    04 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/cxx-flag-dependencies.patch
+patch    05 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/disabled-deferred-reclaim.patch
+patch    06 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/external-archive-dependencies.patch
+patch    07 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/kernel-sdk-root.patch
+patch    08 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/local-availability.patch
+patch    09 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/mockfs-intermediate-lookup.patch
+patch    10 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/mockfs-memory-device-width.patch
+patch    11 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/mockfs-statfs.patch
+patch    12 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/mockfs-test-file.patch
+patch    13 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/mockfs-typed-allocation.patch
+patch    14 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-4k-bootstrap-capacity.patch
+patch    15 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-4k-signature-hash-cache.patch
+patch    16 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-4k-user-abi.patch
+patch    17 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-aes-personality.patch
+patch    18 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-arm-pan.patch
+patch    19 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-dt-panic-region.patch
+patch    20 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-lookup-trace.patch
+patch    21 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-priv-work-interval.patch
+patch    22 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-quiet-managed-page-report.patch
+patch    23 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-text-fixup.patch
+patch    24 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-trust-cache-runtime.patch
+patch    25 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-union-getattrlistbulk.patch
+patch    26 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-union-lower-directory.patch
+patch    27 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-work-interval-soft-fail.patch
+patch    28 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-work-interval-trace.patch
+patch    29 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/native-work-interval-instance.patch
+patch    30 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/non-apple-cache-monitor.patch
+patch    31 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/non-apple-iommu-bootstrap.patch
+patch    32 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/non-apple-pmap-field.patch
+patch    33 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/null-root-media.patch
+patch    34 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-component-load-probes.patch
+patch    35 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-legacy-start.patch
+patch    36 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-native-gpu-broker.patch
+patch    37 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-boot-manifest.patch
+patch    38 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-cache-carrier.patch
+patch    39 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-root-binding-audit.patch
+patch    40 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-root-crypto-probe.patch
+patch    41 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-systemos-mount.patch
+patch    42 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-owner-z-air-init.patch
+patch    43 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/offline-pgz-alignment-probe.patch
+patch    44 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/pgz-aligned-validation.patch
+patch    45 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/public-entitlements-header.patch
+patch    46 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/published-freezer-condition.patch
+patch    47 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/source-corecrypto14-bootstrap.patch
+patch    48 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/source-machine-layer.patch
+patch    49 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/source-pthread-bootstrap.patch
+patch    50 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzw-native-adreno-sandbox-grant.patch
+patch    51 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzwb-native-sandbox-grant-set-properties.patch
+patch    52 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzx-pmap-sync-64bit-pa.patch
+patch    53 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzy-native-gpu-addon-mount.patch
+patch    54 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzy-staged-system-apps.patch
+patch    55 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzyb-native-cryptex-os-view.patch
+patch    56 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzyc-owner-skip-launch-constraints.patch
+patch    57 /mnt/c/Users/132/Documents/oneplus/unixnu/patches/xnu/zzz-boot-progress.patch
+patch    58 /mnt/c/Users/132/Documents/oneplus/unixnu/kits/XnuPrelink/patches/xnu-10063.141.1-security-init.patch
+patch    59 /mnt/c/Users/132/Documents/oneplus/unixnu/kits/XnuPrelink/patches/xnu-10063.141.1-sparse-index.patch
+driver   ArmCpu                   base
+driver   ArmDTPlatform            base
+driver   DarwinBoot               base
+driver   SoftwareAES              base
+kit      XnuPrelink               base
+package  device                   device
+package  main                     base
+patch    libpthread               base
+patch    mesa                     base
+patch    xnu                      device
+refer    AvailabilityVersions     git pinned 933f9360f1b7
+refer    IOStorageFamily          git pinned e45fbe30a787
+refer    corecrypto-2023          git pinned 11fba65b12d8
+refer    edk2                     git pinned cfb93724a06f
+refer    libdispatch              git pinned 30fe6a7d9453
+refer    libplatform              git pinned a00a4cc36da2
+refer    libpthread               git pinned c0e60fb5ecfc
+refer    xnu                      git pinned d8b80295118e
+soc      sm8250                   git pinned 5b190cb13a9d
+PS> scripts/porting-record.py check --device ../UniXNU-instantnoodlep
+instantnoodlep: 13 structured areas checked

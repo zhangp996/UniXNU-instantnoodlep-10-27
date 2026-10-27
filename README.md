@@ -4,9 +4,13 @@ UniXNU device repository for the OnePlus 8 Pro — codename `instantnoodlep`,
 models IN2020, IN2021, IN2023 and IN2025 — on Qualcomm SM8250 (kona).
 
 This repository owns the board device tree, peripheral wiring, component
-selection, firmware inputs, partition geometry and packaging. Shared kona
-resources live in `UniXNU-sm8250-common`; the build tools, the OS profile and
-the component catalog live in [UniXNU](https://github.com/UniXNU/UniXNU).
+selection, firmware inputs, partition geometry and packaging.
+
+| Repository | Contents |
+| --- | --- |
+| [UniXNU-instantnoodlep-10-27](https://github.com/zhangp996/UniXNU-instantnoodlep-10-27) | this board: DTS, defconfig, record, firmware inputs |
+| [UniXNU-sm8250-common](https://github.com/zhangp996/UniXNU-sm8250-common) | shared kona support: topology, GICv3, UFS, GPU, QUPv3 |
+| [UniXNU](https://github.com/UniXNU/UniXNU) | build tools, OS profiles, component catalog |
 
 ## State
 
