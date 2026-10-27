@@ -1,0 +1,13 @@
+# SoC support this board needs. docs/porting/steps.md step 2 and 3 select the shared
+# support before the device files; docs/porting/soc-support.md step 4 pins it here.
+#
+# UniXNU-sm8250-common is a new shared repository for this SoC (soc-support step 3):
+# it carries the Kryo 585 topology, GICv3, timer, UFS and QUPv3 ranges. It is not
+# published yet, so this pin resolves from the local checkout. Replace `local` with a
+# reviewed 40-character commit once the repository is published.
+[[source]]
+name = "sm8250"
+kind = "soc"
+git = "https://github.com/REQUIRED_OWNER/UniXNU-sm8250-common"
+commit = "REQUIRED_SOC_COMMIT"
+local = "../UniXNU-sm8250-common"

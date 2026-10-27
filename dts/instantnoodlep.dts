@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: BSD-3-Clause
+// OnePlus 8 Pro (instantnoodlep, IN2020 / IN2021 / IN2023 / IN2025), Qualcomm SM8250.
+//
+// Memory banks, the splash reservation and the enabled peripherals come from the
+// phone's own device tree under Android (/proc/device-tree). Values marked REQUIRED
+// are still zero here.
+
+/dts-v1/;
+/include/ "sm8250.dtsi"
+
+/ {
+    model = "OnePlus 8 Pro";
+    compatible = "oneplus,instantnoodlep", "qcom,sm8250";
+
+    memory@80000000 {
+        device_type = "memory";
+        // REQUIRED: the board's DRAM from 0x80000000 to the end of the last bank.
+        // 8 GiB model shown; the 12 GiB model needs 0x3 0x00000000.
+        reg = <0 0x80000000 0x2 0x00000000>;
+    };
+
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        // REQUIRED: the stock ABL keeps the panel powered through this region and
+        // UniXNU receives it as the initrd payload. Address and size must match the
+        // board's own cont_splash_region, and [bootimg] in board.toml repeats them.
+        splash_region: splash_region@0 {
+            reg = <0 0x0 0 0x0>;
+            label = "cont_splash_region";
+            no-map;
+        };
+    };
+};
+
+// Kryo 585: four Cortex-A55 cores and four Cortex-A77 cores in two clusters. The
+// scheduler patch runs XNU's Edge scheduler with one E and one P cluster.
+&cpu0 { status = "okay"; unixnu,cluster-type = "E"; };
+&cpu1 { status = "okay"; unixnu,cluster-type = "E"; };
+&cpu2 { status = "okay"; unixnu,cluster-type = "E"; };
+&cpu3 { status = "okay"; unixnu,cluster-type = "E"; };
+&cpu4 { status = "okay"; unixnu,cluster-type = "P"; };
+&cpu5 { status = "okay"; unixnu,cluster-type = "P"; };
+&cpu6 { status = "okay"; unixnu,cluster-type = "P"; };
+&cpu7 { status = "okay"; unixnu,cluster-type = "P"; };
+
+// Storage: UFS host controller and PHY, used by the ShengUfs transport.
+&ufs { status = "okay"; };
+&ufsphy { status = "okay"; };
+
+// The A650 GPU path has no catalog component yet, so the GPU, GMU and its SMMU stay
+// disabled here. Enabling them needs a component with A650 scope.

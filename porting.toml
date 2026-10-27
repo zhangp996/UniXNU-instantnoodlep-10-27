@@ -1,0 +1,483 @@
+schema_version = 1
+
+[device]
+name = "instantnoodlep"
+soc = "SM8250"
+os_profile = "ipados-17.7.11-21H461"
+summary = "OnePlus 8 Pro IN2020 (SM8250/kona) bring-up through UniXNU: configuration resolves against a shared SM8250 SoC repository, hardware inputs come from the board itself."
+
+[[area]]
+id = "configuration"
+status = "implemented"
+components = ["ArmDTPlatform","ArmCpu","SoftwareAES","XnuPrelink","DarwinBoot"]
+paths = [
+  "board.toml",
+  "feeds.toml",
+  "configs/**",
+  ".gitmodules",
+  ".github/**",
+  ".gitignore",
+]
+inputs = [
+  "Qualcomm SM8250 (kona) SoC profile. No published UniXNU-<soc>-common existed for kona, so this port creates UniXNU-sm8250-common per docs/porting/soc-support.md step 3.",
+  "iPadOS 17.7.11 (21H461) OS profile, the only profile in this checkout; it supplies the Apple identity, prelink roots and the storage ABI.",
+  "The arm64 profile selects ArmDTPlatform, ArmCpu, SoftwareAES and XnuPrelink; the device adds DarwinBoot for the loader.",
+]
+configuration = [
+  "board.soc = SM8250, board.soc_source = sm8250, board.os_profile = ipados-17.7.11-21H461, board.kit = instantnoodlep.",
+  "kernel.config_fragments applies arch:configs/common.config, soc:configs/sm8250.config and os:configs/ipados.config in order, then configs/instantnoodlep_defconfig.",
+  "kernel.patch_series lists all four series; arrays replace inherited arrays, so arch, soc, os and device stay explicit.",
+  "feeds.toml pins the SoC source as a local checkout until UniXNU-sm8250-common is published with a reviewed commit.",
+]
+procedure = [
+  "./unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep",
+  "./unixnu status -D ../UniXNU-instantnoodlep",
+  "python3 scripts/porting-record.py check --device ../UniXNU-instantnoodlep",
+]
+findings = [
+  "The resolver reports the arch, soc, os and device profiles, the five selected components with their owners, and the arm64 patch series in order; the soc profile resolves to the local UniXNU-sm8250-common checkout.",
+  "The device defconfig carries only board differences because the arch fragment already sets PAN, the crypto sources and the build-archive switch.",
+  "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
+]
+completion = [
+  "The resolver reports the intended profiles, components and patch order.",
+  "No REQUIRED value remains and board.example is false.",
+]
+limits = [
+  "Partition geometry, the splash reservation and the DRAM size are still REQUIRED: they need the board's own GPT and device tree.",
+  "UniXNU-sm8250-common is a local checkout; it has no reviewed published commit yet.",
+]
+next_action = [
+  "Collect the board inputs over ADB (docs/hardware-inventory.md), replace each REQUIRED value, then re-resolve and publish the SoC repository.",
+]
+evidence = [
+  { kind = "source", reference = "board.toml", result = "Format 2 board configuration: SM8250 SoC source, iPadOS 17.7.11 profile, five components, four-series patch order." },
+]
+
+[[area]]
+id = "firmware"
+status = "planned"
+components = []
+paths = [
+  "proprietary-files.txt",
+  "scripts/extract-files.py",
+  "docs/**",
+]
+inputs = [
+  "Mu-Silicium UEFI platform package for this board. Mu-Silicium ships OnePlus packages for kebab and lemonade but none for instantnoodlep.",
+  "An unlocked bootloader; fastboot boot loads the image without touching a partition.",
+  "The board's ABL memory map: the reserved ranges it hands to the OS are board specific.",
+]
+configuration = [
+  "firmware.dsc and firmware.fd name the instantnoodlepPkg paths the port creates.",
+  "firmware.packages lists the Mu-Silicium OnePlus platform root and the Silicium-ACPI OnePlus entries.",
+  "board.toml [bootimg].dtb_node adds /reserved-memory/splash_region to the UEFI device tree.",
+]
+procedure = [
+  "./unixnu build firmware --uefi ../uefi-instantnoodlep",
+  "./unixnu bootimg --uefi ../uefi-instantnoodlep --dtb <board.dtb>",
+  "fastboot boot out/instantnoodlep/<profile>/boot/boot.img",
+]
+findings = [
+  "docs/porting/uefi-firmware requires UniXNURamDiskDxe, DiskIoDxe and FAT support in the DSC and FDF for an initrd payload; the package must add them, not assume them.",
+  "The firmware is the first layer the bootloader runs, so a wrong memory map corrupts secure carveouts before any kernel code executes.",
+]
+completion = [
+  "The firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented reservations.",
+]
+limits = [
+  "The platform package does not exist; the configured paths are the ones the port must create.",
+  "The ABL memory map, splash region and boot partition size are unmeasured.",
+]
+next_action = [
+  "Read the memory map and splash region over ADB, create Platforms/OnePlus/instantnoodlepPkg, then build and boot.",
+]
+evidence = []
+
+[[area]]
+id = "cpu"
+status = "planned"
+components = []
+paths = [
+  "dts/**",
+  "package/CpuFreq*",
+  "scripts/*armcpu*",
+]
+inputs = [
+  "Kryo 585: four Cortex-A55 (cpu0-cpu3, MPIDR affinity 1 value 0x0-0x3) and four Cortex-A77 (cpu4-cpu7, 0x4-0x7).",
+  "GICv3 distributor at 0x17a00000 and eight redistributor frames from 0x17a60000 with a 0x20000 stride, from dts/sm8250.dtsi.",
+  "Architectural timer at 19.2 MHz and PSCI 1.0 over SMC.",
+]
+configuration = [
+  "dts/instantnoodlep.dts enables cpu0-cpu7 and tags cpu0-cpu3 unixnu,cluster-type = E and cpu4-cpu7 P, as docs/porting/platform.md requires for a two-core-type SoC.",
+  "ArmCpu publishes the CPU nubs and programs the timer and GIC.",
+]
+procedure = [
+  "Read /sys/devices/system/cpu/present, cpu*/topology/cluster_id and cpufreq/policy*/related_cpus over ADB.",
+  "Boot with armcpu-diagnostics=1 and read each CPU's checkpoint.",
+]
+findings = [
+  "The shared DTSI models the split as four A55 and four A77 nodes, which matches Kryo 585; the board DTS carries only enablement and cluster tags.",
+  "The cluster tags exist so the ADT carries cluster-type for the scheduler patch, which docs/porting/platform.md restricts to a one-E-plus-one-P layout.",
+]
+completion = [
+  "Every enabled CPU reaches its entry checkpoint and timer and IPI handling works on each enabled CPU.",
+]
+limits = [
+  "The topology comes from the SoC profile; the board's own device tree has not been read yet.",
+  "No UniXNU image runs on the board, so no CPU checkpoint exists.",
+]
+next_action = [
+  "Confirm present and online CPUs and per-cluster frequencies over ADB, then record the measurement.",
+]
+evidence = []
+
+[[area]]
+id = "memory"
+status = "planned"
+components = []
+paths = [
+  "dts/**",
+  "docs/**",
+]
+inputs = [
+  "DRAM starts at 0x80000000. The 8 GiB model ends at 0x27fffffff; a 12 GiB model needs a second bank.",
+  "The ABL splash region, the SM8250 secure carveouts and the UEFI runtime regions are the reservations the firmware must preserve.",
+  "The UFS host and the GPU sit behind their own SMMU instances; the display path has none.",
+]
+configuration = [
+  "dts memory@80000000 carries the bank extent; [payload].dram_size passes the total to the ADT tool.",
+  "[payload.adt].owned_memory_size is the window DarwinBoot requests.",
+]
+procedure = [
+  "Read /proc/iomem and the reserved-memory nodes over ADB.",
+  "Compare the firmware's published map with the ABL map once the firmware builds.",
+]
+findings = [
+  "docs/porting/platform.md requires each handoff allocation to have an owner and each DMA engine to reach its allocated range before it submits work.",
+  "The panic region is a memory fact, not a display one: a board header constant that is wrong for kona hangs the boot CPU with the MMU on, which is why the defconfig selects CONFIG_XNU_DT_PANIC_REGION.",
+]
+completion = [
+  "All handoff regions are accounted for and every enabled DMA engine reaches its allocated range with the documented cache policy.",
+]
+limits = [
+  "DRAM size, splash region and reserved ranges are REQUIRED values in board.toml and zero in the DTS.",
+  "No SMMU stream has been read from this board.",
+]
+next_action = [
+  "Read the memory map over ADB and replace the zeroed reg values in board.toml and dts/instantnoodlep.dts.",
+]
+evidence = []
+
+[[area]]
+id = "storage"
+status = "planned"
+components = []
+paths = [
+  "drivers/**",
+  "scripts/*ufs*",
+  "scripts/*storage*",
+  "scripts/*userdata*",
+]
+inputs = [
+  "UFS 3.0 host controller at 0x1d84000 and QMP PHY at 0x1d87000, both disabled in the shared DTSI until a storage component is selected.",
+  "SMMU stream IDs for the UFS host on kona.",
+  "The board GPT: boot_a, boot_b and the userdata extent.",
+]
+configuration = [
+  "CONFIG_XNU_NATIVE_UFS is not set: ShengUfs is the official implementation but its controller and policy constants are SM8550 and need review for kona (docs/porting/ufs.md).",
+  "[userdata] holds the write window and names the OS and SystemOS IPSW components.",
+]
+procedure = [
+  "Read /proc/partitions, /sys/block/sd*/size and sd*/start and the by-name links over ADB, then compute the GPT extent.",
+  "After selecting a reviewed storage component, compare SCSI capacity and known blocks before mounting root.",
+]
+findings = [
+  "docs/porting/ufs.md lists the inventory a storage port needs first: controller, PHY, clocks, resets, SMMU, DMA, handoff and layout; the board supplies every row.",
+  "Selecting a component whose hardware scope is another SoC would produce a driver that programs the wrong registers, so the storage area stays planned until kona is reviewed.",
+]
+completion = [
+  "Host: register, clock, link and SMMU facts match the board inventory.",
+  "Reads: capacity, GPT and known blocks are correct and both windows stay inside userdata.",
+  "Root: the configured volume mounts and launchd starts; writes survive reboot inside the Data region.",
+]
+limits = [
+  "userdata first_lba and last_lba are zero and the boot partition size is unmeasured.",
+  "No UFS register read or link-state observation exists for this board.",
+]
+next_action = [
+  "Collect the partition table and the UFS link data over ADB, then review ShengUfs's kona constants.",
+]
+evidence = []
+
+[[area]]
+id = "display"
+status = "planned"
+components = []
+paths = [
+  "package/*Display*",
+  "package/*Backlight*",
+  "scripts/*gop*",
+]
+inputs = [
+  "1440x3168 AMOLED panel driven by the SM8250 display subsystem over DSI.",
+  "The GOP framebuffer the firmware publishes, and the splash region that carries it.",
+]
+configuration = [
+  "No display component is selected yet.",
+  "The defconfig leaves NATIVE_LEGACY_DISPLAY unset until the framebuffer archive is part of the build.",
+]
+procedure = [
+  "Read the panel timing and the backlight class over ADB, then fill the display nodes of the board DTS.",
+  "Boot the firmware and read the GOP mode it reports.",
+]
+findings = [
+  "docs/porting/display.md orders the work as firmware framebuffer first, panel timing second, userland presentation third.",
+]
+completion = [
+  "A known frame appears with correct geometry and colours, then userland presentation and backlight control work.",
+]
+limits = [
+  "No panel timing, DSI sequence or backlight node has been read from this board.",
+  "The board package has no display probe.",
+]
+next_action = [
+  "Collect the panel and backlight facts over ADB.",
+]
+evidence = []
+
+[[area]]
+id = "input"
+status = "planned"
+components = []
+paths = [
+  "package/*Touch*",
+  "package/*Button*",
+  "scripts/*touch*",
+]
+inputs = [
+  "Touch controller on a QUPv3 serial engine, with reset and interrupt GPIOs.",
+  "Power, volume and alert-slider keys.",
+]
+configuration = [
+  "No touch component is selected: the catalog HID consumer depends on a board-specific probe that does not exist for this device.",
+]
+procedure = [
+  "Read /proc/bus/input/devices and getevent -pl over ADB to identify bus, address, interrupt and report format.",
+]
+findings = [
+  "docs/porting/input.md requires the bus, protocol, pins, interrupt and coordinate mapping before the component is selected.",
+]
+completion = [
+  "Touches map to the display, simultaneous contacts keep stable IDs, release events arrive and buttons produce expected HID reports.",
+]
+limits = [
+  "The touch controller model, bus address, interrupt and firmware format are unmeasured.",
+]
+next_action = [
+  "Identify the touch controller over ADB, then add a board kit.",
+]
+evidence = []
+
+[[area]]
+id = "gpu"
+status = "planned"
+components = []
+paths = [
+  "package/*Gpu*",
+  "package/*Gmu*",
+  "scripts/*adreno*",
+]
+inputs = [
+  "Adreno 650 with its GMU at 0x3d6a000 and GPU SMMU at 0x3da0000, both disabled in the shared DTSI.",
+  "GPU speed bin, ZAP shader and GMU firmware, which belong to the board.",
+]
+configuration = [
+  "CONFIG_XNU_NATIVE_ADRENO is not set, in the defconfig and in soc:configs/sm8250.config.",
+]
+procedure = [
+  "Read the GPU speed bin, firmware names and AOP command-DB levels over ADB.",
+]
+findings = [
+  "docs/porting/soc-support.md records that the catalog has no A650 component; the SM8550 GPU components are a different generation with different register layouts and HFI tables.",
+]
+completion = [
+  "GPU submissions complete, mapping and fences are correct, a known image renders and a Metal client presents it.",
+]
+limits = [
+  "No A650 component exists in the catalog.",
+  "Firmware names and the speed bin are unmeasured.",
+]
+next_action = [
+  "Collect the GPU firmware and speed-bin facts over ADB, then decide whether to build an A650 component.",
+]
+evidence = []
+
+[[area]]
+id = "network"
+status = "planned"
+components = []
+paths = [
+  "package/*Wifi*",
+  "scripts/*wifi*",
+]
+inputs = [
+  "Discrete Qualcomm WLAN device on PCIe with an MHI firmware download path; the model is unmeasured.",
+]
+configuration = [
+  "No Wi-Fi component is selected.",
+]
+procedure = [
+  "Read the WLAN model, PCIe identifiers and firmware files over ADB.",
+]
+findings = [
+  "docs/porting/network.md requires the bus, firmware, interrupt and DMA inputs before a component is chosen; reusing a driver for a different chip is not a port.",
+]
+completion = [
+  "Scanning, association, address configuration and sustained traffic pass with the selected firmware.",
+]
+limits = [
+  "The wireless chip model and bus are unmeasured.",
+  "No firmware input is listed in proprietary-files.txt.",
+]
+next_action = [
+  "Identify the WLAN chip and its firmware over ADB.",
+]
+evidence = []
+
+[[area]]
+id = "audio"
+status = "planned"
+components = []
+paths = [
+  "package/*Audio*",
+  "package/*Adsp*",
+]
+inputs = [
+  "ADSP firmware, GPR over SMEM and SMP2P, and the codec with its SoundWire or SLIMbus wiring.",
+]
+configuration = [
+  "No audio component is selected.",
+]
+procedure = [
+  "Read the ADSP firmware name and the codec model over ADB.",
+]
+findings = [
+  "docs/porting/steps.md orders DSP, audio and power after display, input and GPU; audio therefore starts from measured facts, not from a component choice.",
+]
+completion = [
+  "Each declared route carries the selected format through playback or capture and handles start and stop.",
+]
+limits = [
+  "The DSP, codec and bus topology are unmeasured.",
+]
+next_action = [
+  "Collect the DSP and codec facts once display and input milestones are done.",
+]
+evidence = []
+
+[[area]]
+id = "power"
+status = "planned"
+components = []
+paths = [
+  "package/*Power*",
+  "package/*Battery*",
+  "scripts/*power*",
+]
+inputs = [
+  "PM8150, PM8150L, PM8250 and PMI chips on SPMI, with RPMh and the AOP for shared resources.",
+  "Battery gauge and charger, and the GPU CX power domain.",
+]
+configuration = [
+  "No power component is selected.",
+]
+procedure = [
+  "Read the power supply classes, thermal zones and PMIC revisions over ADB.",
+]
+findings = [
+  "docs/porting/power.md requires each claimed sleep or resume transition to restore its dependent peripherals, so a power port follows a working display and input stack.",
+]
+completion = [
+  "Declared power controls and battery readings match observations and each claimed transition restores its peripherals.",
+]
+limits = [
+  "No PMIC, regulator or battery fact has been read from this board.",
+]
+next_action = [
+  "Collect the power supply and PMIC inventory over ADB.",
+]
+evidence = []
+
+[[area]]
+id = "packaging"
+status = "planned"
+components = []
+paths = [
+  "scripts/*payload*",
+  "scripts/*image*",
+  "patches/**",
+  "package/Kit.toml",
+]
+inputs = [
+  "XNU 10063.141.1 with the arm64 patch series and the iPadOS 17.7.11 userland.",
+  "A payload ramdisk with the loader, the ADT, the device tree and the Data seed.",
+  "An Android boot image the stock ABL accepts.",
+]
+configuration = [
+  "payload.volume INSTNPDLP, loader firmware, title Boot; size_mib is REQUIRED until the boot partition is measured.",
+  "payload.adt sets chip_id 0x164 for kona, owned_memory_size 0x100000000 and unique_chip_id required.",
+  "patches/xnu/series is empty: kona needs no XNU patch beyond the arch, SoC and OS series.",
+]
+procedure = [
+  "./unixnu build kernel, build package, build payload --unique-chip-id <hex> --trust-cache <bundle> --data-ramdisk <seed>, then bootimg --dtb <board.dtb>.",
+]
+findings = [
+  "docs/porting/steps.md step 7 requires the kernel, package, firmware, payload and boot image in that order with each output checked before the next step.",
+]
+completion = [
+  "Kernel and prelink succeed, the payload contains every declared input, and the boot image matches the bootloader format and size limit.",
+]
+limits = [
+  "The kernel and payload cannot be built on this host: the toolchain requires Xcode or the Linux cross toolchain.",
+  "The trust cache bundle, Data seed and unique chip id are not produced yet.",
+]
+next_action = [
+  "Read the boot partition size and unique chip id over ADB, then build on a Linux or macOS host.",
+]
+evidence = []
+
+[[area]]
+id = "diagnostics"
+status = "planned"
+components = []
+paths = [
+  "scripts/check-*",
+  "scripts/collect-*",
+  "docs/**",
+  "unixnu.lock",
+]
+inputs = [
+  "A log transport for bring-up. The board has no serial console; the USB CDC-ACM path and the panel are the only channels.",
+]
+configuration = [
+  "kernel_args carry -v, debug=0x14e and the panic-screen switch in [payload].",
+  "board.example = true keeps the build from producing an image out of zeroed geometry.",
+]
+procedure = [
+  "Record the last completed checkpoint per boot: firmware menu, loader handoff, kernel handoff, root mount.",
+  "Keep the firmware log and the panel photograph with the image revision.",
+]
+findings = [
+  "docs/guide/debugging.md documents the green-bar entry probe and the device-tree panic region as the two evidence channels before the kernel can draw.",
+]
+completion = [
+  "Each claimed milestone has a reproducible command, a matching source and image revision, and an accessible result.",
+]
+limits = [
+  "No device boot has been recorded for this board.",
+]
+next_action = [
+  "Write the checkpoint list for the first bring-up boot and record each verdict by panel or log.",
+]
+evidence = []

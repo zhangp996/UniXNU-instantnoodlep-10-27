@@ -1,0 +1,17 @@
+# Board configuration. docs/porting/device-repository.md: the arch, SoC and OS
+# fragments apply first and this file last, so only board differences belong here.
+CONFIG_XNU_SOURCE_CORECRYPTO14=y
+CONFIG_XNU_SOURCE_PTHREAD=y
+CONFIG_XNU_ARM_DT_PLATFORM=y
+CONFIG_XNU_ARMCPU=y
+CONFIG_XNU_CRYPTO_BOOTSTRAP="prelinked"
+# SM8250 (kona) implements ARMv8.1 PAN, so the exception entry must manage it.
+CONFIG_XNU_NATIVE_PAN=y
+# docs/guide/debugging.md: read the embedded panic region from the device tree instead
+# of the board header constant the arch profile otherwise compiles in.
+CONFIG_XNU_DT_PANIC_REGION=y
+# Storage is not selected yet: ShengUfs is the official implementation but its
+# controller constants are SM8550 and need review for kona (docs/porting/ufs.md).
+# CONFIG_XNU_NATIVE_UFS is not set
+# No catalog component has Adreno 650 scope yet.
+# CONFIG_XNU_NATIVE_ADRENO is not set

@@ -1,0 +1,172 @@
+﻿# Host: WSL2 Ubuntu 22.04, dtc 1.6.1
+# date: 2026-10-27T18:57:15.8392069+08:00
+PS> scripts/build-dts.sh ../UniXNU-sm8250-common/dts dts/instantnoodlep.dts /tmp/in2020/board.dtb
+built /tmp/in2020/board.dtb
+PS> dtc -I dtb -O dts /tmp/in2020/board.dtb
+/dts-v1/;
+
+/ {
+	compatible = "oneplus,instantnoodlep\0qcom,sm8250";
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	interrupt-parent = <0x01>;
+	model = "OnePlus 8 Pro";
+
+	cpus {
+		#address-cells = <0x02>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0x124f800>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x00 0x00>;
+			status = "okay";
+			unixnu,cluster-type = "E";
+		};
+
+		cpu@100 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x00 0x100>;
+			status = "okay";
+			unixnu,cluster-type = "E";
+		};
+
+		cpu@200 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x00 0x200>;
+			status = "okay";
+			unixnu,cluster-type = "E";
+		};
+
+		cpu@300 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a55";
+			reg = <0x00 0x300>;
+			status = "okay";
+			unixnu,cluster-type = "E";
+		};
+
+		cpu@400 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a77";
+			reg = <0x00 0x400>;
+			status = "okay";
+			unixnu,cluster-type = "P";
+		};
+
+		cpu@500 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a77";
+			reg = <0x00 0x500>;
+			status = "okay";
+			unixnu,cluster-type = "P";
+		};
+
+		cpu@600 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a77";
+			reg = <0x00 0x600>;
+			status = "okay";
+			unixnu,cluster-type = "P";
+		};
+
+		cpu@700 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a77";
+			reg = <0x00 0x700>;
+			status = "okay";
+			unixnu,cluster-type = "P";
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		interrupt-controller@17a00000 {
+			compatible = "arm,gic-v3";
+			unixnu,adt-name = "intc";
+			reg = <0x00 0x17a00000 0x00 0x10000 0x00 0x17a60000 0x00 0x100000>;
+			#interrupt-cells = <0x04>;
+			#address-cells = <0x00>;
+			interrupt-controller;
+			redistributor-stride = <0x00 0x20000>;
+			phandle = <0x01>;
+		};
+
+		ufshc@1d84000 {
+			compatible = "qcom,sm8250-ufshc\0qcom,ufshc";
+			unixnu,adt-name = "ufshc";
+			reg = <0x00 0x1d84000 0x00 0x3000>;
+			status = "okay";
+		};
+
+		phy@1d87000 {
+			compatible = "qcom,sm8250-qmp-ufs-phy";
+			unixnu,adt-name = "ufsphy";
+			reg = <0x00 0x1d87000 0x00 0x1000>;
+			status = "okay";
+		};
+
+		gpu@3d00000 {
+			compatible = "qcom,adreno-650.2\0qcom,adreno";
+			reg = <0x00 0x3d00000 0x00 0x40000 0x00 0x3d9e000 0x00 0x1000 0x00 0x3d61000 0x00 0x800>;
+			reg-names = "kgsl_3d0_reg_memory\0cx_mem\0cx_dbgc";
+			iommus = <0x02 0x00 0x401>;
+			status = "disabled";
+		};
+
+		gmu@3d6a000 {
+			compatible = "qcom,adreno-gmu-650.2\0qcom,adreno-gmu";
+			reg = <0x00 0x3d6a000 0x00 0x30000 0x00 0x3de0000 0x00 0x10000 0x00 0xb290000 0x00 0x10000 0x00 0xb490000 0x00 0x10000>;
+			reg-names = "gmu\0rscc\0gmu_pdc\0gmu_pdc_seq";
+			iommus = <0x02 0x05 0x400>;
+			status = "disabled";
+		};
+
+		iommu@3da0000 {
+			compatible = "qcom,sm8250-smmu-500\0qcom,adreno-smmu\0arm,mmu-500";
+			reg = <0x00 0x3da0000 0x00 0x10000>;
+			#iommu-cells = <0x02>;
+			#global-interrupts = <0x02>;
+			status = "disabled";
+			phandle = <0x02>;
+		};
+
+		geniqup@9c0000 {
+			compatible = "qcom,geni-se-qup";
+			reg = <0x00 0x9c0000 0x00 0x6000>;
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+			ranges;
+			status = "disabled";
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x02 0x00>;
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		splash_region@0 {
+			reg = <0x00 0x00 0x00 0x00>;
+			label = "cont_splash_region";
+			no-map;
+		};
+	};
+};

@@ -1,0 +1,11 @@
+# Required firmware inputs: relative path | source | SHA-256 | consumer
+#
+# Populate from this board's own firmware partition, then record the extraction
+# command in porting.toml. Nothing is listed yet because no consumer is selected:
+# a firmware file without a consumer is a guess, not an input.
+#
+# Expected rows once the matching components exist:
+#   a650_gmu.bin        | this board's vendor image | <sha256> | Adreno 650 GMU cold start
+#   a650_zap.mbn        | this board's vendor image | <sha256> | Adreno 650 ZAP shader
+#   <touch firmware>    | this board's vendor image | <sha256> | touch controller probe
+#   <WLAN firmware set> | this board's vendor image | <sha256> | WLAN MHI download
