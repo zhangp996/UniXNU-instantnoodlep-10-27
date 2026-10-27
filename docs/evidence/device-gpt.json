@@ -1,0 +1,117 @@
+[
+  {
+    "name": "ssd",
+    "first": 6,
+    "last": 7
+  },
+  {
+    "name": "persist",
+    "first": 8,
+    "last": 8199
+  },
+  {
+    "name": "misc",
+    "first": 8200,
+    "last": 8455
+  },
+  {
+    "name": "keystore",
+    "first": 8456,
+    "last": 8583
+  },
+  {
+    "name": "frp",
+    "first": 8584,
+    "last": 8711
+  },
+  {
+    "name": "param",
+    "first": 8712,
+    "last": 8967
+  },
+  {
+    "name": "mdm_oem_dycnvbk",
+    "first": 8968,
+    "last": 11527
+  },
+  {
+    "name": "mdm_oem_stanvbk",
+    "first": 11528,
+    "last": 14087
+  },
+  {
+    "name": "modemdump",
+    "first": 14088,
+    "last": 90887
+  },
+  {
+    "name": "op2",
+    "first": 90888,
+    "last": 156423
+  },
+  {
+    "name": "config",
+    "first": 156424,
+    "last": 156551
+  },
+  {
+    "name": "opproduct_a",
+    "first": 156552,
+    "last": 233351
+  },
+  {
+    "name": "opproduct_b",
+    "first": 233352,
+    "last": 310151
+  },
+  {
+    "name": "super",
+    "first": 310152,
+    "last": 3980167
+  },
+  {
+    "name": "recovery_a",
+    "first": 3980168,
+    "last": 4005767
+  },
+  {
+    "name": "recovery_b",
+    "first": 4005768,
+    "last": 4031367
+  },
+  {
+    "name": "vbmeta_system_a",
+    "first": 4031368,
+    "last": 4031383
+  },
+  {
+    "name": "vbmeta_system_b",
+    "first": 4031384,
+    "last": 4031399
+  },
+  {
+    "name": "metadata",
+    "first": 4031400,
+    "last": 4035495
+  },
+  {
+    "name": "vm-system_a",
+    "first": 4035496,
+    "last": 4068263
+  },
+  {
+    "name": "vm-system_b",
+    "first": 4068264,
+    "last": 4101031
+  },
+  {
+    "name": "rawdump",
+    "first": 4101032,
+    "last": 4133799
+  },
+  {
+    "name": "userdata",
+    "first": 4133800,
+    "last": 30513146
+  }
+]

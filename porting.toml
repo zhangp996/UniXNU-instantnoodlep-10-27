@@ -46,7 +46,7 @@ completion = [
   "No REQUIRED value remains and board.example is false.",
 ]
 limits = [
-  "Partition geometry, the splash reservation and the DRAM size are still REQUIRED: they need the board's own GPT and device tree.",
+  "Every REQUIRED hardware input in board.toml is now measured on this board: the GPT extent, the splash reservation, the DRAM span and the UFS interrupt.",
   "UniXNU-sm8250-common is published at commit 5b190cb and feeds.toml pins that commit, so a fresh checkout resolves the SoC source without a local path.",
 ]
 next_action = [
@@ -72,7 +72,7 @@ paths = [
 inputs = [
   "Mu-Silicium UEFI platform package for this board. Mu-Silicium ships OnePlus packages for kebab and lemonade but none for instantnoodlep.",
   "An unlocked bootloader; fastboot boot loads the image without touching a partition.",
-  "The board's ABL memory map: the reserved ranges it hands to the OS are board specific.",
+  "Measured from the live device tree: the reserved-memory node lists hyp, cmd-db, smem, removed_region (0x80b00000, 0xcd00000), the adsp, cdsp, camera, cvp, video, npu, slpi, spss, gpu and wlan PIL regions, cdsp_secure_heap, cont_splash_region (0x9c000000, 0x2300000), disp_rdump_region, dfps_data_region and cnss_wlan_region.",
 ]
 configuration = [
   "firmware.dsc and firmware.fd name the instantnoodlepPkg paths the port creates.",
@@ -150,7 +150,7 @@ paths = [
   "docs/**",
 ]
 inputs = [
-  "DRAM starts at 0x80000000. The 8 GiB model ends at 0x27fffffff; a 12 GiB model needs a second bank.",
+  "Measured from the live device tree: DRAM starts at 0x80000000 in three banks (0x80000000+0x3bb00000, 0xc0000000+0xc0000000, 0x180000000+0x100000000) on an 8 GiB board with MemTotal 7708100 kB.",
   "The ABL splash region, the SM8250 secure carveouts and the UEFI runtime regions are the reservations the firmware must preserve.",
   "The UFS host and the GPU sit behind their own SMMU instances; the display path has none.",
 ]
@@ -211,7 +211,7 @@ completion = [
   "Root: the configured volume mounts and launchd starts; writes survive reboot inside the Data region.",
 ]
 limits = [
-  "userdata first_lba and last_lba are zero: only its length is measured (26379347 4096-byte sectors); the GPT entry's start is still unread.",
+  "Measured from the dumped GPT: userdata runs from LBA 4133800 to 30513146 with 4096-byte sectors (26379347 sectors, 100.63 GiB), matching the bootloader's partition-size report.",
   "No UFS register read or link-state observation exists for this board.",
 ]
 next_action = [
@@ -249,7 +249,7 @@ completion = [
   "A known frame appears with correct geometry and colours, then userland presentation and backlight control work.",
 ]
 limits = [
-  "No panel timing, DSI sequence or backlight node has been read from this board.",
+  "Measured: the bootloader selects qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd, a Samsung AMOLED command-mode panel at 1440x3168; Android renders at 1080x2376 and the backlight class exposes panel0-backlight and panel1-backlight.",
   "The board package has no display probe.",
 ]
 next_action = [
@@ -283,7 +283,7 @@ completion = [
   "Touches map to the display, simultaneous contacts keep stable IDs, release events arrive and buttons produce expected HID reports.",
 ]
 limits = [
-  "The touch controller model, bus address, interrupt and firmware format are unmeasured.",
+  "Measured: the touch controller is a Synaptics synaptics-s3908 behind a QUPv3 GENI SPI engine with oplus interrupt and reset pinctrl groups; the HID report format and firmware image are still unread.",
 ]
 next_action = [
   "Identify the touch controller over ADB, then add a board kit.",
@@ -348,7 +348,7 @@ completion = [
   "Scanning, association, address configuration and sustained traffic pass with the selected firmware.",
 ]
 limits = [
-  "The wireless chip model and bus are unmeasured.",
+  "Measured: the WLAN device is qcom,cnss-qca6390 at 0xb0000000 with wlan-en on TLMM GPIO 20, and its firmware regions are pil_wlan_fw_region (0x8e100000, 0x100000) and cnss_wlan_region (0xb0000000, 0x400000).",
   "No firmware input is listed in proprietary-files.txt.",
 ]
 next_action = [

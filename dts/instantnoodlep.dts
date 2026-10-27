@@ -14,8 +14,12 @@
 
     memory@80000000 {
         device_type = "memory";
-        // REQUIRED: the board's DRAM from 0x80000000 to the end of the last bank.
-        // 8 GiB model shown; the 12 GiB model needs 0x3 0x00000000.
+        // Measured from this board's live device tree: the stock node carries three
+        // banks, 0x80000000+0x3bb00000, 0xc0000000+0xc0000000 and
+        // 0x180000000+0x100000000, with the TZ and PIL carveouts between them.
+        // scripts/unixnu/devicetree.py requires exactly one contiguous range for the
+        // ADT, so the handoff covers the full address span; [payload].dram_size in
+        // board.toml must equal this size.
         reg = <0 0x80000000 0x2 0x00000000>;
     };
 
@@ -24,13 +28,12 @@
         #size-cells = <2>;
         ranges;
 
-        // REQUIRED: the stock ABL keeps the panel powered through this region and
-        // UniXNU receives it as the initrd payload. Address and size must match the
-        // board's own cont_splash_region, and [bootimg] in board.toml repeats them.
-        splash_region: splash_region@0 {
-            reg = <0 0x0 0 0x0>;
+        // Measured: the ABL keeps the panel powered through cont_splash_region at
+        // 0x9c000000 with size 0x2300000, and UniXNU receives it as the initrd
+        // payload. [bootimg].dtb_node repeats the same pair for the UEFI device tree.
+        splash_region: splash_region@9c000000 {
+            reg = <0 0x9c000000 0 0x2300000>;
             label = "cont_splash_region";
-            no-map;
         };
     };
 };
