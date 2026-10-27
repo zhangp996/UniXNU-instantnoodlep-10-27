@@ -36,9 +36,9 @@ config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "
 patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches/xnu/series", "device:patches/xnu/series"]
 
 [firmware]
-# Mu-Silicium platform package for this board. Mu-Silicium ships OnePlus packages for
-# the 8T (kebab) and 9 (lemonade) but none for instantnoodlep, so this path is the
-# package the port creates, not one that exists today (docs/porting/uefi-firmware).
+# Mu-Silicium platform package for this board, created in a Mu-Silicium fork per
+# docs/porting/uefi-firmware. The tree ships OnePlus packages for other models on
+# the same SoC family but none for instantnoodlep, so this path does not exist yet.
 config = "instantnoodlep"
 dsc = "Platforms/OnePlus/instantnoodlepPkg/instantnoodlep.dsc"
 fd = "Build/instantnoodlepPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"

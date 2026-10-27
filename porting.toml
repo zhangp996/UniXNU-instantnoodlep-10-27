@@ -8,7 +8,7 @@ summary = "OnePlus 8 Pro IN2020 (SM8250/kona) bring-up through UniXNU: configura
 
 [[area]]
 id = "configuration"
-status = "implemented"
+status = "host-verified"
 components = ["ArmDTPlatform","ArmCpu","SoftwareAES","XnuPrelink","DarwinBoot"]
 paths = [
   "board.toml",
@@ -45,13 +45,15 @@ completion = [
 ]
 limits = [
   "Partition geometry, the splash reservation and the DRAM size are still REQUIRED: they need the board's own GPT and device tree.",
-  "UniXNU-sm8250-common is a local checkout; it has no reviewed published commit yet.",
+  "UniXNU-sm8250-common is committed locally (95152263) but not published, so feeds.toml still resolves it as a local checkout.",
 ]
 next_action = [
   "Collect the board inputs over ADB (docs/hardware-inventory.md), replace each REQUIRED value, then re-resolve and publish the SoC repository.",
 ]
 evidence = [
   { kind = "source", reference = "board.toml", result = "Format 2 board configuration: SM8250 SoC source, iPadOS 17.7.11 profile, five components, four-series patch order." },
+  { kind = "host", reference = "docs/evidence/host-config-resolution.log", command = "unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep; unixnu status -D ../UniXNU-instantnoodlep; python3 scripts/porting-record.py check --device ../UniXNU-instantnoodlep", revision = "f242ec461d5aba013ac7c6a68058511f90f4415a", result = "The resolver reports arch, soc, os and device profiles, five components with their owners, the ordered arm64 series, and the record checker passes 13 areas." },
+  { kind = "host", reference = "docs/evidence/host-dts-compile.log", command = "scripts/build-dts.sh ../UniXNU-sm8250-common/dts dts/instantnoodlep.dts /tmp/in2020/board.dtb", revision = "f242ec461d5aba013ac7c6a68058511f90f4415a", result = "dtc 1.6.1 compiles the board DTS against the SM8250 DTSI without warnings; the blob carries the oneplus,instantnoodlep compatible, eight tagged CPUs and the 19.2 MHz timer." },
 ]
 
 [[area]]
@@ -416,6 +418,7 @@ components = []
 paths = [
   "scripts/*payload*",
   "scripts/*image*",
+  "scripts/build-*",
   "patches/**",
   "package/Kit.toml",
 ]
