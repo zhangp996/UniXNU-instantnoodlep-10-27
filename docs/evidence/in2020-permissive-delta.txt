@@ -1,0 +1,909 @@
+﻿
+=== SECTION: input ===
+--- input_devices ---
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="qpnp_pon"
+P: Phys=qpnp_pon/input0
+S: Sysfs=/devices/platform/soc/c440000.qcom,spmi/spmi-0/spmi0-00/c440000.qcom,spmi:qcom,pm8150@0:qcom,power-on@800/input/input0
+U: Uniq=
+H: Handlers=kbd event0 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=14000000000000 0
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="touchpanel"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input2
+U: Uniq=
+H: Handlers=kbd event1 kgsl cpufreq 
+B: PROP=2
+B: EV=b
+B: KEY=400 0 0 0 10000000000000 4000000000000000
+B: ABS=665800000000000
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="touchpanel_kpd"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input3
+U: Uniq=
+H: Handlers=event2 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=0
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="oplus,hall_tri_state_key"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input10
+U: Uniq=
+H: Handlers=kbd event3 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=2000000000000000
+
+I: Bus=0019 Vendor=0001 Product=0001 Version=0100
+N: Name="gpio-keys"
+P: Phys=gpio-keys/input0
+S: Sysfs=/devices/platform/soc/soc:gpio_keys/input/input13
+U: Uniq=
+H: Handlers=kbd event4 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=c000000000000 0
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="qwerty"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input15
+U: Uniq=
+H: Handlers=kbd event5 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=3100000 40000800 1c16c000000000 0
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="kona-mtp-snd-card Headset Jack"
+P: Phys=ALSA
+S: Sysfs=/devices/platform/soc/soc:qcom,msm-audio-apr/soc:qcom,msm-audio-apr:qcom,q6core-audio/soc:qcom,msm-audio-apr:qcom,q6core-audio:sound/sound/card0/input62
+U: Uniq=
+H: Handlers=event6 
+B: PROP=0
+B: EV=21
+B: SW=1e00d4
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="kona-mtp-snd-card Button Jack"
+P: Phys=ALSA
+S: Sysfs=/devices/platform/soc/soc:qcom,msm-audio-apr/soc:qcom,msm-audio-apr:qcom,q6core-audio/soc:qcom,msm-audio-apr:qcom,q6core-audio:sound/sound/card0/input63
+U: Uniq=
+H: Handlers=kbd event7 cpufreq 
+B: PROP=0
+B: EV=3
+B: KEY=40 0 0 0 0 30 400000000 0 c000000000000 0
+
+
+--- getevent ---
+add device 1: /dev/input/event7
+  name:     "kona-mtp-snd-card Button Jack"
+  events:
+    KEY (0001): KEY_VOLUMEDOWN        KEY_VOLUMEUP          KEY_MEDIA             BTN_4                
+                BTN_5                 KEY_VOICECOMMAND     
+  input props:
+    <none>
+add device 2: /dev/input/event6
+  name:     "kona-mtp-snd-card Headset Jack"
+  events:
+    SW  (0005): SW_HEADPHONE_INSERT   SW_MICROPHONE_INSERT  SW_LINEOUT_INSERT     SW_JACK_PHYSICAL_INS    
+                0011                  0012                  0013                  0014                 
+  input props:
+    <none>
+add device 3: /dev/input/event5
+  name:     "qwerty"
+  events:
+    KEY (0001): KEY_HOME              KEY_UP                KEY_LEFT              KEY_RIGHT            
+                KEY_DOWN              KEY_VOLUMEDOWN        KEY_VOLUMEUP          KEY_POWER            
+                KEY_MENU              KEY_BACK              KEY_CAMERA            KEY_CHAT             
+                KEY_SEARCH           
+  input props:
+    <none>
+add device 4: /dev/input/event2
+  name:     "touchpanel_kpd"
+  events:
+  input props:
+    <none>
+add device 5: /dev/input/event1
+  name:     "touchpanel"
+  events:
+    KEY (0001): KEY_F4                KEY_POWER             BTN_TOUCH            
+    ABS (0003): ABS_MT_SLOT           : value 0, min 0, max 9, fuzz 0, flat 0, resolution 0
+                ABS_MT_TOUCH_MAJOR    : value 0, min 0, max 255, fuzz 0, flat 0, resolution 0
+                ABS_MT_WIDTH_MAJOR    : value 0, min 0, max 0, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_X     : value 0, min 0, max 1438, fuzz 0, flat 0, resolution 0
+                ABS_MT_POSITION_Y     : value 0, min 0, max 3167, fuzz 0, flat 0, resolution 0
+                ABS_MT_TRACKING_ID    : value 0, min 0, max 65535, fuzz 0, flat 0, resolution 0
+                ABS_MT_PRESSURE       : value 0, min 0, max 0, fuzz 0, flat 0, resolution 0
+  input props:
+    INPUT_PROP_DIRECT
+add device 6: /dev/input/event3
+  name:     "oplus,hall_tri_state_key"
+  events:
+    KEY (0001): KEY_F3               
+  input props:
+    <none>
+add device 7: /dev/input/event0
+  name:     "qpnp_pon"
+  events:
+    KEY (0001): KEY_VOLUMEDOWN        KEY_POWER            
+  input props:
+    <none>
+add device 8: /dev/input/event4
+  name:     "gpio-keys"
+  events:
+    KEY (0001): KEY_VOLUMEDOWN        KEY_VOLUMEUP         
+  input props:
+    <none>
+
+--- input_names ---
+
+
+
+
+
+
+
+
+
+
+=== SECTION: devicetree_soc ===
+--- soc_list ---
+#address-cells
+#size-cells
+ad-hoc-bus
+aop-msg-client
+apps-smmu@15000000
+apps_iommu_coherent_test_device
+apps_iommu_test_device
+audio_etm0
+cache-controller@9200000
+clocks
+compatible
+csr@6001000
+csr@6b0c000
+cti@6010000
+cti@6011000
+cti@6012000
+cti@6013000
+cti@6014000
+cti@6015000
+cti@6016000
+cti@6017000
+cti@6018000
+cti@6019000
+cti@601a000
+cti@601b000
+cti@601c000
+cti@601d000
+cti@601e000
+cti@601f000
+cti@6831000
+cti@6845000
+cti@6961000
+cti@6962000
+cti@6982000
+cti@698b000
+cti@6b00000
+cti@6b01000
+cti@6b02000
+cti@6b03000
+cti@6b21000
+cti@6b2b000
+cti@6b40000
+cti@6b41000
+cti@6b4b000
+cti@6b4e000
+cti@6c09000
+cti@6c0a000
+cti@6c13000
+cti@6c2a000
+cti@6c2b000
+cti@6c2c000
+cti@6c38000
+cti@6c42000
+cti@6c43000
+cti@6c4b000
+cti@6c61000
+cti@6e01000
+cti@6e02000
+cti@6e03000
+cti@6e0c000
+cti@6e0d000
+cti@6e0e000
+cti@6e11000
+cti@6e21000
+cti@7020000
+cti@7120000
+cti@7220000
+cti@7320000
+cti@7420000
+cti@7520000
+cti@7620000
+cti@7720000
+cti@78e0000
+cti@78f0000
+cti@7900000
+dcc_v2@1023000
+ddr-bw-opp-table
+demux
+devinfo
+display_gpio_regulator@1
+dsi_iris_pwr_supply
+dsi_oplus20828samsung_amb655x_1080_2400_cmd
+dsi_panel_pwr_supply
+dsi_panel_pwr_supply_avdd
+dsi_panel_pwr_supply_lab_ibb
+dsi_samsung_ana6706_dsc_cmd_2nd
+dsi_samsung_oneplus_dsc_cmd_display
+dsu_pmu@0
+dummy_sink
+etm@7040000
+etm@7140000
+etm@7240000
+etm@7340000
+etm@7440000
+etm@7540000
+etm@7640000
+etm@7740000
+feedback_fb
+funnel@6005000
+funnel@6041000
+funnel@6042000
+funnel@6045000
+funnel@6832000
+funnel@6846000
+funnel@6902000
+funnel@6983000
+funnel@69c2000
+funnel@6ac2000
+funnel@6b04000
+funnel@6c0b000
+funnel@6c2d000
+funnel@6c39000
+funnel@6c44000
+funnel@6e04000
+funnel@6e12000
+funnel@6e22000
+funnel@7800000
+funnel@7810000
+goodix_fp
+gpio_keys
+gpu-opp-table
+gpu-opp-table_v2
+hsphy@88e3000
+hsphy@88e4000
+hwevent
+hwlock
+i2c@880000
+i2c@884000
+i2c@888000
+i2c@88c000
+i2c@890000
+i2c@894000
+i2c@980000
+i2c@984000
+i2c@988000
+i2c@98c000
+i2c@990000
+i2c@994000
+i2c@998000
+i2c@99c000
+i2c@a80000
+i2c@a84000
+i2c@a88000
+i2c@a8c000
+i2c@a90000
+i2c@a94000
+i3c-master@980000
+i3c-master@984000
+interrupt-controller@17a00000
+interrupt-controller@b220000
+ipcc-self-ping-adsp
+ipcc-self-ping-apss
+ipcc-self-ping-cdsp
+ipcc-self-ping-npu
+ipcc-self-ping-slpi
+jtagmm@7040000
+jtagmm@7140000
+jtagmm@7240000
+jtagmm@7340000
+jtagmm@7440000
+jtagmm@7540000
+jtagmm@7640000
+jtagmm@7740000
+keepalive-opp-table
+kgsl-smmu@3da0000
+kgsl_iommu_coherent_test_device
+kgsl_iommu_test_device
+kryo-erp
+llcc-bw-opp-table
+llcc-pmu@9095000
+lmh_isense_cdsp
+mailbox@188501c
+mem_dump
+msm_cdc_pinctrl@32
+msm_cdc_pinctrl_tert
+msm_tspp@8880000
+name
+nfc_chipset
+npu_etm0
+oem_rf_cable
+oneplus_wlchg
+oplus,audio-drv
+oplus,track-charge
+oplus_secure_common
+oplus_sensor
+oplus_sim_detect
+oppo_fp_common
+phandle
+pinctrl@f000000
+qcedev@1de0000
+qcom,a5@ac00000
+qcom,aopclk
+qcom,avtimer@39f0000
+qcom,bps
+qcom,bus_proxy_client
+qcom,cam-cdm-intf
+qcom,cam-cpas@ac40000
+qcom,cam-fd
+qcom,cam-icp
+qcom,cam-isp
+qcom,cam-jpeg
+qcom,cam-req-mgr
+qcom,cam-res-mgr
+qcom,cam_smmu
+qcom,camcc@ad00000
+qcom,camera-flash0
+qcom,camera-flash1
+qcom,camera-flash2
+qcom,cc-debug
+qcom,cci@ac4f000
+qcom,cci@ac50000
+qcom,chd_gold
+qcom,chd_silver
+qcom,cnss-qca6390@b0000000
+qcom,cpas-cdm0@ac4d000
+qcom,cpas-cdm1@acb4200
+qcom,cpas-cdm2@acc3200
+qcom,cpu-cpu-llcc-bw
+qcom,cpu-cpu-llcc-bwmon@90b6400
+qcom,cpu-llcc-ddr-bw
+qcom,cpu-llcc-ddr-bwmon@9091000
+qcom,cpu0-cpu-llcc-lat
+qcom,cpu0-cpugrp
+qcom,cpu0-llcc-ddr-lat
+qcom,cpu4-cpu-ddr-latfloor
+qcom,cpu4-cpu-ddr-qoslat
+qcom,cpu4-cpu-llcc-lat
+qcom,cpu4-cpugrp
+qcom,cpu4-llcc-ddr-lat
+qcom,cpucc
+qcom,cpufreq-hw
+qcom,csid-lite0@acd9200
+qcom,csid-lite1@acdb400
+qcom,csid0@acb5200
+qcom,csid1@acc4200
+qcom,csiphy@ac6a000
+qcom,csiphy@ac6c000
+qcom,csiphy@ac6e000
+qcom,csiphy@ac70000
+qcom,csiphy@ac72000
+qcom,csiphy@ac74000
+qcom,cvp@ab00000
+qcom,cvpss@abb0000
+qcom,ddr-stats@c3f0000
+qcom,devfreq-l3
+qcom,dispcc@af00000
+qcom,dp_display@ae90000
+qcom,dsi-display-primary
+qcom,dsi-display-secondary
+qcom,fd@ac5f000
+qcom,gcc@100000
+qcom,gdsc@106004
+qcom,gdsc@10f004
+qcom,gdsc@110004
+qcom,gdsc@16b004
+qcom,gdsc@177004
+qcom,gdsc@17d050
+qcom,gdsc@17d054
+qcom,gdsc@17d058
+qcom,gdsc@17d06c
+qcom,gdsc@18d004
+qcom,gdsc@3d9100c
+qcom,gdsc@3d9106c
+qcom,gdsc@9981004
+qcom,gdsc@abf0bf8
+qcom,gdsc@abf0c98
+qcom,gdsc@abf0d18
+qcom,gdsc@abf0d98
+qcom,gdsc@ad07004
+qcom,gdsc@ad08004
+qcom,gdsc@ad09004
+qcom,gdsc@ad0a004
+qcom,gdsc@ad0b004
+qcom,gdsc@ad0c144
+qcom,gdsc@af03000
+qcom,glink
+qcom,gmu@3d6a000
+qcom,gpi-dma@800000
+qcom,gpi-dma@900000
+qcom,gpi-dma@a00000
+qcom,gpubw
+qcom,gpucc@3d90000
+qcom,ife-lite0@acd9000
+qcom,ife-lite1@acdb200
+qcom,ife0@acb4000
+qcom,ife1@acc3000
+qcom,ion
+qcom,ipa-mpm
+qcom,ipa@1e00000
+qcom,ipa_fws
+qcom,ipa_uc
+qcom,ipcc@408000
+qcom,ipe0
+qcom,jpegdma@ac57000
+qcom,jpegenc@ac53000
+qcom,kgsl-3d0@3d00000
+qcom,kgsl-busmon
+qcom,kgsl-hyp
+qcom,kgsl-iommu@3da0000
+qcom,lpass@17300000
+qcom,lpm-levels
+qcom,mdm0
+qcom,mdss_dp_pll@c011000
+qcom,mdss_dsi_ctrl0@ae94000
+qcom,mdss_dsi_ctrl1@ae96000
+qcom,mdss_dsi_phy0@ae94400
+qcom,mdss_dsi_phy1@ae96400
+qcom,mdss_dsi_pll@ae94900
+qcom,mdss_dsi_pll@ae96900
+qcom,mdss_mdp@ae00000
+qcom,mdss_rotator@aea8800
+qcom,mpm2-sleep-counter@c221000
+qcom,msm-adsp-loader
+qcom,msm-adsprpc-mem
+qcom,msm-audio-apr
+qcom,msm-cdsp-loader
+qcom,msm-compr-dsp
+qcom,msm-compress-dsp
+qcom,msm-dai-cdc-dma
+qcom,msm-dai-fe
+qcom,msm-dai-mi2s
+qcom,msm-dai-q6
+qcom,msm-dai-q6-afe-loopback-tx
+qcom,msm-dai-q6-dp
+qcom,msm-dai-q6-dp1
+qcom,msm-dai-q6-hdmi
+qcom,msm-dai-q6-spdif-pri-rx
+qcom,msm-dai-q6-spdif-pri-tx
+qcom,msm-dai-q6-spdif-sec-rx
+qcom,msm-dai-q6-spdif-sec-tx
+qcom,msm-dai-tdm-pri-rx
+qcom,msm-dai-tdm-pri-tx
+qcom,msm-dai-tdm-quat-rx
+qcom,msm-dai-tdm-quat-tx
+qcom,msm-dai-tdm-quin-rx
+qcom,msm-dai-tdm-quin-tx
+qcom,msm-dai-tdm-sec-rx
+qcom,msm-dai-tdm-sec-tx
+qcom,msm-dai-tdm-sen-rx
+qcom,msm-dai-tdm-sen-tx
+qcom,msm-dai-tdm-tert-rx
+qcom,msm-dai-tdm-tert-tx
+qcom,msm-eud@ff0000
+qcom,msm-ext-disp
+qcom,msm-hdmi-dba-codec-rx
+qcom,msm-imem@146bf000
+qcom,msm-lsm-client
+qcom,msm-pcm
+qcom,msm-pcm-afe
+qcom,msm-pcm-dsp-noirq
+qcom,msm-pcm-dtmf
+qcom,msm-pcm-hostless
+qcom,msm-pcm-loopback
+qcom,msm-pcm-loopback-low-latency
+qcom,msm-pcm-low-latency
+qcom,msm-pcm-routing
+qcom,msm-pcm-voice
+qcom,msm-pri-auxpcm
+qcom,msm-quat-auxpcm
+qcom,msm-quin-auxpcm
+qcom,msm-rtb
+qcom,msm-sec-auxpcm
+qcom,msm-sen-auxpcm
+qcom,msm-ssc-sensors
+qcom,msm-stub-codec
+qcom,msm-tert-auxpcm
+qcom,msm-transcode-loopback
+qcom,msm-ultra-low-latency
+qcom,msm-voip-dsp
+qcom,msm_fastrpc
+qcom,msm_gsi
+qcom,msm_hdcp
+qcom,msm_notifier@0
+qcom,msm_npu@9800000
+qcom,npu-llcc-ddr-bw
+qcom,npu-llcc-ddr-bwmon@0x9093000
+qcom,npu-npu-ddr-latfloor
+qcom,npu-npu-llcc-bw
+qcom,npu-npu-llcc-bwmon@60300
+qcom,npu-staticmap-mon
+qcom,npu@9800000
+qcom,npucc@9980000
+qcom,npudsp-npu-ddr-bw
+qcom,npudsp-npu-ddr-bwmon@70200
+qcom,pcie0_msi@17a10040
+qcom,pcie1_msi@17a10040
+qcom,pcie2_msi@17a10040
+qcom,pcie@1c00000
+qcom,pcie@1c08000
+qcom,pcie@1c10000
+qcom,qbt_handler
+qcom,qmp-aop@c300000
+qcom,qsee_irq
+qcom,qsee_irq_bridge
+qcom,qup_uart@88c000
+qcom,qup_uart@890000
+qcom,qup_uart@988000
+qcom,qup_uart@998000
+qcom,qup_uart@a90000
+qcom,qupv3_0_geni_se@9c0000
+qcom,qupv3_1_geni_se@ac0000
+qcom,qupv3_2_geni_se@8c0000
+qcom,rmnet-ipa
+qcom,rpm-stats@c3f0004
+qcom,rpmh-master-stats@b221200
+qcom,sde_rscc@af20000
+qcom,smem
+qcom,smp2p-adsp
+qcom,smp2p-cdsp
+qcom,smp2p-dsps
+qcom,smp2p-npu
+qcom,smp2p_interrupt_qvrexternal_5_out
+qcom,smp2p_interrupt_rdbg_2_in
+qcom,smp2p_interrupt_rdbg_2_out
+qcom,smp2p_interrupt_rdbg_5_in
+qcom,smp2p_interrupt_rdbg_5_out
+qcom,smp2p_sleepstate
+qcom,snoc_cnoc_keepalive
+qcom,spcom
+qcom,spmi-debug@6b0f000
+qcom,spmi@c440000
+qcom,sps
+qcom,spss@1880000
+qcom,spss_utils
+qcom,ssc@5c00000
+qcom,turing@8300000
+qcom,venus@aab0000
+qcom,vidc@aa00000
+qcom,videocc@abf0000
+qcom,wb-display@0
+qcom,wdt@17c10000
+qcom,wil6210
+qcrypto@1de0000
+qfprom@780000
+qmi-tmd-devices
+qmi-ts-sensors
+qoslat-opp-table
+qrng@793000
+qseecom@82400000
+ranges
+refgen-regulator@88e7000
+regulator-dbb1
+regulator-haptics-boost
+replicator@6046000
+replicator@6b06000
+restart@c264000
+rsc@18200000
+rsc@af20000
+rx_core_clk
+rx_npl_clk
+sdhci@8804000
+sensor_fb
+slim@3ac0000
+smcinvoke@87900000
+spi@880000
+spi@884000
+spi@888000
+spi@88c000
+spi@890000
+spi@894000
+spi@980000
+spi@984000
+spi@988000
+spi@98c000
+spi@990000
+spi@994000
+spi@998000
+spi@99c000
+spi@a80000
+spi@a84000
+spi@a88000
+spi@a8c000
+spi@a90000
+spi@a94000
+ssc_etm0
+ssphy@88e8000
+ssphy@88eb000
+ssusb@a600000
+ssusb@a800000
+stm@6002000
+suspendable-ddr-bw-opp-table
+suspendable-llcc-bw-opp-table
+syscon@182a0000
+syscon@1880000
+syscon@1f40000
+syscon@3d91008
+syscon@3d91508
+syscon@3d91540
+syscon@90ba000
+tgu@6b0b000
+thermal-zones
+timer
+timer@17c20000
+tmc@6048000
+tmc@6b05000
+tpda@6004000
+tpda@69c1000
+tpda@6ac1000
+tpda@6b08000
+tpda@7863000
+tpdm@6830000
+tpdm@6840000
+tpdm@6844000
+tpdm@684c000
+tpdm@6850000
+tpdm@6870000
+tpdm@6900000
+tpdm@6980000
+tpdm@69810000
+tpdm@69c0000
+tpdm@69d0000
+tpdm@6ac0000
+tpdm@6b09000
+tpdm@6b0a000
+tpdm@6b26000
+tpdm@6c08000
+tpdm@6c28000
+tpdm@6c29000
+tpdm@6c40000
+tpdm@6c41000
+tpdm@6c47000
+tpdm@6c60000
+tpdm@6e00000
+tpdm@6e10000
+tpdm@6e20000
+tpdm@7860000
+tpdm@7861000
+tpdm@78a0000
+tpdm@78b0000
+tsens@c222000
+tsens@c223000
+turing_etm0
+tx_core_clk
+tx_npl_clk
+tz-log@146bf720
+ufshc@1d84000
+ufsphy_mem@1d87000
+usb_audio_qmi_dev
+usb_nop_phy
+va_core_clk
+va_npl_clk
+wsa_core_clk
+wsa_npl_clk
+wsa_spkr_en1_pinctrl
+wsa_spkr_en2_pinctrl
+
+--- i2c_nodes ---
+/proc/device-tree/soc/i2c@880000
+/proc/device-tree/soc/i2c@884000
+/proc/device-tree/soc/i2c@888000
+/proc/device-tree/soc/i2c@88c000
+/proc/device-tree/soc/i2c@890000
+/proc/device-tree/soc/i2c@894000
+/proc/device-tree/soc/i2c@980000
+/proc/device-tree/soc/i2c@984000
+/proc/device-tree/soc/i2c@988000
+/proc/device-tree/soc/i2c@98c000
+/proc/device-tree/soc/i2c@990000
+/proc/device-tree/soc/i2c@994000
+/proc/device-tree/soc/i2c@998000
+/proc/device-tree/soc/i2c@99c000
+/proc/device-tree/soc/i2c@a80000
+/proc/device-tree/soc/i2c@a84000
+/proc/device-tree/soc/i2c@a88000
+/proc/device-tree/soc/i2c@a8c000
+/proc/device-tree/soc/i2c@a90000
+/proc/device-tree/soc/i2c@a94000
+
+--- spi_nodes ---
+/proc/device-tree/soc/spi@880000
+/proc/device-tree/soc/spi@884000
+/proc/device-tree/soc/spi@888000
+/proc/device-tree/soc/spi@88c000
+/proc/device-tree/soc/spi@890000
+/proc/device-tree/soc/spi@894000
+/proc/device-tree/soc/spi@980000
+/proc/device-tree/soc/spi@984000
+/proc/device-tree/soc/spi@988000
+/proc/device-tree/soc/spi@98c000
+/proc/device-tree/soc/spi@990000
+/proc/device-tree/soc/spi@994000
+/proc/device-tree/soc/spi@998000
+/proc/device-tree/soc/spi@99c000
+/proc/device-tree/soc/spi@a80000
+/proc/device-tree/soc/spi@a84000
+/proc/device-tree/soc/spi@a88000
+/proc/device-tree/soc/spi@a8c000
+/proc/device-tree/soc/spi@a90000
+/proc/device-tree/soc/spi@a94000
+
+--- qup_nodes ---
+/proc/device-tree/soc/qcom,qup_uart@88c000
+/proc/device-tree/soc/qcom,qup_uart@890000
+/proc/device-tree/soc/qcom,qup_uart@988000
+/proc/device-tree/soc/qcom,qup_uart@998000
+/proc/device-tree/soc/qcom,qup_uart@a90000
+/proc/device-tree/soc/qcom,qupv3_0_geni_se@9c0000
+/proc/device-tree/soc/qcom,qupv3_1_geni_se@ac0000
+/proc/device-tree/soc/qcom,qupv3_2_geni_se@8c0000
+
+--- ufs_nodes ---
+clock-names
+clocks
+compatible
+dev-ref-clk-freq
+freq-table-hz
+interrupts
+lanes-per-direction
+name
+phandle
+phy-names
+phys
+pinctrl-0
+pinctrl-1
+pinctrl-names
+qcom,bus-vector-names
+qcom,msm-bus,name
+qcom,msm-bus,num-cases
+qcom,msm-bus,num-paths
+qcom,msm-bus,vectors-KBps
+qcom,pm-qos-cpu-group-latency-us
+qcom,pm-qos-cpu-groups
+qcom,pm-qos-default-cpu
+qcom,vccq-parent-max-microamp
+qcom,vccq-parent-supply
+qcom,vddp-ref-clk-max-microamp
+qcom,vddp-ref-clk-supply
+reg
+reg-names
+reset-names
+resets
+status
+vcc-low-voltage-sup
+vcc-max-microamp
+vcc-supply
+vcc-voltage-level
+vccq-max-microamp
+vccq-supply
+vccq2-max-microamp
+vccq2-supply
+vdd-hba-fixed-regulator
+vdd-hba-supply
+---
+ 01 d8 40 00 00 00 30 00 01 d9 00 00 00 00 80 00
+
+--- touch_nodes ---
+synaptics_20828@4B
+
+
+=== SECTION: display ===
+--- backlight ---
+
+
+
+--- wm ---
+Physical size: 1080x2376
+Physical density: 480
+
+--- dsi ---
+dsi_iris_pwr_supply
+dsi_oplus20828samsung_amb655x_1080_2400_cmd
+dsi_panel_pwr_supply
+dsi_panel_pwr_supply_avdd
+dsi_panel_pwr_supply_lab_ibb
+dsi_samsung_ana6706_dsc_cmd_2nd
+dsi_samsung_oneplus_dsc_cmd_display
+qcom,dsi-display-primary
+qcom,dsi-display-secondary
+qcom,mdss_dsi_ctrl0@ae94000
+qcom,mdss_dsi_ctrl1@ae96000
+qcom,mdss_dsi_phy0@ae94400
+qcom,mdss_dsi_phy1@ae96400
+qcom,mdss_dsi_pll@ae94900
+qcom,mdss_dsi_pll@ae96900
+
+
+=== SECTION: power ===
+--- power_supply ---
+
+
+
+
+
+
+
+adb.exe : cat: /type: No such file or directory
+所在位置 行:3 字符: 6
++ $o = & $adb shell "su -c 'sh /data/local/tmp/collect-perm.sh'" 2>&1 | ...
++      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (cat: /type: No such file or directory:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+cat: /temp: No such file or directory
+--- thermal ---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=== SECTION: misc ===
+--- interrupts_top ---
+           CPU0       CPU1       CPU2       CPU3       CPU4       CPU5       CPU6       CPU7       
+  3:      15054      14953      14672      14651      10209      11169      10910       9583     GICv3  27 Level     arch_timer
+  5:        669        669        852        629         46         96         68         26     GICv3  38 Level     arch_mem_timer
+  7:         18         20         21         20         16         19         21         24     GICv3  23 Level     arm-pmu
+  8:          0          0          0          0          0          0          0          0     GICv3  62 Level     dcvsh-irq-0
+  9:          0          0          0          0          0          0          0          0     GICv3  63 Level     dcvsh-irq-4
+ 10:          0          0          0          0          0          0          0          0     GICv3  51 Level     dcvsh-irq-7
+ 11:         11          0          0          0          0          0          0          0     GICv3 195 Level     ngd_slim_irq
+ 12:         11          0          0          0          0          0          0          0     GICv3 196 Level     sps
+ 13:          0          0          0          0          0          0          0          0     GICv3  82 Level     arm_dsu_0
+ 14:          0          0          0          0          0          0          0          0     GICv3  32 Edge      apps_wdog_bark
+ 16:        440        801          0          0          0          0          0          0     GICv3 613 Level     90b6400.qcom,cpu-cpu-llcc-bwmon
+ 17:        207        179          0          0          0          0          0          0     GICv3 113 Level     9091000.qcom,cpu-llcc-ddr-bwmon
+ 18:          1          0          0          0          0          0          0          0     GICv3 508 Level   
+ 19:          1          0          0          0          0          0          0          0     GICv3 187 Level   
+ 21:      38594       3839          0          0          0          0          0          0     GICv3 297 Level     1d84000.ufshc
+ 22:       5937          0      13598          0          0          0          0          0     GICv3 261 Level     ipcc_1
+ 25:        780        497          0      12009          0          0          0          0     GICv3  37 Level     apps_rsc
+ 26:          0         10          0          0          0          0          0          0     GICv3 161 Level     disp_rsc
+ 27:          0          0          0          0          0          0          0          0     GICv3  16 Level     KRYO L1-L2 ECC FAULTIRQ
+ 28:          0          0          0          0          0          0          0          0     GICv3  67 Level     KRYO L3-SCU ECC FAULTIRQ
+ 29:          0          0          0          0          0          0          0          0     GICv3 380 Level     qsee_irq
+ 30:          0          0          0          0          0          0          0          0     GICv3 381 Level     qsee_irq
+ 31:         82         42          0          0          0          0          0          0     GICv3 343 Edge      ipa
+ 32:         46          0        347          0          0          0          0          0     GICv3 464 Level     gsi
+
+--- cmdline ---
+cgroup_disable=pressure rcupdate.rcu_expedited=1 rcu_nocbs=0-7 kasan_multi_shot console=ttyMSM0,115200n8 earlycon=msm_geni_serial,0xa90000 androidboot.hardware=qcom androidboot.console=ttyMSM0 androidboot.memcg=1 lpm_levels.sleep_disabled=1 video=vfb:640x400,bpp=32,memsize=3072000 msm_rtb.filter=0x237 service_locator.enable=1 androidboot.usbcontroller=a600000.dwc3 swiotlb=2048 loop.max_part=7 cgroup.memory=nokmem,nosocket reboot=panic_warm kpti=off buildvariant=user lk_version=V1.0 androidboot.startupmode=dc_charger androidboot.mode=reboot printk.disable_uart=1 phx_rus_conf.main_on=1 phx_rus_conf.recovery_method=2 phx_rus_conf.kernel_time=240 phx_rus_conf.android_time=250 smooth_soc_switch=0 simcardnum.doublesim=1 androidboot.opt_sim_count=2 androidboot.prjname=19811 esim.status=0 androidboot.verifiedbootstate=orange androidboot.keymaster=1 androidboot.vbmeta.device=PARTUUID=7e2cab8e-4b9c-551b-870c-24ccc5d60f77 androidboot.vbmeta.avb_version=1.0 androidboot.vbmeta.device_state=unlocked androidboot.vbmeta.hash_alg=sha256 androidboot.vbmeta.size=15488 androidboot.vbmeta.digest=6fb93e499f1a0a89181fda98758697963f17697048122b3a3b6e9f0bab85b274 androidboot.vbmeta.invalidate_on_error=yes androidboot.veritymode=enforcing androidboot.bootdevice=1d84000.ufshc androidboot.fstab_suffix=default androidboot.boot_devices=soc/1d84000.ufshc androidboot.serialno=fa8620b3 androidboot.baseband=mdm msm_drm.dsi_display0=qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd: androidboot.panel_err=0 androidboot.slot_suffix=_a rootwait ro init=/init androidboot.dtbo_idx=2 androidboot.dtb_idx=3 androidboot.mode=normal androidboot.recoveryreason=000 androidboot.project_codename=instantnoodle androidboot.hw_version=15 androidboot.rf_version=11 androidboot.prj_version=19811 androidboot.platform_id=356 androidboot.platform_name=SM8250 androidboot.startupmode=dc_charger androidboot.enable_dm_verity=1 androidboot.at_location=factory androidboot.power_cut_test=0 androidboot.secboot=enabled androidboot.battery.absent=false androidboot.rpmb_enable=true androidboot.type=nonrelease androidboot.prmec=true androidboot.opcarrier=none androidboot.oplus.brand=OnePlus androidboot.cust=0
+
+
+=== END ===
+

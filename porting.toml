@@ -286,7 +286,8 @@ completion = [
   "Touches map to the display, simultaneous contacts keep stable IDs, release events arrive and buttons produce expected HID reports.",
 ]
 limits = [
-  "Measured: the touch controller is a Synaptics synaptics-s3908 behind a QUPv3 GENI SPI engine with oplus interrupt and reset pinctrl groups; the HID report format and firmware image are still unread.",
+  "Measured from the live device tree: the touch controller is a Synaptics S3908 (compatible synaptics-s3908) at I2C address 0x4B on i2c@a94000 (register block 0xa94000+0x4000), with irq-gpio TLMM 39 and reset-gpio TLMM 38, panel-coords 1080x2400, 16 TX and 36 RX lines, and up to 10 contacts.",
+  "The HID report format and the touch firmware image are still unread.",
 ]
 next_action = [
   "Identify the touch controller over ADB, then add a board kit.",
