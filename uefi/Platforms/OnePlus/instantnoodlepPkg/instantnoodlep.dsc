@@ -147,6 +147,7 @@
   # Display, memory and SMBIOS from the shared Silicium package.
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
   SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
   SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf

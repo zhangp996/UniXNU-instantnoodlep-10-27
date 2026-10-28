@@ -36,7 +36,22 @@
             label = "cont_splash_region";
         };
     };
+
+    //
+    // Embedded panic log. XNU's DT patch looks up the top-level "pram" node for its
+    // reg and /chosen for embedded-panic-log-size, then writes struct
+    // embedded_panic_header plus the panic text there. The address sits inside the
+    // firmware's Free Mid span, which MemoryMapLib reserves so nothing else claims it.
+    //
+    pram@9f400000 {
+        reg = <0 0x9f400000 0 0x80000>;
+    };
+
+    chosen {
+        embedded-panic-log-size = <0x80000>;
+    };
 };
+
 
 // Kryo 585: four Cortex-A55 cores and four Cortex-A77 cores in two clusters. The
 // scheduler patch runs XNU's Edge scheduler with one E and one P cluster.

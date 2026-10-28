@@ -47,7 +47,14 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
   // below is the gap between measured carveouts inside the first DRAM bank, so none
   // of them overlap a region listed above or below.
   {"Free Low",             0x98700000, 0x03900000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
-  {"Free Mid",             0x9F040000, 0x00DC0000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
+  //
+  // The embedded panic log lives at 0x9F400000 (see dts/instantnoodlep.dts, node
+  // pram@9f400000). It is carved out of the Free Mid span so the firmware never
+  // allocates over the buffer XNU writes its panic into.
+  //
+  {"Panic Log",            0x9F400000, 0x00080000, AddMem, SYS_MEM, SYS_MEM_CAP,   Reserv, WRITE_BACK},
+  {"Free Mid Low",         0x9F040000, 0x003C0000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
+  {"Free Mid High",        0x9F480000, 0x00980000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
   // The ramoops node at 0xB0000000 (0x400000) sits inside the tail of the first bank,
   // so the span is split around it instead of straddling it.
   {"Free High",            0xA0000000, 0x010000000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},

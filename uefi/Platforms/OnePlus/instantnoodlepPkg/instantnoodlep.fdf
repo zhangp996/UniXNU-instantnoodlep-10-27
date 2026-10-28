@@ -81,6 +81,7 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
 
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  INF instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
   #
   # RamManagerDxe is left out: it links QcomPkg/Library/RamManagerLib, whose
   # constructor requires the RAM Partition protocol that the vendor RamPartitionDxe
