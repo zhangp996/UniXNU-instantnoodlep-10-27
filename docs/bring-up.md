@@ -69,3 +69,19 @@ repeated fragments respectively), so the geometry is settled.
   `MemoryMapLib.c`, using the address ABL actually hands over.
 - Keep the `kboot_uboot_logmem` window out of the regions an image may be loaded into
   so the load at 0x9FE00000 does not trip the assert.
+## DXE bring-up findings
+
+The firmware now starts DxeCore, dispatches the driver volume and reaches the BDS boot
+menu. Each line below was read off the panel and fixed in this repository or in the
+platform package:
+
+| Symptom on the panel | Cause | Fix |
+| --- | --- | --- |
+| `ASSERT [DxeCore] Gcd.c(2518) : Length >= MinimalMemorySizeNeeded` | the map declared only 8 MiB of conventional memory | added the measured free spans (`Free Low/Mid/High/Tail`) and stopped `MemoryInitPeiLib` from building an allocation HOB for `EfiConventionalMemory`, which DxeCore subtracts before sizing its pools |
+| `"Free High" and "Ram Oops" Overlap!` | the span straddled `ramoops@0xB0000000` | split the tail span around the ramoops node |
+| every architectural protocol reported missing | the PCD driver waited for `gEfiPcdProtocolGuid` that it publishes itself (`DxePcdLib` carries that Depex) | added an `APRIORI DXE` block to the firmware volume, as the reference packages do |
+| `ASSERT [BdsDxe] BmDriverHealth.c(553)` | `BmRepairAllControllers` needs FormBrowser2, which this package does not publish | set `PcdDriverHealthConfigureForm` to the zero GUID, the switch the source documents |
+| `ASSERT [RamManagerDxe]` | the module links `QcomPkg/Library/RamManagerLib`, whose constructor needs the RAM Partition protocol from the vendor `RamPartitionDxe` | dropped the module; it is not part of the required integration |
+
+Still logged but not fatal: `Failed to Display Boot Logo` (no boot-logo producer) and
+`SetupKeypad: Failed to Locate STI Device Path` (no keyboard driver in the volume).

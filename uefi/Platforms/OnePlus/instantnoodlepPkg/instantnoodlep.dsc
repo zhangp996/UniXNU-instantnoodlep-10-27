@@ -67,6 +67,20 @@
   #
   gQcomPkgTokenSpaceGuid.PcdPlatformType|"LA"
 
+  #
+  # Bring-up: keep the console to errors so the missing architectural protocols and
+  # the assert that follows are the only lines on screen. Raise this once the DXE
+  # dispatch order is healthy.
+  #
+  gEfiMdePkgTokenSpaceGuid.PcdDebugPrintErrorLevel|0x80000000
+
+  #
+  # BdsDxe repairs driver health through FormBrowser2, which no module in this
+  # package publishes; BmRepairAllControllers asserts when the protocol is missing.
+  # A zero GUID is the documented way to disable the health check.
+  #
+  gEfiMdeModulePkgTokenSpaceGuid.PcdDriverHealthConfigureForm|{0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0}
+
 ##
 # GenFv rebases the images it packs and rejects any PE whose section and file
 # alignment differ. The link needs both values, and the module-type section takes

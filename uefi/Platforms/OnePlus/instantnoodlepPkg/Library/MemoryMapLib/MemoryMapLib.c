@@ -36,7 +36,22 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
 
   // UEFI regions, inside the free window measured on this board.
   {"UEFI FD",              0x9E400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP,   BsData, WRITE_BACK},
-  {"DXE Heap",             0x9E800000, 0x00800000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK_XN},
+  // Loaded DXE images run from these regions, so they must stay executable: an XN
+  // mapping makes the first jump into a driver fault and the dispatcher then reports
+  // every architectural protocol as missing.
+  {"DXE Heap",             0x9E800000, 0x00800000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
+
+  // Free memory. DxeCore sizes its initial pools from the conventional regions the
+  // memory map declares, and 8 MiB of heap is below the minimum it needs, which trips
+  // "ASSERT [DxeCore] (Code.c:2518): Length >= MinimalMemorySizeNeeded". Each span
+  // below is the gap between measured carveouts inside the first DRAM bank, so none
+  // of them overlap a region listed above or below.
+  {"Free Low",             0x98700000, 0x03900000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
+  {"Free Mid",             0x9F040000, 0x00DC0000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK},
+  // The ramoops node at 0xB0000000 (0x400000) sits inside the tail of the first bank,
+  // so the span is split around it instead of straddling it.
+  {"Free High",            0xA0000000, 0x010000000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},
+  {"Free Tail",            0xB0400000, 0x00B700000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},
   {"UEFI Stack",           0x9F000000, 0x00040000, AddMem, SYS_MEM, SYS_MEM_CAP,   BsData, WRITE_BACK_XN},
 
   // Reserved by the bootloader above the UEFI window.

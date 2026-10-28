@@ -70,7 +70,7 @@ packages = [
 [firmware.defines]
 ENABLE_SECUREBOOT = "1"
 DEVICE_MODEL = "instantnoodlep"
-MEMORY_PROTECTION = "TRUE"
+MEMORY_PROTECTION = "FALSE"
 SHIP_MODE = "FALSE"
 BUILDID_STRING = "instantnoodlep-research"
 

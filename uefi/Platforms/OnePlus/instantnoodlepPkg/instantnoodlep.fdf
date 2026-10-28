@@ -22,6 +22,7 @@ FV = FVMAIN_COMPACT
 FvNameGuid         = 6C1E2A44-9D3B-4E7C-8F5A-1B2C3D4E5F60
 BlockSize          = 0x1000
 NumBlocks          = 0
+
 FvAlignment        = 8
 ERASE_POLARITY     = 1
 MEMORY_MAPPED      = TRUE
@@ -39,6 +40,36 @@ READ_STATUS        = TRUE
 READ_LOCK_CAP      = TRUE
 READ_LOCK_STATUS   = TRUE
 
+  #
+  # APRIORI makes DxeCore dispatch these files before it evaluates any dependency
+  # expression. Without it the PCD driver never runs: the platform maps PcdLib to
+  # DxePcdLib, whose Depex asks for gEfiPcdProtocolAddr, so the PCD driver waits for
+  # the protocol it publishes and every other driver waits behind it.
+  #
+  APRIORI DXE {
+    INF MdeModulePkg/Core/Dxe/DxeMain.inf
+    INF MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
+    INF MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
+    INF MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
+    INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
+    INF ArmPkg/Drivers/ArmGicDxe/ArmGicDxe.inf
+    INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
+    INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+    INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
+    INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+    INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+    INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+    INF EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
+    INF EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
+    INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+    INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
+    #
+    # BdsDxe is deliberately absent: it links UefiHiiServicesLib, whose constructor
+    # asserts when the HII protocols are missing, and HiiDatabaseDxe must dispatch
+    # first. BDS is scheduled by its own dependency expression.
+    #
+  }
+
   INF UniXNUPkg/Application/UniXNU/UniXNU.inf
   INF UniXNUPkg/Driver/UniXNUDxe/UniXNUDxe.inf
   INF UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.inf
@@ -50,7 +81,12 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
 
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
-  INF SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
+  #
+  # RamManagerDxe is left out: it links QcomPkg/Library/RamManagerLib, whose
+  # constructor requires the RAM Partition protocol that the vendor RamPartitionDxe
+  # publishes. This package selects no vendor driver, so the module would assert on
+  # its own constructor instead of running.
+  #
   INF SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
   INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
   INF MdeModulePkg/Universal/Acpi/AcpiTableDxe/AcpiTableDxe.inf
