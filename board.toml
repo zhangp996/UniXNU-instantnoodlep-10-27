@@ -97,7 +97,10 @@ volume = "INSTNPDLP"
 # The firmware volume has no keyboard driver yet, so nobody can pick an entry.
 # timeout = 0 boots the generated default entry ("xnu") immediately instead of
 # waiting; UniXNU falls back to its own fallback_timeout when no input device exists.
-timeout = 0
+# Menu timeout in seconds. 0 boots the default entry at once, which is why the menu
+# never stayed on the panel; this board has no key input driver yet, so a few seconds
+# are also the only way to see the menu at all.
+timeout = 10
 
 # The early entry probe is deliberately off: it proved the entry and the MMU enable,
 # but its inline assembly uses an identity-mapped address and dies once pmap switches,

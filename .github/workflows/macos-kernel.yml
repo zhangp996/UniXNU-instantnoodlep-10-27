@@ -241,9 +241,12 @@ jobs:
           echo "== bootstrap: startup/mockfs/KonaUfs =="
           grep -n -E "startup\.o|mockfs|KonaUfs|sheng-ufs|kona-ufs|Undefined symbols|MOCKFS" \
             out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
-          echo "== component build log (tail) =="
+          echo "== component build logs: errors and warnings =="
           for f in out/*/*/*/logs/component-*.log; do
-            echo "--- $f"; tail -n 60 "$f";
+            echo "--- $f ($(wc -l < "$f") lines)"
+            grep -n -B2 -A8 -E "error:|fatal error" "$f" | head -n 80
+            echo "--- first warnings"
+            grep -n -m5 -A3 -E "warning:" "$f"
           done
           echo "== archive outputs =="
           ls -l out/*/*/*/tree/build/mockfs-fixture/libmockfs_fixture.a \
