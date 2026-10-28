@@ -53,9 +53,6 @@ archives = [
   "build-software-aes-bindings.py",
   "build-mockfs-fixture.py",
   "build-libpthread-kernel.py",
-  # Kernel-side probe: publishes the live IOBlockStorageDevice metadata so the firmware
-  # can read it on the next boot (see drivers/StorageProbe).
-  "component:StorageProbe",
 ]
 
 [firmware]
