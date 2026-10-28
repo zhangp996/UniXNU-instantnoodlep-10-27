@@ -235,22 +235,22 @@ jobs:
         run: |
           set +e
           echo "== compile records =="
-          ls -l out/*/*/tree/build/xnu/ios-obj/*/osfmk/DEVELOPMENT/startup.o.json
+          ls -l out/*/*/*/tree/build/xnu/ios-obj/*/osfmk/DEVELOPMENT/startup.o.json
           echo "== bootstrap log size =="
-          wc -l out/*/*/logs/kernel-bootstrap.log out/*/*/logs/kernel.log 2>/dev/null
+          wc -l out/*/*/*/logs/kernel-bootstrap.log out/*/*/*/logs/kernel.log 2>/dev/null
           echo "== bootstrap: startup/mockfs/KonaUfs =="
           grep -n -E "startup\.o|mockfs|KonaUfs|sheng-ufs|kona-ufs|Undefined symbols|MOCKFS" \
-            out/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
+            out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
           echo "== component build log (tail) =="
-          for f in out/*/*/logs/component-*.log; do
+          for f in out/*/*/*/logs/component-*.log; do
             echo "--- $f"; tail -n 60 "$f";
           done
           echo "== archive outputs =="
-          ls -l out/*/*/tree/build/mockfs-fixture/libmockfs_fixture.a \
-                out/*/*/tree/build/sheng-ufs/libShengUfs.a \
-                out/*/*/tree/build/kona-ufs/*.a 2>&1
+          ls -l out/*/*/*/tree/build/mockfs-fixture/libmockfs_fixture.a \
+                out/*/*/*/tree/build/sheng-ufs/libShengUfs.a \
+                out/*/*/*/tree/build/kona-ufs/*.a 2>&1
           echo "== resolved kernel config =="
-          grep -n -E "MOCKFS|NATIVE_UFS|VIRTIO_BLOCK|VERIFIED_ROOT" out/*/*/.config 2>/dev/null | head -n 20
+          grep -n -E "MOCKFS|NATIVE_UFS|VIRTIO_BLOCK|VERIFIED_ROOT" out/*/*/*/.config 2>/dev/null | head -n 20
 
       - name: Build the payload
         run: |
