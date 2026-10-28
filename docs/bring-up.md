@@ -206,3 +206,35 @@ region and then request PSCI SYSTEM_RESET instead of parking on the panic screen
 
 Until that is added, the panic screen remains the working evidence path: it shows the
 message, the frames and the page counters on the same boot.
+## The kernel reaches the root mount
+
+The AMFI refusal is gone and the kernel now walks into IOKit and BSD. The panic that
+replaced it names the next milestone exactly:
+
+```
+Failed to mount root device @IOMediaBSDClient.cpp:984
+frames fffffff0079b4a0 fffffff00792408 fffffff0076b50c ...
+```
+
+That is Stage 6 of the bring-up guide ("Storage and root"): no block driver publishes
+`OS` and `SystemOS` yet, so there is no device for the kernel to mount.
+
+### Skipping the AMFI refusal
+
+`AMFI: No PMGR?` came from the prelinked kext's report function, which always ends in
+a panic. It has exactly one caller:
+
+```
+0x4AC93E4  report function (sub sp, ... ; ... ; bl panic)   noreturn
+0x4AAED04  bl 0x4AC93E4                                     the only call
+0x4AAEC4C  the caller's own register epilogue (ldp x29, x30, [sp, #64] ... ret)
+```
+
+`scripts/patch-amfi-nopmgr.py` replaces the call with `b 0x4AAEC4C` (word
+`0x17FFFFD2`), so AMFI unwinds normally instead of panicking. Run it on the kernel
+before `unixnu build payload`; it checks the original instruction and refuses to patch
+a kernel that differs.
+
+The boot argument `amfi_get_out_of_my_way=1` and removing AMFI from the prelink roots
+do not help: the check runs before policy is consulted and the kext is built into the
+kernelcache.

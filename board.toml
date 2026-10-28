@@ -74,6 +74,15 @@ MEMORY_PROTECTION = "FALSE"
 SHIP_MODE = "FALSE"
 BUILDID_STRING = "instantnoodlep-research"
 
+
+# Bring-up: AMFI panics with "AMFI: No PMGR?" because this board has no PMGR
+# provider yet. docs/devices/erhai.md records the same approach for its bring-up
+# profile: AMFI removed from the prelink. The root list is the OS profile's, minus
+# com.apple.driver.AppleMobileFileIntegrity. Restore it once a PMGR provider exists.
+[kernel.prelink]
+roots = ["com.apple.AppleFSCompression.AppleFSCompressionTypeZlib", "com.apple.driver.AppleARMPlatform", "com.apple.driver.AppleARMWatchdogTimer", "com.apple.driver.AppleAudioClockLibs", "com.apple.driver.AppleEffaceableStorage", "com.apple.driver.AppleIISController", "com.apple.driver.AppleM2ScalerCSCDriver", "com.apple.driver.ApplePMGR", "com.apple.driver.IODARTFamily", "com.apple.filesystems.apfs", "com.apple.iokit.CoreAnalyticsFamily", "com.apple.iokit.IOAVFamily", "com.apple.iokit.IOAudio2Family", "com.apple.iokit.IOCECFamily", "com.apple.iokit.IOCryptoAcceleratorFamily", "com.apple.iokit.IOGPUFamily", "com.apple.iokit.IOHDCPFamily", "com.apple.iokit.IOMobileGraphicsFamily", "com.apple.iokit.IOReportFamily", "com.apple.iokit.IOSlowAdaptiveClockingFamily", "com.apple.iokit.IOStorageFamily", "com.apple.iokit.IOSurface", "com.apple.kec.Libm", "com.apple.kec.corecrypto", "com.apple.kext.AppleMatch", "com.apple.kext.CoreTrust", "com.apple.security.AppleImage4", "com.apple.security.sandbox", "com.apple.iokit.IOHIDFamily", "com.apple.iokit.IOHIDEventDriver"]
+early_security_init = ""
+
 [payload]
 volume = "INSTNPDLP"
 
@@ -115,6 +124,9 @@ kernel_args = [
   # dereferencing the board header's hardcoded peripheral address.
   "-no_slto_panic",
   "ml-timeout-lock-panic-scale=40",
+  # docs/xnu/boot-arguments.md: diagnostic boot without AMFI enforcement, which is
+  # what panics with "AMFI: No PMGR?" until this board has a PMGR provider.
+  "amfi_get_out_of_my_way=1",
 ]
 
 # The trust cache the payload embeds is the static one from the 17.7.11 (21H461)
