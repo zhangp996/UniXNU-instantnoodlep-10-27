@@ -1,0 +1,129 @@
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -598,3 +598,45 @@
+ bsd/skywalk/packet/pbufpool.c			optional skywalk
+ bsd/skywalk/packet/pbufpool_kern.c		optional skywalk
+ bsd/dev/cpu_copy_in_cksum_gen.c			optional skywalk
++
++# Apple OSS hfs-627.100.6, built in only on KONA.
++bsd/kona_hfs/core/BTree.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeAllocate.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeMiscOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeNodeOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeNodeReserve.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeScanner.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeTreeOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeWrapper.c		optional kona_hfs
++bsd/kona_hfs/core/CatalogUtilities.c		optional kona_hfs
++bsd/kona_hfs/core/FileExtentMapping.c		optional kona_hfs
++bsd/kona_hfs/core/FileIDsServices.c		optional kona_hfs
++bsd/kona_hfs/core/MacOSStubs.c		optional kona_hfs
++bsd/kona_hfs/core/UnicodeWrappers.c		optional kona_hfs
++bsd/kona_hfs/core/VolumeAllocation.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_attrlist.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_btreeio.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_catalog.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_chash.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_cnode.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_cprotect.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_endian.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_extents.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_fsinfo.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_hotfiles.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_journal.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_link.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_lookup.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_notification.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_quota.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_readwrite.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_resize.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_search.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vfsops.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vfsutils.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vnops.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_xattr.c		optional kona_hfs
++bsd/kona_hfs/core/rangelist.c		optional kona_hfs
++bsd/kona_hfs/hfs_encodings/hfs_encodinghint.c		optional kona_hfs
++bsd/kona_hfs/hfs_encodings/hfs_encodings.c		optional kona_hfs
++bsd/kona_hfs/kona_hfs_iokit.c		optional kona_hfs
+--- a/bsd/conf/Makefile.template
++++ b/bsd/conf/Makefile.template
+@@ -57,6 +57,52 @@
+ endif
+ 
+ 
++ifeq ($(CURRENT_MACHINE_CONFIG),KONA)
++# Compile the vendored kext with its KPI header view, after kernel -D options.
++KONA_HFS_ROOT = $(SRCROOT)/bsd/kona_hfs
++KONA_HFS_OBJS = BTree.o BTreeAllocate.o BTreeMiscOps.o BTreeNodeOps.o BTreeNodeReserve.o BTreeScanner.o BTreeTreeOps.o BTreeWrapper.o CatalogUtilities.o FileExtentMapping.o FileIDsServices.o MacOSStubs.o UnicodeWrappers.o VolumeAllocation.o hfs_attrlist.o hfs_btreeio.o hfs_catalog.o hfs_chash.o hfs_cnode.o hfs_cprotect.o hfs_endian.o hfs_extents.o hfs_fsinfo.o hfs_hotfiles.o hfs_journal.o hfs_link.o hfs_lookup.o hfs_notification.o hfs_quota.o hfs_readwrite.o hfs_resize.o hfs_search.o hfs_vfsops.o hfs_vfsutils.o hfs_vnops.o hfs_xattr.o rangelist.o hfs_encodinghint.o hfs_encodings.o kona_hfs_iokit.o
++$(foreach o,$(KONA_HFS_OBJS),$(eval $(o)_CFLAGS_ADD += -include $(KONA_HFS_ROOT)/kona_hfs_compat.h -I$(KONA_HFS_ROOT) -I$(KONA_HFS_ROOT)/core))
++# HFSEncodings was a separate kext with its own allocation counter.
++hfs_encodings.o_CFLAGS_ADD += -Dhfs_allocated=hfs_encodings_allocated
++hfs_encodinghint.o_CFLAGS_ADD += -Dhfs_allocated=hfs_encodings_allocated
++hfs_catalog.o_CWARNFLAGS_ADD += -Wno-implicit-fallthrough
++hfs_encodings.o_CWARNFLAGS_ADD += -Wno-unreachable-code-break
++# Legacy kext diagnostics, scoped to the exact vendor objects that emit them.
++BTree.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion
++BTreeAllocate.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++BTreeMiscOps.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-unused-but-set-variable
++BTreeNodeOps.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion
++BTreeNodeReserve.o_CWARNFLAGS_ADD += -Wno-shorten-64-to-32
++BTreeScanner.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion
++BTreeTreeOps.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-unused-but-set-variable
++BTreeWrapper.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion
++CatalogUtilities.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion -Wno-misleading-indentation -Wno-shorten-64-to-32
++FileExtentMapping.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++FileIDsServices.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion
++hfs_attrlist.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-deprecated-non-prototype -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_btreeio.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-misleading-indentation -Wno-shorten-64-to-32
++hfs_catalog.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable -Wno-unused-parameter
++hfs_cnode.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_encodings.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++hfs_endian.o_CWARNFLAGS_ADD += -Wno-cast-align
++hfs_extents.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion
++hfs_fsinfo.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion
++hfs_hotfiles.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_journal.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-cast-qual -Wno-global-constructors -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_link.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_lookup.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion
++hfs_readwrite.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_resize.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++hfs_vfsops.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-parameter -Wno-unused-variable
++hfs_vfsutils.o_CWARNFLAGS_ADD += -Wno-global-constructors -Wno-implicit-fallthrough -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_vnops.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-global-constructors -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++hfs_xattr.o_CWARNFLAGS_ADD += -Wno-cast-align -Wno-cast-qual -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++MacOSStubs.o_CWARNFLAGS_ADD += -Wno-shorten-64-to-32
++UnicodeWrappers.o_CWARNFLAGS_ADD += -Wno-implicit-int-conversion -Wno-shorten-64-to-32 -Wno-unused-but-set-variable
++VolumeAllocation.o_CWARNFLAGS_ADD += -Wno-address-of-packed-member -Wno-global-constructors -Wno-implicit-int-conversion -Wno-shorten-64-to-32
++endif
++
++
+ #
+ # Directories for mig generated files
+ #
+--- a/config/MASTER
++++ b/config/MASTER
+@@ -113,6 +113,7 @@
+ #	4.4 filesystems
+ #
+ options		MOCKFS		# Boot from an executable	# <mockfs>
++options		KONA_HFS	# Built-in Apple OSS HFS (KONA)	# <kona_hfs>
+ options		FIFO		# fifo support			# <fifo>
+ options		FDESC		# fdesc_fs support		# <fdesc>
+ options		DEVFS		# devfs support			# <devfs>
+--- a/config/MASTER.arm64.kona
++++ b/config/MASTER.arm64.kona
+@@ -30,7 +30,7 @@
+ #  BSD_RELEASE =    [ BSD_BASE ]
+ #  BSD_DEV =        [ BSD_BASE config_vnguard ]
+ #  BSD_DEBUG =      [ BSD_BASE config_vnguard ]
+-#  FILESYS_BASE =   [ devfs fdesc fifo fs_compression config_protect config_mnt_rootsnap config_rosv_startup config_mount_vm config_mount_prebootrecovery config_basesystemroot config_fse quota namedstreams config_imgsrc_access config_triggers config_ext_resolver config_searchfs config_volfs config_appledouble nullfs config_mnt_suid config_firmlinks config_dataless_files config_union_mounts config_file_leases ]
++#  FILESYS_BASE =   [ devfs kona_hfs fdesc fifo fs_compression config_protect config_mnt_rootsnap config_rosv_startup config_mount_vm config_mount_prebootrecovery config_basesystemroot config_fse quota namedstreams config_imgsrc_access config_triggers config_ext_resolver config_searchfs config_volfs config_appledouble nullfs config_mnt_suid config_firmlinks config_dataless_files config_union_mounts config_file_leases ]
+ #  FILESYS_RELEASE= [ FILESYS_BASE ]
+ #  FILESYS_DEV =    [ FILESYS_BASE config_iocount_trace ]
+ #  FILESYS_DEBUG =  [ FILESYS_BASE config_iocount_trace ]
+@@ -112,3 +112,4 @@
+ 
+ options   CONFIG_RESLIDE_SHARED_CACHE		# <reslide_shared_cache>
+ options   CONFIG_KERNEL_TBI		# <kernel_tbi>
++options		KONA_HFS	# Built-in Apple OSS HFS (KONA)	# <kona_hfs>
