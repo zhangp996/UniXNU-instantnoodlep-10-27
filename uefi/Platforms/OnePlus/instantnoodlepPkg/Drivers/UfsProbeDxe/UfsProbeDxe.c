@@ -32,12 +32,29 @@
 #define UFS_UTRLBAU     0x0054
 #define UFS_UTRLDBR     0x0058
 #define UFS_UTRLRSR     0x005C
+#define UFS_UICCMD      0x0090
+#define UFS_UICCMDARG1  0x0094
+#define UFS_UICCMDARG2  0x0098
+
+#define GCC_BASE        0x00100000ULL
+#define GCC_UFS_BCR     0x00077000
+#define GCC_UFS_AXI     0x00077010
+#define GCC_UFS_AHB     0x00077018
+#define GCC_UFS_TX0     0x0007701C
+#define GCC_UFS_RX0     0x00077020
+#define GCC_UFS_UNIPRO  0x0007705C
+#define GCC_UFS_ICE     0x00077064
+#define GCC_UFS_AUX     0x0007709C
+#define GCC_UFS_RX1     0x000770B8
+#define GCC_UFS_AGGR    0x000770CC
+
+#define UIC_LINK_STARTUP 0x16
 
 #define URD_OFFSET      0x0000
 #define UCD_OFFSET      0x1000
 #define RSP_OFFSET      0x0200
 #define PRDT_OFFSET     0x1000
-#define DATA_OFFSET     0x3000
+#define DATA_OFFSET     0x2000
 #define BUFFER_PAGES    8
 
 static UINT8  *mBuffer;
@@ -134,22 +151,6 @@ UfsProbeEntry (
   }
   ZeroMem (mBuffer, BUFFER_PAGES * 4096);
   mPhys   = (UINT64)(UINTN)mBuffer;
-
-  /*
-   * Cold host reset, in the order docs/porting/ufs.md describes: disable the
-   * controller, clear its interrupt state, enable it again, and only then install the
-   * request list. Adoption alone left UTRLRSR reading 0, so the controller never owned
-   * a list.
-   */
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_HCE, 0);
-  gBS->Stall (1000);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 0xFFFFFFFF);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IE, 0);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_HCE, 1);
-  gBS->Stall (1000);
-  Print (L"UFSPROBE: after reset HCE 0x%x HCS 0x%x\n",
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCE),
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS));
 
   mUtRdBase = mPhys;
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA, (UINT32)mPhys);

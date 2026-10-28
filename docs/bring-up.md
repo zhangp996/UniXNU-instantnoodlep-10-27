@@ -334,3 +334,36 @@ iface `0xa6`, unipro `0xb3`, ice `0xaa` and bus_aggr `0x06`, `core_reset` `0x21`
 
 What is missing is the register-level sequence: the GCC branch enables, the reset
 assert/release timing and the PHY power-up table. Those are not in this repository yet.
+## UFS: what the firmware experiments settled
+
+Six builds bracket the problem. The controller state and the register values below are
+measured; the transport beyond the command phase is not.
+
+| Build | Change | `HCS` | `UTRLRSR` | Data |
+| --- | --- | --- | --- | --- |
+| 1 | own buffer, PRDT inside the data area | `0x10F` | `0` | NOP answered `0x20`, capacity returned bytes |
+| 2 | PRDT separated, data at `0x3000` | `0x10F` | `0` | none |
+| 3 | adopt the firmware list (`0x9A1F3D00`) | `0x10F` | `0` | none |
+| 4 | buffer forced below 4 GiB | `0x10F` | `0` | none |
+| 5 | `HCE` 0 then 1 | `0x8` | `0` | none, link dropped |
+| 6 | clocks, `GCC_UFS_PHY_BCR` pulse, `DME_LINKSTARTUP` | `0x8` | `0` | none, link did not return |
+
+Settled facts:
+
+- The bootloader leaves the controller live: `HCS 0x10F`, `HCE 1`, PHY PLL on.
+- `UTRLRSR` reads back `0` in every configuration, so the controller never takes
+  ownership of a request list even though commands report `ocs 0`.
+- Writing `GCC_UFS_PHY_BCR` (0x77000) drops `HCS` to `0x8`. The PHY does not come back
+  from `DME_LINKSTARTUP` alone, so the QMP PHY power-up table is required before any
+  reset of that block is safe.
+- Clock gates do come up: after enabling them, GCC reads `aggr 0x221`, `axi 0x221`,
+  `ahb 0x201`.
+
+Missing, and needed before the kernel can mount root:
+
+1. The SM8250 QMP UFS PHY initialization table (`phy-qcom-qmp-ufs.c`) for `0x1d87000`.
+2. A request-list submission that the controller actually accepts (`UTRLRSR` = 1).
+3. Cache-coherent buffers with the PRDT outside the data area, once (2) works.
+
+The register map gathered so far is in `porting.toml`; the probe lives in
+`uefi/Platforms/OnePlus/instantnoodlepPkg/Drivers/UfsProbeDxe`.

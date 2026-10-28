@@ -75,6 +75,11 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
   // Component register windows, from the live device tree.
   {"GIC",                  0x17A00000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"UFS",                  0x01D84000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  //
+  // GCC, for the UFS clock branches and the UFS PHY block reset. The UFS registers the
+  // clock driver touches are at 0x1770xx, inside this window.
+  //
+  {"GCC",                  0x00100000, 0x00200000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"QUPV3",                0x009C0000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"GPU SMMU",             0x03DA0000, 0x00010000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"SECURITY CONTROL",     0x00780000, 0x00007000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
