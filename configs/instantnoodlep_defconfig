@@ -10,8 +10,10 @@ CONFIG_XNU_NATIVE_PAN=y
 # docs/guide/debugging.md: read the embedded panic region from the device tree instead
 # of the board header constant the arch profile otherwise compiles in.
 CONFIG_XNU_DT_PANIC_REGION=y
-# Storage is not selected yet: ShengUfs is the official implementation but its
-# controller constants are SM8550 and need review for kona (docs/porting/ufs.md).
-# CONFIG_XNU_NATIVE_UFS is not set
+# Storage: components/kona-ufs holds the ShengUfs fork with this board's measured
+# constants (host 0x1d84000, PHY 0x1d87000, the kona GCC branch table, no apps SMMU).
+# docs/porting/ufs.md is the procedure; the firmware probe already proved register access,
+# the run/stop register at 0x60 and the UTRD/PRDT layout.
+CONFIG_XNU_NATIVE_UFS=y
 # No catalog component has Adreno 650 scope yet.
 # CONFIG_XNU_NATIVE_ADRENO is not set
