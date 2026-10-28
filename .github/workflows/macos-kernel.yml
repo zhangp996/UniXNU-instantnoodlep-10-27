@@ -170,6 +170,26 @@ jobs:
           print(f"dropped {dropped} hunk(s) from {path}")
           PY
 
+      - name: Teach the driver build about the board's component id
+        # scripts/build-arm-driver.py selects the IOKit storage include path by component
+        # identifier. KonaUfs is this board's fork of ShengUfs, so it needs the same
+        # storage ABI include as NativeUfs; without it NativeUfs.cpp cannot find
+        # <IOKit/storage/IOBlockStorageDevice.h>.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/build-arm-driver.py')
+          text = path.read_text()
+          old = "if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):"
+          new = "if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs', 'KonaUfs'):"
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('build-arm-driver.py: storage include branch not found')
+              path.write_text(text.replace(old, new, 1))
+              print('added KonaUfs to the storage include branch')
+          PY
+
       - name: Fetch sources
         run: |
           set -o pipefail
