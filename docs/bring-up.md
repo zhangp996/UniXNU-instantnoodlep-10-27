@@ -419,3 +419,41 @@ Two runtime prerequisites are recorded but not yet met, and neither blocks compi
 - `build-xnu-4k-baseline.sh` requires UFS, owner-root audit, Virtio block and source
   corecrypto together when `XNU_BOOT_PROGRESS=1`, so the boot progress layer stays off
   until those are selected.
+## Kernel link: the storage classes are a kext, not kernel code
+
+The CI now builds the board driver (\`libKonaUfs.a\`, 458 KiB) and the mockfs fixture, and
+the kernel link names exactly what is still missing:
+
+\`\`\`
+"vtable for IOBlockStorageDevice", referenced from: NativeUfsBlock::start(IOService*)
+"_boot_progress_poll"
+"_verified_root_key", "_verified_root_policies", "_verified_root_policy_count"
+"_vr_open", "_vr_verify_block", "_vr_xnu_crypto"
+\`\`\`
+
+Each has a known supplier, and none of them is selected on this board:
+
+| Symbol | Supplier | Gate |
+| --- | --- | --- |
+| \`IOBlockStorageDevice\` vtable | IOStorageFamily, a kext of the original kernelcache | none: an archive-form driver cannot link it |
+| \`_boot_progress_poll\` | \`build/boot-progress/libBootProgress.a\` | \`XNU_BOOT_PROGRESS=1\` |
+| \`_verified_root_*\`, \`_vr_*\` | \`build/verified-root-xnu/libVerifiedRootProbe.a\` | \`OWNER_ROOT_PROBE=1\` |
+
+UniXNU's own device records already describe this failure mode: \`docs/.vitepress/device-records/sirius.toml\`
+line 191 says "IOStorageFamily is a kext of the original kernelcache, so the archive form of
+the driver left IOBlockStorageDevice undefined at the kernel link", and that port solved it by
+building the block driver as a kext that binds the kext's dispatch table (eleven imports)
+instead of subclassing it at link time.
+
+So the remaining work is a decision, not a bug:
+
+1. **Kext form** — build \`KonaUfs\` as a kext that IOStorageFamily loads, following the sirius
+   derivation of the dispatch table plus the prelink slide. No kernel link change.
+2. **Ship the storage ABI into the kernel** — compile the public IOStorageFamily sources from
+   \`refer/IOStorageFamily\` into an archive and add it to the kernel link, so the archive-form
+   driver resolves. Larger, and it duplicates a kext inside the kernel.
+3. **Bring-up only** — keep the transport in the firmware (proved by \`UfsProbeDxe\`) and
+   revisit root once one of the above is chosen.
+
+Until then \`CONFIG_XNU_NATIVE_UFS\` pulls in a driver whose storage base class the kernel
+cannot resolve, which is why the kernel lane stops at this link.
