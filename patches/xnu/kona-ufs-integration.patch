@@ -1,12 +1,54 @@
 --- a/bsd/conf/files
 +++ b/bsd/conf/files
-@@ -609,3 +609,6 @@
+@@ -609,3 +609,48 @@
  bsd/skywalk/packet/pbufpool.c			optional skywalk
  bsd/skywalk/packet/pbufpool_kern.c		optional skywalk
  bsd/dev/cpu_copy_in_cksum_gen.c			optional skywalk
 +
 +# KONA: BSD-level UFS root disk, parsed from the device GPT (no IOMedia, no storage kext).
 +bsd/dev/kona_ufs.c			optional kona_ufs
++
++# KONA: Apple OSS hfs-627 built into the kernel (no HFS kext, no APFS).
++bsd/kona_hfs/core/BTree.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeAllocate.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeMiscOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeNodeOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeNodeReserve.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeScanner.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeTreeOps.c		optional kona_hfs
++bsd/kona_hfs/core/BTreeWrapper.c		optional kona_hfs
++bsd/kona_hfs/core/CatalogUtilities.c		optional kona_hfs
++bsd/kona_hfs/core/FileExtentMapping.c		optional kona_hfs
++bsd/kona_hfs/core/FileIDsServices.c		optional kona_hfs
++bsd/kona_hfs/core/MacOSStubs.c		optional kona_hfs
++bsd/kona_hfs/core/UnicodeWrappers.c		optional kona_hfs
++bsd/kona_hfs/core/VolumeAllocation.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_attrlist.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_btreeio.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_catalog.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_chash.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_cnode.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_cprotect.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_endian.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_extents.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_fsinfo.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_hotfiles.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_journal.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_link.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_lookup.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_notification.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_quota.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_readwrite.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_resize.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_search.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vfsops.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vfsutils.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_vnops.c		optional kona_hfs
++bsd/kona_hfs/core/hfs_xattr.c		optional kona_hfs
++bsd/kona_hfs/core/rangelist.c		optional kona_hfs
++bsd/kona_hfs/hfs_encodings/hfs_encodinghint.c		optional kona_hfs
++bsd/kona_hfs/hfs_encodings/hfs_encodings.c		optional kona_hfs
++bsd/kona_hfs/kona_hfs_iokit.c		optional kona_hfs
 --- a/iokit/bsddev/IOKitBSDInit.cpp
 +++ b/iokit/bsddev/IOKitBSDInit.cpp
 @@ -61,6 +61,10 @@
