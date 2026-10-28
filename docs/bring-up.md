@@ -238,3 +238,32 @@ a kernel that differs.
 The boot argument `amfi_get_out_of_my_way=1` and removing AMFI from the prelink roots
 do not help: the check runs before policy is consulted and the kext is built into the
 kernelcache.
+## UFS probe: the bootloader leaves the controller ready
+
+`UfsProbeDxe` reads the host and PHY registers before any driver touches them and stops
+on the panel. On this board:
+
+```
+UFSPROBE: host 0x1D84000 phy 0x1D87000
+UFSPROBE: VER 0x1587031F CAP 0x00000300
+UFSPROBE: HCS 0x0000010F HCE 0x00000001 IS 0x00000400
+UFSPROBE: PHY 0x00000001 0x00000000
+UFSPROBE: device-present yes, ready yes
+```
+
+| Register | Reading | Meaning |
+| --- | --- | --- |
+| `VER` | `0x1587031F` | the DWC host answers, so its clock branch is already gated on |
+| `CAP` | `0x00000300` | capability block is coherent |
+| `HCS` bit0 | 1 | a device is present |
+| `HCS` bit1 | 1 | the UTP is ready |
+| `HCE` bit0 | 1 | the controller is enabled |
+| `IS` | `0x00000400` | one pending interrupt bit to clear before use |
+| `PHY` | `0x00000001` | the PHY PLL is on |
+
+The bootloader therefore hands over a live controller: adopting the existing request
+list is the right path, and the GCC clock ids, `core_reset` and PHY sequence recorded in
+`porting.toml` are only needed if a future boot comes up cold.
+
+The region is already mapped by the firmware memory map ("UFS", `0x01D84000`,
+`0x00100000`, MmIO), which is why the probe needs no clock or reset code to read it.

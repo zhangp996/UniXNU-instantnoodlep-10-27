@@ -82,6 +82,7 @@ READ_LOCK_STATUS   = TRUE
 
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   INF instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
+  INF instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
   #
   # RamManagerDxe is left out: it links QcomPkg/Library/RamManagerLib, whose
   # constructor requires the RAM Partition protocol that the vendor RamPartitionDxe

@@ -148,6 +148,7 @@
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
+  instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
   SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
   SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
