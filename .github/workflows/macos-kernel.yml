@@ -119,6 +119,26 @@ jobs:
           brew install llvm lld mtools dtc lzfse
           if ! command -v unifdef >/dev/null; then brew install unifdef; echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"; fi
 
+      - name: Select the board's local UFS component
+        # board.toml must stay free of KonaUfs: the documentation workflow validates the
+        # component list against the upstream catalog, which a device repository cannot
+        # extend. The kernel lane injects the selection here instead, together with the
+        # archive plan entry that names it.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          path = Path('device/board.toml')
+          text = path.read_text()
+          if '"KonaUfs"' not in text:
+              text = re.sub(r'(include = \[.*?)(\])', r'\1, "KonaUfs"\2', text, count=1)
+              text = re.sub(r'(archives = \[.*?)(\])', r'\1, "component:KonaUfs"\2', text, count=1)
+              path.write_text(text)
+              print('selected KonaUfs for this build')
+          PY
+          grep -n "include = \|archives = " device/board.toml
+
       - name: Register the board's local UFS component
         # components/kona-ufs is this board's ShengUfs fork. The component catalog lives
         # in the UniXNU checkout, so the entry the device repository records is appended
