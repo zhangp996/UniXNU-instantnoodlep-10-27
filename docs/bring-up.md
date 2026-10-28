@@ -398,3 +398,24 @@ Next step, in order:
    `0x1d84000`, PHY `0x1d87000`, GCC ids, `core_reset` `0x21`, no SMMU).
 2. Keep the firmware's `UfsProbeDxe` as the cold-state check, not as the driver.
 3. Let the kernel driver publish the root IOMedia and hand the mount to XNU.
+## Kernel integration: what the CI had to learn about KonaUfs
+
+The component catalog and the kernel build script do not know a board-local driver by
+default. Four things had to be supplied for `KonaUfs` (all in the macOS workflow):
+
+| Requirement | Where | Why |
+| --- | --- | --- |
+| catalog entry | append `components/kona-ufs/catalog-entry.toml` to `components.toml` | the catalog lives in the UniXNU checkout, and CI uses upstream |
+| archive plan | `[kernel] archives` in `board.toml` must name **every** kernel-stage component | once the list is explicit, `archives needs component entries for` fails otherwise |
+| storage ABI include | `scripts/build-arm-driver.py` selects it by component id | otherwise `NativeUfs.cpp` cannot find `<IOKit/storage/IOBlockStorageDevice.h>` |
+| archive path | `scripts/build-xnu-4k-baseline.sh` hardcodes `build/sheng-ufs/libShengUfs.a` | `build-arm-driver.py` names the archive from the id, so this board builds `build/kona-ufs/libKonaUfs.a` |
+
+Two runtime prerequisites are recorded but not yet met, and neither blocks compiling:
+
+- `payload.py` refuses a payload whose kernel arguments include `native-ufs-root=1` unless
+  the arguments also carry exactly one `sheng-pmgr=2` and the kernel defines
+  `_sheng_pmgr_run`. Publishing a UFS root therefore needs the sheng PMGR integration or
+  an equivalent local decision; the AMFI patch alone only removes the panic.
+- `build-xnu-4k-baseline.sh` requires UFS, owner-root audit, Virtio block and source
+  corecrypto together when `XNU_BOOT_PROGRESS=1`, so the boot progress layer stays off
+  until those are selected.
