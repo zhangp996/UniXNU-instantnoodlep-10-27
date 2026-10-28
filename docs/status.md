@@ -96,3 +96,21 @@ A package whose FD sits at 0x9FC00000 with size 0x300000 overlaps
 `board.example` stays `true` until the firmware exists: `build` and `bootimg` refuse
 an example repository, which is the guard against producing an image from an
 unverified configuration.
+## OS image
+
+The target image is iPadOS 17.7.11 (21H461), product `iPad7,1`, device class
+`j120ap`, taken from `iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw`. The OS profile pins
+its URL and hashes; the local copy is selected through `ipsw` in
+`unixnu.local.toml`.
+
+Extracted members (`out/ipsw/21H461/`):
+
+| Member | Size |
+| --- | --- |
+| `kernelcache.decompressed` | 46.4 MB, the kernel the prelink step consumes |
+| `DeviceTree.j120ap.im4p` | 35,260 B |
+| `044-76040-038.dmg.trustcache` (StaticTrustCache) | 59,519 B |
+| `044-76034-038.dmg.trustcache` (Cryptex1,SystemTrustCache) | 1,871 B |
+
+`unixnu ipsw fetch` needs `lzfse` to decompress the kernelcache; on a host without
+it, build `lzfse/lzfse` and put the binary on `PATH`.
