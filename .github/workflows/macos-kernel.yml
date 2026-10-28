@@ -69,6 +69,12 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_${{ inputs.xcode }}.app/Contents/Developer
       DEFCONFIG: ${{ inputs.defconfig }}
       DEVICE_DIR: ${{ github.workspace }}/device
+      # scripts/prepare-xnu-source.py authenticates its api.github.com request when one
+      # of these is set. The anonymous quota (60 requests/hour per IP) is shared by the
+      # whole runner pool and was exhausted on every attempt today, which failed the
+      # kernel step before it compiled anything.
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Check out UniXNU at the workspace root
         uses: actions/checkout@v5
