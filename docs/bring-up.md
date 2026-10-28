@@ -112,3 +112,24 @@ What it took after the menu appeared:
 
 Next: the kernel entry itself. The entry probe (docs/guide/debugging#color-bars) is the
 next observable.
+## Kernel entry: what the bars say
+
+The entry probe is enabled (`[payload] entry_probe_reset_delay = 6`) and its patch is
+applied ("stage 1 blue bar, stage 2 magenta bar, stage 3 reset 6 s after the MMU is
+on"). On the device only the **green** hand-off bar appears, so the kernel entry code
+never ran.
+
+The Mach-O of the payload kernel and the numbers the loader prints disagree:
+
+| Source | Value |
+| --- | --- |
+| `__TEXT` vmaddr | `0xFFFFFFF007004000` |
+| `LC_UNIXTHREAD` entry PC | `0xFFFFFFF0073F0488` (inside `__TEXT_EXEC`) |
+| lowest segment (`__PRELINK_TEXT`) | `0xFFFFFFF00427C000` |
+| loader prints `kernel va` | `0xFFFFFFF0042C7000` |
+| loader prints `entry pa - kernel pa` | `0x3150B8` (~3.2 MiB) |
+| expected offset from `__PRELINK_TEXT` | `0x3178488` (~51.9 MiB) |
+
+So either the base the loader reports is not the segment base it uses, or the entry it
+computed is not the Mach-O entry. The next step is to read `ParseKernel` against this
+kernel and settle which of the two is wrong, then check the jump target.
