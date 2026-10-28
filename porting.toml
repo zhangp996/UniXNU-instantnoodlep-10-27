@@ -210,6 +210,7 @@ procedure = [
   "After selecting a reviewed storage component, compare SCSI capacity and known blocks before mounting root.",
 ]
 findings = [
+  "The kernel now reaches the root mount and refuses with Failed to mount root device @IOMediaBSDClient.cpp:984, which is the Stage 6 wall: with no block driver publishing OS and SystemOS there is no device to mount. The frames are fffffff0079b4a0 fffffff00792408 and the page counters advance, so the refusal is the storage gap and not an earlier kernel fault.",
   "docs/porting/ufs.md lists the inventory a storage port needs first: controller, PHY, clocks, resets, SMMU, DMA, handoff and layout; the board supplies every row.",
   "Selecting a component whose hardware scope is another SoC would produce a driver that programs the wrong registers, so the storage area stays planned until kona is reviewed.",
 ]
@@ -224,6 +225,7 @@ limits = [
 ]
 next_action = [
   "Collect the GPT start of userdata and the UFS link data over ADB, then review ShengUfs's kona constants.",
+  "Decide between a kona ShengUfs port and a RAM root image for the first userland milestone; the kernel already accepts the hand-off and stops only at the missing media.",
 ]
 evidence = [
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device fa8620b3 (product kona, hw-revision 20001, current-slot a of 2): boot_a and boot_b 96 MiB, userdata 100.63 GiB (26379347 4096-byte sectors), super 14 GiB; the bootloader is locked with verity on, so the storage path cannot run yet." },
