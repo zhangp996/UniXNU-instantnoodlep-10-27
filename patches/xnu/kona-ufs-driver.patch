@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,921 @@
+@@ -0,0 +1,926 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -909,6 +909,11 @@
 +int
 +kona_ufs_rootdev(dev_t *dev)
 +{
++	/* The vendored Apple OSS HFS has no kext: register it before vfs_mountroot walks
++	 * vfsconf. This runs from IOFindBSDRoot, which is earlier than the mount. */
++	extern void kona_hfs_register(void);
++	kona_hfs_register();
++
 +	lck_mtx_lock(&kona_ufs_lock);
 +	if (!su.init_attempted) {
 +		su.init_attempted = true;

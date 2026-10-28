@@ -1,10 +1,10 @@
 # Board patch paths, one per line in application order.
 #
 # kona-ufs-*: BSD-level UFS disk driver (bdevsw, no IOMedia and no storage kext) plus the
-# rd=ufsroot0 hook. kona-hfs-*: Apple OSS hfs-627 vendored into bsd/kona_hfs, compiled for
-# the BCM2837 machine and registered before vfs_mountroot.
+# rd=ufsroot0 hook. The driver also registers the vendored HFS before vfs_mountroot, so no
+# upstream file such as bsd/kern/bsd_init.c is patched. kona-hfs-*: Apple OSS hfs-627
+# vendored into bsd/kona_hfs and compiled for the BCM2837 machine.
 kona-ufs-driver.patch
 kona-ufs-integration.patch
 kona-hfs-sources.patch
 kona-hfs-build.patch
-kona-hfs-register.patch
