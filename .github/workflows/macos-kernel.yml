@@ -129,6 +129,20 @@ jobs:
           set -o pipefail
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
 
+      - name: Report the failure
+        if: failure()
+        # Artifacts need a token to download, but annotations are readable through the
+        # API, so a failing run states its last log lines in the check run itself.
+        run: |
+          for f in "$RUNNER_TEMP"/*.log; do
+            [ -f "$f" ] || continue
+            echo "::group::$(basename "$f")"
+            tail -n 40 "$f" | cut -c1-400 | while IFS= read -r line; do
+              [ -n "$line" ] && echo "::error::$line"
+            done
+            echo "::endgroup::"
+          done
+
       - name: Publish logs
         if: always()
         uses: actions/upload-artifact@v5
