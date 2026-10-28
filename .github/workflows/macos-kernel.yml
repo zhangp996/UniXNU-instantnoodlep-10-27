@@ -9,11 +9,11 @@ on:
       unixnu_repository:
         description: UniXNU repository as owner/name
         required: true
-        default: UniXNU/UniXNU
+        default: zhangp996/UniXNU
       unixnu_ref:
         description: UniXNU ref
         required: true
-        default: main
+        default: instantnoodlep
       soc_repository:
         description: SoC repository as owner/name
         required: true
@@ -139,96 +139,11 @@ jobs:
           PY
           grep -n "include = \|archives = " device/board.toml
 
-      - name: Register the board's local UFS component
-        # components/kona-ufs is this board's ShengUfs fork. The component catalog lives
-        # in the UniXNU checkout, so the entry the device repository records is appended
-        # here before the configuration is resolved.
-        run: |
-          set -euo pipefail
-          ENTRY="$DEVICE_DIR/components/kona-ufs/catalog-entry.toml"
-          test -f "$ENTRY"
-          if ! grep -q 'id = "KonaUfs"' components.toml; then
-            printf '\n' >> components.toml
-            cat "$ENTRY" >> components.toml
-            echo "appended KonaUfs to components.toml"
-          fi
-          grep -n -A2 'id = "KonaUfs"' components.toml | head
-
       - name: Resolve the configuration
         run: |
           set -o pipefail
           ./unixnu defconfig "$DEFCONFIG" -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/defconfig.log"
           ./unixnu status -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/status.log"
-
-      - name: Adapt the shared patch series
-        # UniXNU's zzz-boot-progress.patch carries a hunk that only applies after the
-        # sheng platform-power patch added a XNU_SHENG_PMGR block to bsd_init.c. This
-        # board has no such block (it is not a sheng), so the hunk is dropped. Recorded
-        # in the device repository's porting record.
-        run: |
-          python3 - <<'PY'
-          import pathlib
-
-          path = pathlib.Path("patches/xnu/zzz-boot-progress.patch")
-          lines = path.read_text().split("\n")
-          out, i, dropped = [], 0, 0
-          while i < len(lines):
-              line = lines[i]
-              if line.startswith("@@ ") and "773,7 +775,9" in line:
-                  i += 2
-                  while i < len(lines) and not (
-                      lines[i].startswith("@@ ")
-                      or lines[i].startswith("--- a/")
-                      or lines[i].startswith("diff --git")
-                  ):
-                      i += 1
-                  dropped += 1
-                  continue
-              out.append(line)
-              i += 1
-          path.write_text("\n".join(out))
-          print(f"dropped {dropped} hunk(s) from {path}")
-          PY
-
-      - name: Teach the driver build about the board's component id
-        # scripts/build-arm-driver.py selects the IOKit storage include path by component
-        # identifier. KonaUfs is this board's fork of ShengUfs, so it needs the same
-        # storage ABI include as NativeUfs; without it NativeUfs.cpp cannot find
-        # <IOKit/storage/IOBlockStorageDevice.h>.
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/build-arm-driver.py')
-          text = path.read_text()
-          old = "if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs'):"
-          new = "if component in ('NativeVirtioBlock', 'NativeRamBlock', 'NativeUfs', 'KonaUfs'):"
-          if new not in text:
-              if old not in text:
-                  raise SystemExit('build-arm-driver.py: storage include branch not found')
-              path.write_text(text.replace(old, new, 1))
-              print('added KonaUfs to the storage include branch')
-          PY
-
-      - name: Point the kernel link at the board's UFS archive
-        # scripts/build-xnu-4k-baseline.sh hardcodes $ROOT/build/sheng-ufs/libShengUfs.a
-        # for XNU_NATIVE_UFS=1. build-arm-driver.py names the archive from the component
-        # id, so this board produces build/kona-ufs/libKonaUfs.a and the script's
-        # "test -f" would fail before the link.
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('scripts/build-xnu-4k-baseline.sh')
-          text = path.read_text()
-          old = 'UFS_ARCHIVE=$ROOT/build/sheng-ufs/libShengUfs.a'
-          new = 'UFS_ARCHIVE=$ROOT/build/kona-ufs/libKonaUfs.a'
-          if new not in text:
-              if old not in text:
-                  raise SystemExit('build-xnu-4k-baseline.sh: UFS archive line not found')
-              path.write_text(text.replace(old, new, 1))
-              print('kernel link now uses build/kona-ufs/libKonaUfs.a')
-          PY
 
       - name: Fetch sources
         run: |
