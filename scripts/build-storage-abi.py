@@ -94,6 +94,11 @@ def main():
         if not placed:
             command.append(str(source))
         command.extend(['-o', str(destination)])
+        # The public tree keeps some headers in subdirectories (IOUserBlockStorageDevice.h
+        # lives under BlockStorageDeviceDriverKit), so every directory that holds headers
+        # joins the include path.
+        for directory in sorted({path.parent for path in REFER.rglob('*.h')}):
+            command += ['-I', str(directory)]
         command += ['-I', str(REFER), '-I', str(ROOT / 'build/storage-abi/include'),
                     '-I', str(ROOT / '.cache/xnu-work/osfmk'),
                     '-Wno-unused-parameter', '-Wno-c99-designator', '-Wno-reorder-init-list',
