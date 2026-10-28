@@ -41,7 +41,20 @@ patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches
 # docs/porting/drivers.md: once a component recipe is selected it must be named here, or
 # the archive plan reports "needs component entries for". ArmCpu, ArmDTPlatform,
 # SoftwareAES and DarwinBoot are firmware/os/tool stages and are not kernel archives.
-archives = ["component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "component:VirtioMmioBlock"]
+# The arch profile's archive chain, repeated in full: a board list replaces it rather
+# than extending it, and dropping the fixture left vfs_conf.o with undefined mockfs
+# symbols at the real link.
+archives = [
+  "build-corecrypto-14.py",
+  "build-corecrypto-14.py --namespace",
+  "component:ArmDTPlatform",
+  "component:ArmCpu",
+  "component:SoftwareAES",
+  "build-software-aes-bindings.py",
+  "component:VirtioMmioBlock",
+  "build-mockfs-fixture.py",
+  "build-libpthread-kernel.py",
+]
 
 [firmware]
 # Mu-Silicium platform package for this board, created in a Mu-Silicium fork per
