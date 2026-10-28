@@ -190,6 +190,26 @@ jobs:
               print('added KonaUfs to the storage include branch')
           PY
 
+      - name: Point the kernel link at the board's UFS archive
+        # scripts/build-xnu-4k-baseline.sh hardcodes $ROOT/build/sheng-ufs/libShengUfs.a
+        # for XNU_NATIVE_UFS=1. build-arm-driver.py names the archive from the component
+        # id, so this board produces build/kona-ufs/libKonaUfs.a and the script's
+        # "test -f" would fail before the link.
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/build-xnu-4k-baseline.sh')
+          text = path.read_text()
+          old = 'UFS_ARCHIVE=$ROOT/build/sheng-ufs/libShengUfs.a'
+          new = 'UFS_ARCHIVE=$ROOT/build/kona-ufs/libKonaUfs.a'
+          if new not in text:
+              if old not in text:
+                  raise SystemExit('build-xnu-4k-baseline.sh: UFS archive line not found')
+              path.write_text(text.replace(old, new, 1))
+              print('kernel link now uses build/kona-ufs/libKonaUfs.a')
+          PY
+
       - name: Fetch sources
         run: |
           set -o pipefail
