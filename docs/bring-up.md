@@ -310,3 +310,27 @@ Next diagnostic, not yet run: dump the UTRD words and the PRDT bytes immediately
 doorbell and the response bytes immediately after completion, in the same build, so the
 comparison is exact instead of across builds. That tells us whether the controller consumed
 the PRDT pointer and the response length fields the way we encoded them.
+## UFS: the documented cold-initialization boundary
+
+The firmware reached the point where every remaining failure has one cause: the host
+controller cannot be driven without redoing the link startup.
+
+| Build | What it did | Result |
+| --- | --- | --- |
+| own buffer, `UTRLBA` rewritten, no reset | `NOP` and `READ CAPACITY` reported `ocs 0` once, response `0x20` | one command seemed to complete, nothing repeatable |
+| own buffer, PRDT separated, data at `0x3000` | `ocs 0`, response `0x00`, data all zero | no transfer |
+| adopt the firmware `UTRLBA` (`0x9A1F3D00`) | `UTRLRSR` read back `0` | the controller never owned a list |
+| buffer forced below 4 GiB (`0x9F500000`) | `UTRLRSR` still `0` | address reachability is not the cause |
+| `HCE` 0 then 1, then install the list | `HCS` falls from `0x10F` to `0x8`, `UTRLRSR` stays `0` | the reset tears down the link |
+
+`HCS` `0x10F` (device present, UTP ready) becoming `0x8` after a host reset is the
+documented boundary: `docs/porting/ufs.md` says a board that needs cold initialization
+"needs its PHY, reset, clock and power sequence implemented and recorded".
+
+The inputs for that sequence are all measured and recorded in `porting.toml`: host
+`0x1d84000` + `0x3000`, PHY `0x1d87000` + `0xe00`, GCC at `0x100000` with core `0xa7`,
+iface `0xa6`, unipro `0xb3`, ice `0xaa` and bus_aggr `0x06`, `core_reset` `0x21`, PHY
+`ref_aux_clk` `0xad`, interrupt SPI 265, and no SMMU on this platform.
+
+What is missing is the register-level sequence: the GCC branch enables, the reset
+assert/release timing and the PHY power-up table. Those are not in this repository yet.

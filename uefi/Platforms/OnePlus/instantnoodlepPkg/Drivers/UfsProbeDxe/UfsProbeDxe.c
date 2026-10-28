@@ -25,6 +25,7 @@
 #define UFS_PHY_BASE    0x01D87000ULL
 
 #define UFS_IS          0x0020
+#define UFS_IE          0x0024
 #define UFS_HCS         0x0030
 #define UFS_HCE         0x0034
 #define UFS_UTRLBA      0x0050
@@ -35,12 +36,13 @@
 #define URD_OFFSET      0x0000
 #define UCD_OFFSET      0x1000
 #define RSP_OFFSET      0x0200
-#define PRDT_OFFSET     0x0400
-#define DATA_OFFSET     0x2000
+#define PRDT_OFFSET     0x1000
+#define DATA_OFFSET     0x3000
 #define BUFFER_PAGES    8
 
 static UINT8  *mBuffer;
 static UINT64  mPhys;
+static UINT64  mUtRdBase;
 
 static VOID
 SubmitCommand (
@@ -50,8 +52,8 @@ SubmitCommand (
 {
   UINT32  *Words;
 
-  Words = (UINT32 *)(mBuffer + URD_OFFSET);
-  ZeroMem (mBuffer + URD_OFFSET, 64);
+  Words = (UINT32 *)(UINTN)mUtRdBase;
+  ZeroMem ((VOID *)(UINTN)mUtRdBase, 32);
   ZeroMem (mBuffer + UCD_OFFSET + PRDT_OFFSET, 16);
   Words[0] = 0x10000000U | ((UINT32)Direction << 25);
   Words[2] = 0x0FU;
@@ -66,11 +68,21 @@ SubmitCommand (
     Prd[0] = (UINT32)(mPhys + DATA_OFFSET);
     Prd[1] = (UINT32)((mPhys + DATA_OFFSET) >> 32);
     Prd[2] = 0;
-    Prd[3] = DataBytes - 1;
+    Prd[3] = 0;
+    Prd[4] = 0;
+    Prd[5] = 0;
   }
 
   WriteBackDataCacheRange (mBuffer, BUFFER_PAGES * 4096);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 1);
+  WriteBackDataCacheRange ((VOID *)(UINTN)mUtRdBase, 32);
+  Print (L"UFSPROBE:   utrd %08x %08x %08x %08x %08x %08x %08x %08x\n",
+         Words[0], Words[1], Words[2], Words[3], Words[4], Words[5], Words[6], Words[7]);
+  Print (L"UFSPROBE:   prd %08x %08x %08x %08x (dir %u len %u)\n",
+         *(UINT32 *)(mBuffer + UCD_OFFSET + PRDT_OFFSET),
+         *(UINT32 *)(mBuffer + UCD_OFFSET + PRDT_OFFSET + 4),
+         *(UINT32 *)(mBuffer + UCD_OFFSET + PRDT_OFFSET + 8),
+         *(UINT32 *)(mBuffer + UCD_OFFSET + PRDT_OFFSET + 12),
+         Direction, DataBytes);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLDBR, 1);
 }
 
@@ -83,8 +95,8 @@ PollOcs (
   UINT32  Ocs;
 
   for (Index = 0; Index < Milliseconds; Index++) {
-    InvalidateDataCacheRange (mBuffer + URD_OFFSET, 64);
-    Ocs = *(volatile UINT32 *)(mBuffer + URD_OFFSET + 8) & 0xFF;
+    InvalidateDataCacheRange ((VOID *)(UINTN)mUtRdBase, 32);
+    Ocs = *(volatile UINT32 *)(UINTN)(mUtRdBase + 8) & 0xFF;
     if (Ocs != 0x0F) {
       return Ocs;
     }
@@ -111,14 +123,35 @@ UfsProbeEntry (
   Hcs = MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS);
   Print (L"\nUFSPROBE: HCS 0x%08x, taking the queue\n", Hcs);
 
-  mBuffer = AllocatePages (BUFFER_PAGES);
-  if (mBuffer == NULL) {
-    Print (L"UFSPROBE: allocation failed\n");
-    CpuDeadLoop ();
+  {
+    EFI_PHYSICAL_ADDRESS  At = 0x9F600000ULL;
+    Status = gBS->AllocatePages (AllocateAddress, EfiBootServicesData, BUFFER_PAGES, &At);
+    if (EFI_ERROR (Status)) {
+      Print (L"UFSPROBE: allocation at 0x9F600000 failed: %r\n", Status);
+      CpuDeadLoop ();
+    }
+    mBuffer = (UINT8 *)(UINTN)At;
   }
   ZeroMem (mBuffer, BUFFER_PAGES * 4096);
   mPhys   = (UINT64)(UINTN)mBuffer;
 
+  /*
+   * Cold host reset, in the order docs/porting/ufs.md describes: disable the
+   * controller, clear its interrupt state, enable it again, and only then install the
+   * request list. Adoption alone left UTRLRSR reading 0, so the controller never owned
+   * a list.
+   */
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_HCE, 0);
+  gBS->Stall (1000);
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 0xFFFFFFFF);
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IE, 0);
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_HCE, 1);
+  gBS->Stall (1000);
+  Print (L"UFSPROBE: after reset HCE 0x%x HCS 0x%x\n",
+         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCE),
+         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS));
+
+  mUtRdBase = mPhys;
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA, (UINT32)mPhys);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBAU, (UINT32)(mPhys >> 32));
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 1);
@@ -145,6 +178,8 @@ UfsProbeEntry (
   SubmitCommand (2, 8);
   Ocs = PollOcs (2000);
   InvalidateDataCacheRange (mBuffer + DATA_OFFSET, 64);
+  Print (L"UFSPROBE:   where 0x%08x 0x%08x (at 0x2000, 0x3000)\n",
+         *(UINT32 *)(mBuffer + 0x2000), *(UINT32 *)(mBuffer + 0x3000));
   {
     volatile UINT8  *Data;
     UINT32          Word[4];
@@ -171,7 +206,10 @@ UfsProbeEntry (
   Ucd[0]  = 0x01;
   Ucd[1]  = 0x40;
   Ucd[2]  = 0;
-  Ucd[15] = 0xFF;
+  Ucd[12] = 0x00;
+  Ucd[13] = 0x00;
+  Ucd[14] = 0x10;
+  Ucd[15] = 0x00;
   Ucd[16] = 0x28;
   Ucd[21] = 0x01;
   Ucd[22] = 0x00;
