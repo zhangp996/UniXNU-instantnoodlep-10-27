@@ -160,3 +160,27 @@ Behaviour after the bars, in this build:
 | --- | --- |
 | `entry_probe_reset_delay = 6` | the device resets about six seconds after the MMU is on, then Android boots |
 | `panic_screen = true` (no reset) | the kernel is left to continue past the MMU enable |
+## The six-second reset was the APSS watchdog
+
+After the probe was removed the phone still reset about six seconds after the hand-off,
+so the reset was never the probe's timer. UniXNU's own port notes record the cause
+(`docs/devices/kebab-stevedang67889.md`): "APSS watchdog at 0x17C10008 ... Without the
+watchdog disable a fault reboots the phone before the log can be read."
+
+`SecEntry` now writes zero to `0x17C10008` before it touches the caches, which is the
+first point where a physical register write is safe (SEC runs with the MMU off). With
+that in place the hand-off screen stays on the panel with the loader's complete report
+and no reset.
+
+## Where the kernel stands
+
+| Observation | Meaning |
+| --- | --- |
+| green hand-off bar | DarwinBoot exited boot services |
+| `entry in __TEXT_EXEC offset 0x317A488 executable yes` | the loader's entry lands in the executable segment, matching the Mach-O |
+| blue and magenta bars (probe build) | the kernel entry ran with the MMU off and reached the MMU enable |
+| six-second reset (before the watchdog fix) | the APSS watchdog, not the kernel, ended the boot |
+| screen holds the hand-off report (after the fix) | the kernel runs without a panic and without a reset; nothing draws because this board has no serial console |
+
+The next observable is the panic screen, which the payload patches into the kernel and
+which runs inside the kernel's own panic path.

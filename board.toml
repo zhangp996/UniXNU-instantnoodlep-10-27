@@ -82,9 +82,11 @@ volume = "INSTNPDLP"
 # waiting; UniXNU falls back to its own fallback_timeout when no input device exists.
 timeout = 0
 
-# Kernel entry probe (docs/guide/debugging#color-bars): the payload patches the
-# prelinked kernel so early entry points paint bars. The timed reset is off now that
-# both bands appear; the kernel gets to continue past the MMU enable.
+# The early entry probe is deliberately off: it proved the entry and the MMU enable,
+# but its inline assembly uses an identity-mapped address and dies once pmap switches,
+# so anything after that point would be the probe failing, not the kernel. The panic
+# screen stays on, because it runs inside the kernel's own panic path and is what makes
+# a fault readable on a board without a serial console.
 panic_screen = true
 # boot_a and boot_b are 96 MiB each (measured with fastboot getvar all). The ramdisk,
 # the boot shim, the firmware volume and the appended device tree all live in one of
