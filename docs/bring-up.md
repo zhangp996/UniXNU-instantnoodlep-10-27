@@ -184,3 +184,25 @@ and no reset.
 
 The next observable is the panic screen, which the payload patches into the kernel and
 which runs inside the kernel's own panic path.
+## The embedded panic log does not survive a power-button reboot
+
+The plumbing is complete and verified in the ADT:
+
+| Piece | State |
+| --- | --- |
+| device tree `pram@9f400000 { reg = <0 0x9f400000 0 0x80000>; }` | present |
+| `/chosen/embedded-panic-log-size = <0x80000>` | present in the ADT (the generator now carries it) |
+| memory map | the region is reserved, carved out of the old Free Mid span |
+| reader | `PanicLogDxe` prints the header and text, then stops |
+
+A panic is produced every boot (`"AMFI: No PMGR?\n" @ConfigurationSettings.cpp:235`), yet the
+reader never sees `0x46554E4B` in the region on the next boot. The reboot used to get back
+to fastboot is a **long power-button press**, which power-cycles the PMIC, so DRAM loses
+its contents before the next boot can read them.
+
+The entry probe's own reset used **PSCI SYSTEM_RESET** and the phone came back to Android,
+which is a soft reset that keeps DRAM. The fix is therefore on the panic path: write the
+region and then request PSCI SYSTEM_RESET instead of parking on the panic screen.
+
+Until that is added, the panic screen remains the working evidence path: it shows the
+message, the frames and the page counters on the same boot.
