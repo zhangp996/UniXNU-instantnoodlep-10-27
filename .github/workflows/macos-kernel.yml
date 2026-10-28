@@ -38,6 +38,10 @@ on:
         description: Download and extract the OS image on the runner before the build
         type: boolean
         default: true
+      unique_chip_id:
+        description: Platform seed for the payload (hex); not stored in any repository
+        required: true
+        default: "0x198110001A2B3C4D"
 
 permissions:
   contents: read
@@ -158,6 +162,27 @@ jobs:
         run: |
           set -o pipefail
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
+
+      - name: Build the payload
+        run: |
+          set -o pipefail
+          TRUST=$(ls out/ipsw/21H461/*.trustcache 2>/dev/null | head -1)
+          echo "trust cache: ${TRUST:-none}"
+          if [ -n "$TRUST" ]; then
+            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" 2>&1 | tee "$RUNNER_TEMP/payload.log"
+          else
+            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" 2>&1 | tee "$RUNNER_TEMP/payload.log"
+          fi
+
+      - name: Publish the build artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: boot-artifacts
+          path: |
+            out/**/kernel.macho
+            out/**/payload/**
+          if-no-files-found: warn
 
       - name: Report the failure
         if: failure()
