@@ -81,6 +81,7 @@ READ_LOCK_STATUS   = TRUE
   INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
 
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  INF UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf
   # INF instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf  (menu test: the driver halts)
   # INF instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf  (menu test: the driver halts)
   #

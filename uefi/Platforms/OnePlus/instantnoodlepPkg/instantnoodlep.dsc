@@ -99,6 +99,14 @@
   #
   UniXNULib|UniXNUPkg/Library/UniXNULib/UniXNULib.inf
 
+  #
+  # Advanced Logger: the QR exporter pages the firmware log onto the panel, which is this
+  # board's only log transport until a UART or USB debug link exists
+  # (docs/porting/log-capture#qr-logs).
+  #
+  AdvancedLoggerAccessLib|AdvLoggerPkg/Library/AdvancedLoggerAccessLib/AdvancedLoggerAccessLib.inf
+  QrEncoderLib|MsGraphicsPkg/Library/QrEncoderLib/QrEncoderLib.inf
+
 [Components]
   #
   # Core and services
@@ -147,6 +155,7 @@
   # Display, memory and SMBIOS from the shared Silicium package.
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf
   instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
   instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
   SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf

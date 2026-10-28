@@ -104,6 +104,9 @@ roots = ["com.apple.AppleFSCompression.AppleFSCompressionTypeZlib", "com.apple.d
 early_security_init = ""
 
 [payload]
+# Tools menu: Advanced Logger pages the firmware log as QR codes, the only log transport
+# this board has (docs/porting/log-capture#qr-logs).
+tools = true
 volume = "INSTNPDLP"
 
 # The firmware volume has no keyboard driver yet, so nobody can pick an entry.

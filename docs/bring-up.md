@@ -457,3 +457,21 @@ So the remaining work is a decision, not a bug:
 
 Until then \`CONFIG_XNU_NATIVE_UFS\` pulls in a driver whose storage base class the kernel
 cannot resolve, which is why the kernel lane stops at this link.
+## Firmware log export without a serial port
+
+`docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
+Advanced Logger buffer paged onto the panel as OneSend QR codes, scanned by a second phone.
+The firmware now carries the exporter:
+
+| Change | File |
+| --- | --- |
+| `UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf` in `[Components]` | `instantnoodlep.dsc` |
+| the same INF in the DXE volume | `instantnoodlep.fdf` |
+| `AdvancedLoggerAccessLib` and `QrEncoderLib` mapped | `instantnoodlep.dsc` |
+| `[payload] tools = true` | `board.toml` |
+
+The firmware builds with the exporter and the payload carries the Tools entry, so the menu
+exercises `Tools → Advanced Logger`. The exporter has `gAdvancedLoggerProtocolGuid` as its
+dependency: the entry only shows data once a producer installs that protocol, which needs
+the platform DebugLib routed into `AdvLoggerPkg`. That producer wiring is the next step; until
+then the menu entry reports an empty log instead of failing.
