@@ -60,19 +60,40 @@ def main():
             print(f'skip {name}: not in the public source')
             continue
         destination = OUT / (Path(name).stem + '.o')
-        command, index = [], 0
+        # The record describes a kernel object compile (XNU's own iokit object). Reuse its
+        # flags, but rebuild the argument list defensively: the source is ours, the object
+        # is ours, and any relative include path is resolved against the object directory
+        # the record came from so "meta_features.h" and friends still resolve.
+        command, index, placed = [], 0, False
         while index < len(arguments):
             value = arguments[index]
-            if value == record['file']:
+            if value in ('-o',):
+                index += 2
+                continue
+            if value == record.get('file') or (not placed and value.endswith(('.cpp', '.c', '.cc'))):
                 command.append(str(source))
-            elif value == '-o':
-                command.extend(['-o', str(destination)])
-                index += 1
+                placed = True
             elif value == '-Xclang' and index + 1 < len(arguments) and arguments[index + 1].startswith('-W'):
                 index += 1
-            elif not value.startswith('-W'):
+            elif value.startswith('-W'):
+                pass
+            elif value in ('-I', '-include') and index + 1 < len(arguments):
+                path = arguments[index + 1]
+                candidate = Path(path)
+                if not candidate.is_absolute():
+                    for base in (RECORD.parent, ROOT / '.cache/xnu-work', REFER):
+                        if (base / path).exists():
+                            candidate = base / path
+                            break
+                if candidate.exists() or value == '-I':
+                    command.extend([value, str(candidate)])
+                index += 1
+            else:
                 command.append(value)
             index += 1
+        if not placed:
+            command.append(str(source))
+        command.extend(['-o', str(destination)])
         command += ['-I', str(REFER), '-I', str(ROOT / 'build/storage-abi/include'),
                     '-I', str(ROOT / '.cache/xnu-work/osfmk'),
                     '-Wno-unused-parameter', '-Wno-c99-designator', '-Wno-reorder-init-list',
