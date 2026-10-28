@@ -241,6 +241,10 @@ jobs:
           echo "== bootstrap: startup/mockfs/KonaUfs =="
           grep -n -E "startup\.o|mockfs|KonaUfs|sheng-ufs|kona-ufs|Undefined symbols|MOCKFS" \
             out/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
+          echo "== component build log (tail) =="
+          for f in out/*/*/logs/component-*.log; do
+            echo "--- $f"; tail -n 60 "$f";
+          done
           echo "== archive outputs =="
           ls -l out/*/*/tree/build/mockfs-fixture/libmockfs_fixture.a \
                 out/*/*/tree/build/sheng-ufs/libShengUfs.a \
