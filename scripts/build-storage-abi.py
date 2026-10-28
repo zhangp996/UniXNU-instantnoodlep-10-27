@@ -24,9 +24,12 @@ RECORD = ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/I
 
 # Everything IOBlockStorageDevice pulls in, plus the media and partition schemes the
 # storage driver publishes. Kept explicit so a source that fails on a board is visible.
+# IOBlockStorageDriver.cpp is left out on purpose: it includes IOUserBlockStorageDevice_kext.h,
+# which needs the DriverKit-only IOUserBlockStorageDevice.h that the public sources do not
+# carry. The driver links the device and media classes; the UFS driver only subclasses
+# IOBlockStorageDevice, so the base definitions are what the kernel link needs.
 SOURCES = [
     'IOBlockStorageDevice.cpp',
-    'IOBlockStorageDriver.cpp',
     'IOMedia.cpp',
     'IOGUIDPartitionScheme.cpp',
     'IOApplePartitionScheme.cpp',
