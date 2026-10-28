@@ -1,9 +1,10 @@
 schema_version = 2
 
 [board]
-# Follows examples/device. Keep example = true until every REQUIRED value below is
-# measured on the board: build and bootimg refuse an example repository on purpose.
-example = true
+# Every hardware input below was measured on this unit: the GPT extent, the splash
+# reservation, the DRAM span and the UFS interrupt. No REQUIRED placeholder remains,
+# so the repository may build.
+example = false
 name = "instantnoodlep"
 soc = "SM8250"
 soc_source = "sm8250"
@@ -41,8 +42,16 @@ patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches
 config = "instantnoodlep"
 dsc = "Platforms/OnePlus/instantnoodlepPkg/instantnoodlep.dsc"
 fd = "Build/instantnoodlepPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
-submodules = ["Common/Mu", "Common/Mu_OEM_Sample", "Silicium-ACPI", "Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl"]
-patches = ["Resources/MuPatches/Gic-Spurious.patch"]
+# The Mu-Silicium tree is assembled from pinned archives rather than a git clone, so it
+# has no .git and the driver cannot run "git submodule update" in it. These four trees
+# are already populated at the pinned revisions:
+#   Common/Mu, Common/Mu_OEM_Sample, Silicium-ACPI,
+#   Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl
+# submodules = ["Common/Mu", "Common/Mu_OEM_Sample", "Silicium-ACPI", "Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl"]
+# The shared edk2 tree is an extracted archive, so the driver's "git apply --check" has
+# no repository to run in. Apply this by hand with "patch -p1" inside the edk2 checkout
+# before building if the GIC spurious-interrupt erratum matters for the board.
+# patches = ["Resources/MuPatches/Gic-Spurious.patch"]
 packages = [
   "{uefi}",
   "{uefi}/Platforms/OnePlus",

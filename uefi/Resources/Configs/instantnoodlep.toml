@@ -1,0 +1,26 @@
+# Boot image and firmware volume layout for the OnePlus 8 Pro (instantnoodlep).
+#
+# uefi_fd.base/size are measured from this board's live device tree: the free
+# window between dfps_data_region (ends 0x9E400000) and kboot_uboot_logmem
+# (starts 0x9FE00000) is 26 MiB, and the firmware volume takes the first 4 MiB.
+# BootShim compiles both values in, and unixnu bootimg checks the FD against them.
+
+[boot_shim]
+requires_kernel_header = true
+
+[uefi_fd]
+base = 0x9E400000
+size = 0x00400000
+
+[boot_image_kernel]
+kernel_compression = "gzip"
+append_dtb         = true
+
+[boot_image]
+header_version  = 2
+base            = 0x00000000
+kernel_offset   = 0x00008000
+ramdisk_offset  = 0x01000000
+tags_offset     = 0x00000100
+second_offset   = 0x00f00000
+pagesize        = 4096

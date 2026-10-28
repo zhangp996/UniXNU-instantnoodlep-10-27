@@ -1,0 +1,67 @@
+#include <Library/MemoryMapLib.h>
+
+//
+// IN2020 memory map. Every DDR entry comes from this board's live device tree
+// (docs/evidence/device-fdt.dts in the device repository) and every register
+// window from the same tree. The UEFI regions are placed inside the free window
+// between dfps_data_region (0x9E400000) and kboot_uboot_logmem (0x9FE00000).
+//
+// Name, Address, Length, HobOption, ResourceType, ResourceAttribute, MemoryType, ArmAttribute
+//
+STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
+  // DDR regions the bootloader hands over.
+  {"HYP",                  0x80000000, 0x00600000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+  {"XBL AOP",              0x80700000, 0x00160000, AddMem, SYS_MEM, SYS_MEM_CAP, Reserv, WRITE_BACK_XN},
+  {"AOP CMD DB",           0x80860000, 0x00020000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"SMEM",                 0x80900000, 0x00200000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"Removed Region",       0x80B00000, 0x0CD00000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL Camera",           0x8DC00000, 0x00500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL WLAN FW",          0x8E100000, 0x00100000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL IPA FW",           0x8E200000, 0x00010000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL IPA GSI",          0x8E210000, 0x0000A000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL GPU",              0x8E21A000, 0x00002000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL NPU",              0x8E300000, 0x00500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL Video",            0x8E800000, 0x00500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL CVP",              0x8ED00000, 0x00500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL CDSP",             0x8F200000, 0x01400000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL SLPI",             0x90600000, 0x01500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL ADSP",             0x91B00000, 0x02500000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"PIL SPSS",             0x94000000, 0x00100000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+  {"CDSP Secure Heap",     0x94100000, 0x04600000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+
+  // The ABL leaves the panel powered through cont_splash_region, and this is the
+  // region SimpleFbDxe publishes as the GOP framebuffer.
+  {"Display Reserved",     0x9C000000, 0x02300000, AddMem, MEM_RES, SYS_MEM_CAP,   Reserv, WRITE_THROUGH_XN},
+  {"DFPS Data",            0x9E300000, 0x00100000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+
+  // UEFI regions, inside the free window measured on this board.
+  {"UEFI FD",              0x9E400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP,   BsData, WRITE_BACK},
+  {"DXE Heap",             0x9E800000, 0x00800000, AddMem, SYS_MEM, SYS_MEM_CAP,   Conv,   WRITE_BACK_XN},
+  {"UEFI Stack",           0x9F000000, 0x00040000, AddMem, SYS_MEM, SYS_MEM_CAP,   BsData, WRITE_BACK_XN},
+
+  // Reserved by the bootloader above the UEFI window.
+  {"UBoot Log",            0x9FE00000, 0x00200000, AddMem, SYS_MEM, SYS_MEM_CAP,   Reserv, WRITE_BACK_XN},
+  {"Ram Oops",             0xB0000000, 0x00400000, AddMem, MEM_RES, UNCACHEABLE,   Reserv, UNCACHED_UNBUFFERED_XN},
+
+  // Component register windows, from the live device tree.
+  {"GIC",                  0x17A00000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"UFS",                  0x01D84000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"QUPV3",                0x009C0000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"GPU SMMU",             0x03DA0000, 0x00010000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"SECURITY CONTROL",     0x00780000, 0x00007000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"PRNG CFG",             0x010D0000, 0x00010000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"TCSR",                 0x01FC0000, 0x00030000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"PERIPH SS",            0x08800000, 0x00200000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"IPC ROUTER",           0x00400000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"USB",                  0x0A600000, 0x04000000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+};
+
+VOID
+EFIAPI
+GetMemoryMap (
+  OUT EFI_MEMORY_REGION_DESCRIPTOR **MemoryDescriptor,
+  OUT UINT8                         *MemoryDescriptorCount)
+{
+  *MemoryDescriptor      = gMemoryDescriptor;
+  *MemoryDescriptorCount = (UINT8)(sizeof (gMemoryDescriptor) / sizeof (gMemoryDescriptor[0]));
+}

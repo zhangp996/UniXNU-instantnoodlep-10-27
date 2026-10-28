@@ -1,0 +1,84 @@
+##
+# Flash device and firmware volume for the OnePlus 8 Pro (instantnoodlep).
+##
+[FD.SILICIUM_UEFI]
+BaseAddress   = $(FD_BASE)|gArmTokenSpaceGuid.PcdFdBaseAddress
+Size          = $(FD_SIZE)|gArmTokenSpaceGuid.PcdFdSize
+ErasePolarity = 1
+
+BlockSize     = 0x1000
+NumBlocks     = $(FD_BLOCKS)
+
+0x00000000|$(FD_SIZE)
+gArmTokenSpaceGuid.PcdFvBaseAddress|gArmTokenSpaceGuid.PcdFvSize
+FV = FvMain
+
+[FV.FvMain]
+FvNameGuid         = 6C1E2A44-9D3B-4E7C-8F5A-1B2C3D4E5F60
+BlockSize          = 0x1000
+NumBlocks          = 0
+FvAlignment        = 8
+ERASE_POLARITY     = 1
+MEMORY_MAPPED      = TRUE
+STICKY_WRITE       = TRUE
+LOCK_CAP           = TRUE
+LOCK_STATUS        = TRUE
+WRITE_DISABLED_CAP = TRUE
+WRITE_ENABLED_CAP  = TRUE
+WRITE_STATUS       = TRUE
+WRITE_LOCK_CAP     = TRUE
+WRITE_LOCK_STATUS  = TRUE
+READ_DISABLED_CAP  = TRUE
+READ_ENABLED_CAP   = TRUE
+READ_STATUS        = TRUE
+READ_LOCK_CAP      = TRUE
+READ_LOCK_STATUS   = TRUE
+
+  INF SiliciumPkg/Sec/Sec.inf
+  INF UniXNUPkg/Application/UniXNU/UniXNU.inf
+  INF UniXNUPkg/Driver/UniXNUDxe/UniXNUDxe.inf
+  INF UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.inf
+  INF DarwinBootPkg/Driver/DarwinBoot.inf
+
+  INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
+  INF MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
+  INF FatPkg/EnhancedFatDxe/Fat.inf
+  INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
+
+  INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  INF SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
+  INF SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
+  INF MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf
+  INF MdeModulePkg/Universal/Acpi/AcpiTableDxe/AcpiTableDxe.inf
+  INF MdeModulePkg/Universal/Acpi/AcpiPlatformDxe/AcpiPlatformDxe.inf
+
+  INF EmbeddedPkg/SimpleTextInOutSerial/SimpleTextInOutSerial.inf
+  INF MdeModulePkg/Universal/PrintDxe/PrintDxe.inf
+  INF MdeModulePkg/Universal/DevicePathDxe/DevicePathDxe.inf
+  INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
+  INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
+  INF MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
+  INF MdeModulePkg/Universal/HiiDatabaseDxe/HiiDatabaseDxe.inf
+
+  INF ArmPkg/Drivers/ArmGicDxe/ArmGicDxe.inf
+  INF ArmPkg/Drivers/TimerDxe/TimerDxe.inf
+
+  INF MdeModulePkg/Core/Dxe/DxeMain.inf
+  INF MdeModulePkg/Universal/PCD/Dxe/Pcd.inf
+  INF ArmPkg/Drivers/CpuDxe/CpuDxe.inf
+  INF MdeModulePkg/Core/RuntimeDxe/RuntimeDxe.inf
+  INF MdeModulePkg/Universal/SecurityStubDxe/SecurityStubDxe.inf
+  INF MdeModulePkg/Universal/WatchdogTimerDxe/WatchdogTimer.inf
+  INF MdeModulePkg/Universal/CapsuleRuntimeDxe/CapsuleRuntimeDxe.inf
+  INF MdeModulePkg/Universal/StatusCodeHandler/RuntimeDxe/StatusCodeHandlerRuntimeDxe.inf
+  INF MdeModulePkg/Universal/ReportStatusCodeRouter/RuntimeDxe/ReportStatusCodeRouterRuntimeDxe.inf
+  INF MdeModulePkg/Universal/Variable/RuntimeDxe/VariableRuntimeDxe.inf
+  INF EmbeddedPkg/EmbeddedMonotonicCounter/EmbeddedMonotonicCounter.inf
+  INF MdeModulePkg/Universal/ResetSystemRuntimeDxe/ResetSystemRuntimeDxe.inf
+  INF EmbeddedPkg/RealTimeClockRuntimeDxe/RealTimeClockRuntimeDxe.inf
+  INF EmbeddedPkg/MetronomeDxe/MetronomeDxe.inf
+  INF MdeModulePkg/Universal/BdsDxe/BdsDxe.inf
+#
+# Packaging rules for every module type this volume carries.
+#
+!include SiliciumPkg/Common.fdf.inc
