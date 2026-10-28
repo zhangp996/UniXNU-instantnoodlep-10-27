@@ -197,6 +197,9 @@ paths = [
   "scripts/*userdata*",
 ]
 inputs = [
+  "Measured from docs/evidence/device-fdt.dts: ufshc@1d84000 covers ufs_mem 0x1d84000+0x3000 and ufs_ice 0x1d90000+0x8000 on SPI 265; the PHY is ufsphy_mem@1d87000, phy_mem 0x1d87000+0xe00, two lanes per direction.",
+  "GCC is qcom,gcc@100000 (phandle 0x16) with 0x1f0000 bytes. The controller takes core_clk 0xa7, bus_aggr_clk 0x06, iface_clk 0xa6, core_clk_unipro 0xb3, core_clk_ice 0xaa, tx_lane0_sync_clk 0xb2, rx_lane0_sync_clk 0xb0 and rx_lane1_sync_clk 0xb1 from it, ref_clk from RPMH 0x15:0, and core_reset 0x21. The PHY takes ref_aux_clk 0xad from GCC.",
+  "The live controller node carries no iommus property, so UFS is not behind the apps SMMU on kona: the ShengUfs SMMU takeover has no target here and the DMA path can stay identity-mapped.",
   "UFS 3.0 host controller at 0x1d84000 and QMP PHY at 0x1d87000, both disabled in the shared DTSI until a storage component is selected.",
   "SMMU stream IDs for the UFS host on kona.",
   "The board GPT: boot_a, boot_b and the userdata extent.",
@@ -221,7 +224,8 @@ completion = [
 ]
 limits = [
   "Measured from the dumped GPT: userdata runs from LBA 4133800 to 30513146 with 4096-byte sectors (26379347 sectors, 100.63 GiB), matching the bootloader's partition-size report.",
-  "No UFS register read or link-state observation exists for this board.",
+  "No UFS register read or link-state observation exists for this board: the clock, reset, PHY and interrupt values above come from the device tree, not from driver runs.",
+  "ShengUfs's constants target SM8550 host 0x1d84000 with PHY 0x1d80000 and apps SMMU stream 0x60; kona differs in the PHY offset (0x1d87000), the GCC ids and the absence of an SMMU stream, so its table cannot be reused unchanged.",
 ]
 next_action = [
   "Collect the GPT start of userdata and the UFS link data over ADB, then review ShengUfs's kona constants.",
