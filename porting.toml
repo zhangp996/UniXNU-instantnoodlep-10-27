@@ -39,6 +39,7 @@ findings = [
   "The device defconfig carries only board differences because the arch fragment already sets PAN, the crypto sources and the build-archive switch.",
   "The CLI refuses Python older than 3.11 and Ubuntu 22.04 ships 3.10, so the WSL lane installs a standalone 3.12 with uv; no root password is needed.",
   "Tree assembly creates symbolic links, which a non-elevated Windows session rejects with WinError 1314, so tree runs in WSL.",
+  "UniXNU's zzz-boot-progress.patch carries a hunk whose context is the XNU_SHENG_PMGR block that only the sheng platform-power patch adds to bsd_init.c; a kona tree has no such block, so the hunk is dropped before the series runs (the macOS workflow does it in the Adapt the shared patch series step).",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
