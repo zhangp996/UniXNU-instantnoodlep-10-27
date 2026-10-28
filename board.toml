@@ -16,7 +16,7 @@ kit = "instantnoodlep"
 # The template selection: the arm64 platform pair, the crypto path, the prelink tool
 # and the loader. Storage, display and input components are added per
 # docs/porting/drivers once their required inputs are satisfied for this board.
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "KonaUfs"]
 # KonaUfs is the local fork under components/kona-ufs (see its README): it carries the
 # SM8550 ShengUfs sources with this board's constants and without the apps-SMMU step.
 # Select it once the component entry is merged into the catalog; the plain ShengUfs entry
