@@ -213,6 +213,8 @@ procedure = [
   "After selecting a reviewed storage component, compare SCSI capacity and known blocks before mounting root.",
 ]
 findings = [
+  "components/kona-ufs builds: the macOS lane produced build/kona-ufs/libKonaUfs.a (458 KiB) with no warning, so the kona constant table, the VerifiedRoot include and the storage ABI headers are all correct.",
+  "The archive cannot be linked yet: NativeUfsBlock subclasses IOBlockStorageDevice, and that class is a kext of the original kernelcache. docs/guide/build-kernel.md line 112 prepares only the public headers under build/storage-abi/include; the documented binding route (scripts/audit-storage-interface.py plus build-virtio-mmio-bindings.py) reads build/darwinboot-storage-native-metadata/gdb-stop.json, a live debugger snapshot this board cannot capture (no serial console, no USB debug link).",
   "The kernel now reaches the root mount and refuses with Failed to mount root device @IOMediaBSDClient.cpp:984, which is the Stage 6 wall: with no block driver publishing OS and SystemOS there is no device to mount. The frames are fffffff0079b4a0 fffffff00792408 and the page counters advance, so the refusal is the storage gap and not an earlier kernel fault.",
   "docs/porting/ufs.md lists the inventory a storage port needs first: controller, PHY, clocks, resets, SMMU, DMA, handoff and layout; the board supplies every row.",
   "Selecting a component whose hardware scope is another SoC would produce a driver that programs the wrong registers, so the storage area stays planned until kona is reviewed.",
