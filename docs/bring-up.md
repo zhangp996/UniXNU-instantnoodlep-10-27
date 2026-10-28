@@ -39,3 +39,33 @@ drawn as a narrow vertical band, so the framebuffer geometry the firmware assume
 does not match the buffer ABL scans out. Both 1440x3168 and 1080x2376 have been tried
 with the same result, which points at the stride or at the panel pipeline rather than
 at the width and height alone.
+## Device observations, in order
+
+Each line below was read off the panel after `fastboot boot boot-hdr.img`:
+
+1. `Silicium 4.0 Build at ...`, `Fine Blk Memory Region` style messages and
+   `Failed to Decompress FV Status = Not Found` — SEC ran but the flash device held a
+   single uncompressed volume, so `DecompressFirstFv` had nothing to decompress and
+   returned before DXE. Fixed by rebuilding the FDF as the standard ARM layout:
+   `FVMAIN_COMPACT` (SEC + `FILE FV_IMAGE = GUIDED { SECTION FV_IMAGE = FvMain }`).
+2. `Failed to Locate "Info Blk Memory Region"!` — a driver resolves a platform region
+   by that name and the board's MemoryMapLib does not describe it.
+3. `Loading Image at 0x9FE00000 EntryPoint=0x9FE005E0, DevicePath...` followed by
+   `ASSERT [ArmPkg] (Code.c:2619) : Length < MaxImageSize ... is zeroed` — an image
+   load from 0x9FE00000 trips an assert; that address is the region this repository
+   labels `Uboot Log` (kboot_uboot_logmem, 2 MiB).
+
+## Framebuffer geometry
+
+The panel timing in the live device tree is 1080x2376
+(`qcom,mdss-dsi-panel-width = 0x438`, `-height = 0x948`). With
+`PcdFrameBufferWidth = 1080` and `PcdFrameBufferHeight = 2376` the console renders
+crisp horizontal text; 1440x3168 and 3168x1440 both render badly (vertical bands and
+repeated fragments respectively), so the geometry is settled.
+
+## Next steps
+
+- Describe the memory region the driver calls "Info Blk Memory Region" in
+  `MemoryMapLib.c`, using the address ABL actually hands over.
+- Keep the `kboot_uboot_logmem` window out of the regions an image may be loaded into
+  so the load at 0x9FE00000 does not trip the assert.
