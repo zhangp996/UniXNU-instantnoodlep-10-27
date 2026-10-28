@@ -58,8 +58,8 @@
   #
   # Panel: 1440x3168 AMOLED, driven at 32 bpp by the framebuffer the ABL leaves.
   #
-  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferWidth|1440
-  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferHeight|3168
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferWidth|1080
+  gSiliciumPkgTokenSpaceGuid.PcdFrameBufferHeight|2376
   gSiliciumPkgTokenSpaceGuid.PcdFrameBufferColorDepth|32
 
   #
