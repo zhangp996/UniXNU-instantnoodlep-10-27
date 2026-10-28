@@ -291,3 +291,22 @@ before each read) and cross-check the response UPIU's residual length before tru
 numbers.
 
 Status: the transport works, the capacity decode does not yet.
+## UFS transport: what works and what does not
+
+Three builds pin the state down.
+
+| Build | NOP | READ CAPACITY | Data |
+| --- | --- | --- | --- |
+| PRDT inside the data area, two words, no length | `ocs 0`, response `0x20` | `ocs 0`, `status 0`, `residual 0` | `0060AC7F 02000000` (device data) |
+| same, data read again | `ocs 0` | `ocs 0` | same bytes, `block-size 0x02000000` |
+| PRDT at `UCD+0x400`, four words with `len-1`, `IS=1` before the doorbell | `ocs 0`, response `0x00` | `ocs 0`, data all zero | nothing transferred |
+
+So the command transport (UTRD, UPIU, doorbell, completion polling) works in every build, and
+the data phase only moved bytes when the PRDT lived inside the data area with the two-word
+form. The four-word form with `prd[3] = length - 1` (the layout ShengUfs uses on SM8550)
+transfers nothing on this controller, and it also leaves the response area unwritten.
+
+Next diagnostic, not yet run: dump the UTRD words and the PRDT bytes immediately before the
+doorbell and the response bytes immediately after completion, in the same build, so the
+comparison is exact instead of across builds. That tells us whether the controller consumed
+the PRDT pointer and the response length fields the way we encoded them.

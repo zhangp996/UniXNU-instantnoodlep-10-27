@@ -34,7 +34,8 @@
 
 #define URD_OFFSET      0x0000
 #define UCD_OFFSET      0x1000
-#define RSP_OFFSET      0x1200
+#define RSP_OFFSET      0x0200
+#define PRDT_OFFSET     0x0400
 #define DATA_OFFSET     0x2000
 #define BUFFER_PAGES    8
 
@@ -51,21 +52,25 @@ SubmitCommand (
 
   Words = (UINT32 *)(mBuffer + URD_OFFSET);
   ZeroMem (mBuffer + URD_OFFSET, 64);
+  ZeroMem (mBuffer + UCD_OFFSET + PRDT_OFFSET, 16);
   Words[0] = 0x10000000U | ((UINT32)Direction << 25);
   Words[2] = 0x0FU;
   Words[4] = (UINT32)(mPhys + UCD_OFFSET);
   Words[5] = (UINT32)((mPhys + UCD_OFFSET) >> 32);
-  Words[6] = (512U >> 2) | ((RSP_OFFSET - UCD_OFFSET) >> 2 << 16);
-  Words[7] = (DataBytes ? 1U : 0U) | (((DataBytes ? (DATA_OFFSET - UCD_OFFSET) : 0) >> 2) << 16);
+  Words[6] = (512U >> 2) | ((RSP_OFFSET >> 2) << 16);
+  Words[7] = (DataBytes ? 1U : 0U) | ((PRDT_OFFSET >> 2) << 16);
 
   if (DataBytes != 0) {
     UINT32  *Prd;
-    Prd    = (UINT32 *)(mBuffer + UCD_OFFSET + (DATA_OFFSET - UCD_OFFSET));
+    Prd    = (UINT32 *)(mBuffer + UCD_OFFSET + PRDT_OFFSET);
     Prd[0] = (UINT32)(mPhys + DATA_OFFSET);
     Prd[1] = (UINT32)((mPhys + DATA_OFFSET) >> 32);
+    Prd[2] = 0;
+    Prd[3] = DataBytes - 1;
   }
 
   WriteBackDataCacheRange (mBuffer, BUFFER_PAGES * 4096);
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 1);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLDBR, 1);
 }
 
@@ -121,7 +126,7 @@ UfsProbeEntry (
          mPhys, MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR));
 
   Ucd = mBuffer + UCD_OFFSET;
-  Rsp = mBuffer + RSP_OFFSET;
+  Rsp = mBuffer + UCD_OFFSET + RSP_OFFSET;
 
   Ucd[3] = 1;
   SubmitCommand (0, 0);
@@ -140,17 +145,54 @@ UfsProbeEntry (
   SubmitCommand (2, 8);
   Ocs = PollOcs (2000);
   InvalidateDataCacheRange (mBuffer + DATA_OFFSET, 64);
-  Print (L"UFSPROBE: READ CAPACITY ocs 0x%x status 0x%x\n", Ocs, Rsp[6]);
-  Print (L"UFSPROBE: data %08x %08x %08x %08x\n",
-         *(UINT32 *)(mBuffer + DATA_OFFSET + 0), *(UINT32 *)(mBuffer + DATA_OFFSET + 4),
-         *(UINT32 *)(mBuffer + DATA_OFFSET + 8), *(UINT32 *)(mBuffer + DATA_OFFSET + 12));
-  LastLba   = ((UINT32)mBuffer[DATA_OFFSET + 0] << 24) | ((UINT32)mBuffer[DATA_OFFSET + 1] << 16) |
-              ((UINT32)mBuffer[DATA_OFFSET + 2] << 8) | (UINT32)mBuffer[DATA_OFFSET + 3];
-  BlockSize = ((UINT32)mBuffer[DATA_OFFSET + 4] << 24) | ((UINT32)mBuffer[DATA_OFFSET + 5] << 16) |
-              ((UINT32)mBuffer[DATA_OFFSET + 6] << 8) | (UINT32)mBuffer[DATA_OFFSET + 7];
+  {
+    volatile UINT8  *Data;
+    UINT32          Word[4];
+    UINTN           Index;
+
+    Data = (volatile UINT8 *)(mBuffer + DATA_OFFSET);
+    for (Index = 0; Index < 4; Index++) {
+      Word[Index] = ((UINT32)Data[Index * 4 + 0] << 24) | ((UINT32)Data[Index * 4 + 1] << 16) |
+                    ((UINT32)Data[Index * 4 + 2] << 8) | (UINT32)Data[Index * 4 + 3];
+    }
+    LastLba   = Word[0];
+    BlockSize = Word[1];
+    Print (L"UFSPROBE: READ CAPACITY ocs 0x%x status 0x%x residual %u\n",
+           Ocs, Rsp[6], ((UINT32)Rsp[12] << 8) | Rsp[13]);
+    Print (L"UFSPROBE: data %08x %08x %08x %08x\n", Word[0], Word[1], Word[2], Word[3]);
+  }
   Print (L"UFSPROBE: last-lba %lu block-size %lu bytes\n", LastLba, BlockSize);
   if (BlockSize != 0) {
     Print (L"UFSPROBE: capacity %lu MiB\n", ((UINT64)LastLba + 1) * BlockSize / (1024 * 1024));
+  }
+
+  /* READ(10) LBA 1, one block, into the data area: the GPT header lives there. */
+  ZeroMem (Ucd, 64);
+  Ucd[0]  = 0x01;
+  Ucd[1]  = 0x40;
+  Ucd[2]  = 0;
+  Ucd[15] = 0xFF;
+  Ucd[16] = 0x28;
+  Ucd[21] = 0x01;
+  Ucd[22] = 0x00;
+  Ucd[23] = 0x00;
+  Ucd[24] = 0x01;
+  SubmitCommand (2, 4096);
+  Ocs = PollOcs (2000);
+  InvalidateDataCacheRange (mBuffer + DATA_OFFSET, 4096);
+  {
+    volatile UINT8  *Data;
+    CHAR8           Text[9];
+    UINTN           Index;
+
+    Data = (volatile UINT8 *)(mBuffer + DATA_OFFSET);
+    for (Index = 0; Index < 8; Index++) {
+      Text[Index] = (CHAR8)Data[Index];
+    }
+    Text[8] = 0;
+    Print (L"UFSPROBE: READ(10) lba1 ocs 0x%x status 0x%x sig '%a'\n", Ocs, Rsp[6], Text);
+    Print (L"UFSPROBE: lba1 %02x %02x %02x %02x %02x %02x %02x %02x\n",
+           Data[0], Data[1], Data[2], Data[3], Data[4], Data[5], Data[6], Data[7]);
   }
 
   CpuDeadLoop ();
