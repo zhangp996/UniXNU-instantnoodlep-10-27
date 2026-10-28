@@ -168,7 +168,8 @@ jobs:
       - name: Build the payload
         run: |
           set -o pipefail
-          TRUST=$(ls out/ipsw/21H461/*.trustcache 2>/dev/null | head -1)
+          # The static trust cache is the large one; the cryptex ones next to it are tiny.
+          TRUST=$(ls -S out/ipsw/21H461/*.trustcache 2>/dev/null | head -1)
           echo "trust cache: ${TRUST:-none}"
           if [ -n "$TRUST" ]; then
             ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" 2>&1 | tee "$RUNNER_TEMP/payload.log"

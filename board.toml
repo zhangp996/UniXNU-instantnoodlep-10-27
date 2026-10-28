@@ -100,6 +100,12 @@ kernel_args = [
   "ml-timeout-lock-panic-scale=40",
 ]
 
+# The trust cache the payload embeds is the static one from the 17.7.11 (21H461)
+# restore image: Firmware/044-76040-038.dmg.trustcache, 59519 bytes, taken from
+# out/ipsw/21H461. The OS profile allowlist covers other images, so this board states
+# its own hash instead of accepting anything the image happens to carry.
+trust_cache_sha256 = ["4563bdbf6ed8f72237d45dbba3ccde432634338f95c10d79d5d4631678a97c7c"]
+
 [payload.adt]
 # chip_id and owned_memory_size follow the OS profile and the SoC; the unique chip id
 # is generated per board at payload time.
@@ -110,7 +116,10 @@ unique_chip_id = "required"
 [bootimg]
 # Measured: the ABL keeps the panel powered through cont_splash_region at 0x9c000000
 # with size 0x2300000; the same values appear in dts/instantnoodlep.dts.
-dtb_node = [{ path = "/reserved-memory/splash_region", props = [{ name = "label", type = "s", value = "cont_splash_region" }, { name = "reg", type = "x", value = ["0x0", "0x9c000000", "0x0", "0x2300000"] }] }]
+# dts/instantnoodlep.dts already declares /reserved-memory/splash_region at
+# 0x9c000000 with size 0x2300000, so no dtb_node entry is needed here: bootimg creates
+# such nodes with fdtput -c and fails with FDT_ERR_EXISTS when the node is present.
+dtb_node = []
 
 [device_tree]
 source = "device:dts/instantnoodlep.dts"

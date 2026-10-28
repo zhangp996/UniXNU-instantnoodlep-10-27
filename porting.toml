@@ -41,6 +41,7 @@ findings = [
   "Tree assembly creates symbolic links, which a non-elevated Windows session rejects with WinError 1314, so tree runs in WSL.",
   "UniXNU's zzz-boot-progress.patch carries a hunk whose context is the XNU_SHENG_PMGR block that only the sheng platform-power patch adds to bsd_init.c; a kona tree has no such block, so the hunk is dropped before the series runs (the macOS workflow does it in the Adapt the shared patch series step).",
   "Kernel and payload build on the macOS runner because the kernel step calls Xcode and the payload step may call hdiutil; the workflow publishes kernel.macho and the payload directory as the boot-artifacts artifact so the boot image can be assembled wherever the firmware volume was built.",
+  "The boot image uses header version 0: unixnu appends the device tree to the gzip kernel and passes no --dtb to mkbootimg, which a version 2 header would require. The shim is built without the ARM64 kernel header because Mu-Silicium writes FD_SIZE there while unixnu checks for shim plus volume.",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
