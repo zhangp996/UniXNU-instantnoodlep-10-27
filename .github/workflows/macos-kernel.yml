@@ -44,7 +44,9 @@ on:
         default: "0x198110001A2B3C4D"
 
 permissions:
-  contents: read
+  # read for the checkouts, write so a failing run can publish its logs to the
+  # ci-logs branch instead of only to an artifact that needs a token to download
+  contents: write
 
 concurrency:
   group: macos-kernel-${{ github.ref }}-${{ inputs.defconfig }}
@@ -205,6 +207,28 @@ jobs:
           ls -l out/**/kernel.macho 2>/dev/null | cut -c1-300 | while IFS= read -r line; do echo "::error::$line"; done
           echo "::endgroup::"
           exit 0
+
+      - name: Publish the logs to the ci-logs branch
+        # An artifact needs an authenticated download; a branch does not. Diagnostics
+        # are public build output, never secrets.
+        if: failure()
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/logs" && cd "$RUNNER_TEMP/logs"
+          git init -q .
+          git checkout -q --orphan ci-logs
+          cp "$RUNNER_TEMP"/*.log . 2>/dev/null || true
+          cat > MANIFEST.txt <<EOF
+          run: ${{ github.run_id }}
+          sha: ${{ github.sha }}
+          job: ${{ github.job }}
+          conclusion: failure
+          built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          git add -A
+          git -c user.name=ci -c user.email=ci@invalid commit -q -m "logs for run ${{ github.run_id }} (${{ github.sha }})"
+          git push -q "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" ci-logs --force
+          echo "published to the ci-logs branch"
 
       - name: Publish logs
         if: always()
