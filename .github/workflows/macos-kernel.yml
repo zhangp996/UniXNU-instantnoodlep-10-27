@@ -113,6 +113,21 @@ jobs:
           brew install llvm lld mtools dtc lzfse
           if ! command -v unifdef >/dev/null; then brew install unifdef; echo "$(brew --prefix unifdef)/bin" >> "$GITHUB_PATH"; fi
 
+      - name: Register the board's local UFS component
+        # components/kona-ufs is this board's ShengUfs fork. The component catalog lives
+        # in the UniXNU checkout, so the entry the device repository records is appended
+        # here before the configuration is resolved.
+        run: |
+          set -euo pipefail
+          ENTRY="$DEVICE_DIR/components/kona-ufs/catalog-entry.toml"
+          test -f "$ENTRY"
+          if ! grep -q 'id = "KonaUfs"' components.toml; then
+            printf '\n' >> components.toml
+            cat "$ENTRY" >> components.toml
+            echo "appended KonaUfs to components.toml"
+          fi
+          grep -n -A2 'id = "KonaUfs"' components.toml | head
+
       - name: Resolve the configuration
         run: |
           set -o pipefail
