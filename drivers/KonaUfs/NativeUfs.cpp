@@ -2284,8 +2284,11 @@ bool NativeUfs::startRoot (IOService *provider)
   IOFree (layout, sizeof (RootLayout));
   if (result.phase != UfsRootPhase::Complete) {
     gPending = 0;
-    gRootDiagnostic.result = result.phase == UfsRootPhase::Identity ? kIOReturnNotPrivileged :
-      result.phase == UfsRootPhase::Schedule ? kIOReturnNoResources : kIOReturnError;
+    // kIOReturn* expand to a signed int expression while the diagnostic field is
+    // uint32_t; cast each operand so the ?: keeps one type and -Wsign-conversion stays quiet.
+    gRootDiagnostic.result = result.phase == UfsRootPhase::Identity ? static_cast<uint32_t> (kIOReturnNotPrivileged) :
+      result.phase == UfsRootPhase::Schedule ? static_cast<uint32_t> (kIOReturnNoResources) :
+      static_cast<uint32_t> (kIOReturnError);
     IOLog ("NativeUfs: root preparation failed phase=%u window=%u; nothing published\n",
            static_cast<unsigned> (result.phase), result.index);
     IOService::stop (provider);
