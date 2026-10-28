@@ -1,1 +1,7 @@
 # Board patch paths, one per line in application order.
+#
+# kona-ufs-driver adds a BSD-level UFS disk driver (bdevsw, no IOMedia and no storage
+# kext) that reuses the controller state the bootloader leaves behind; the integration
+# patch registers it in bsd/conf/files and lets rd=ufsroot0 override root matching.
+kona-ufs-driver.patch
+kona-ufs-integration.patch
