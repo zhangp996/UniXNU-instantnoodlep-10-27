@@ -41,7 +41,7 @@ patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches
 # docs/porting/drivers.md: once a component recipe is selected it must be named here, or
 # the archive plan reports "needs component entries for". ArmCpu, ArmDTPlatform,
 # SoftwareAES and DarwinBoot are firmware/os/tool stages and are not kernel archives.
-archives = ["component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES", "component:KonaUfs"]
+archives = ["component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES"]
 
 [firmware]
 # Mu-Silicium platform package for this board, created in a Mu-Silicium fork per
