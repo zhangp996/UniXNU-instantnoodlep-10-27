@@ -162,20 +162,19 @@ jobs:
       - name: Report the failure
         if: failure()
         # Artifacts need a token to download, but annotations are readable through the
-        # API, so a failing run states its last log lines in the check run itself.
+        # API, so a failing run states its interesting log lines in the check run itself.
         run: |
-          # Error lines first: a blind tail buries them under build command echoes.
+          set +e
           for f in "$RUNNER_TEMP"/*.log; do
             [ -f "$f" ] || continue
             echo "::group::$(basename "$f") errors"
-            grep -n -E 'error:|Error |ERROR|FAILED|fatal|No such file|undefined|not found' "$f"               | tail -n 25 | cut -c1-380 | while IFS= read -r line; do echo "::error::$line"; done
+            grep -n -E 'error:|Error |ERROR|FAILED|fatal|undefined|not found' "$f" | tail -n 25 | cut -c1-380 | while IFS= read -r line; do echo "::error::$line"; done
             echo "::endgroup::"
           done
           echo "::group::kernel.log tail"
-          tail -n 15 "$RUNNER_TEMP/kernel.log" 2>/dev/null | cut -c1-380 | while IFS= read -r line; do
-            [ -n "$line" ] && echo "::error::tail: $line"
-          done
+          tail -n 12 "$RUNNER_TEMP/kernel.log" 2>/dev/null | cut -c1-380 | while IFS= read -r line; do echo "::error::tail: $line"; done
           echo "::endgroup::"
+          exit 0
 
       - name: Publish logs
         if: always()
