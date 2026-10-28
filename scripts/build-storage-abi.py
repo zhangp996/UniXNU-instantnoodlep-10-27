@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 REFER = ROOT / 'refer/IOStorageFamily'
 OUT = ROOT / 'build/storage-abi-kernel'
-RECORD_DIR = ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT'
+RECORD = ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json'
 
 # Everything IOBlockStorageDevice pulls in, plus the media and partition schemes the
 # storage driver publishes. Kept explicit so a source that fails on a board is visible.
@@ -38,15 +38,14 @@ SOURCES = [
 
 
 def record_arguments():
-    records = sorted(RECORD_DIR.glob('*.o.json'))
-    if not records:
-        raise SystemExit(f'no compile records in {RECORD_DIR}; build the kernel records first')
-    for path in records:
-        record = json.loads(path.read_text())
-        arguments = record.get('arguments') or []
-        if '-c' in arguments:
-            return record, arguments
-    raise SystemExit('no compile record carries "-c"')
+    # build-arm-driver.py reads this exact record: one JSON object with a trailing comma.
+    if not RECORD.is_file():
+        raise SystemExit(f'missing {RECORD}; build the kernel compile records first')
+    record = json.loads(RECORD.read_text().strip().rstrip(','))
+    arguments = record.get('arguments') or []
+    if '-c' not in arguments:
+        raise SystemExit(f'{RECORD} carries no "-c" compile command')
+    return record, arguments
 
 
 def main():
