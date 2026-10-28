@@ -180,6 +180,28 @@ jobs:
           set -o pipefail
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
 
+      - name: Kernel bootstrap diagnostics
+        # The kernel step first runs one pass that links without the driver archives and
+        # is tolerated only when it left compile records behind. Report which of the two
+        # happened: the record file, the bootstrap log, and whether the mockfs fixture and
+        # the board's UFS archive were part of the build.
+        if: failure()
+        run: |
+          set +e
+          echo "== compile records =="
+          ls -l out/*/*/tree/build/xnu/ios-obj/*/osfmk/DEVELOPMENT/startup.o.json
+          echo "== bootstrap log size =="
+          wc -l out/*/*/logs/kernel-bootstrap.log out/*/*/logs/kernel.log 2>/dev/null
+          echo "== bootstrap: startup/mockfs/KonaUfs =="
+          grep -n -E "startup\.o|mockfs|KonaUfs|sheng-ufs|kona-ufs|Undefined symbols|MOCKFS" \
+            out/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
+          echo "== archive outputs =="
+          ls -l out/*/*/tree/build/mockfs-fixture/libmockfs_fixture.a \
+                out/*/*/tree/build/sheng-ufs/libShengUfs.a \
+                out/*/*/tree/build/kona-ufs/*.a 2>&1
+          echo "== resolved kernel config =="
+          grep -n -E "MOCKFS|NATIVE_UFS|VIRTIO_BLOCK|VERIFIED_ROOT" out/*/*/.config 2>/dev/null | head -n 20
+
       - name: Build the payload
         run: |
           set -o pipefail
