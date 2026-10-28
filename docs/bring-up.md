@@ -85,3 +85,30 @@ platform package:
 
 Still logged but not fatal: `Failed to Display Boot Logo` (no boot-logo producer) and
 `SetupKeypad: Failed to Locate STI Device Path` (no keyboard driver in the volume).
+## DarwinBoot hand-off reached on the device
+
+The panel shows the loader hand-off bar and the loader log:
+
+```
+DARWINBOOT: hand-off to the kernel
+  kernel va 0xFFFFFFF0042C7000 pa 0x0C007C000
+  entry  pa 0x0C31D0B8  args pa 0x0C031000  window 0x100000000 bytes
+  video  base=0x9C000000 display=1 row=4320 width=1080 height=2376 depth=32
+DARWINBOOT: command line: -v serial=3 debug=0x14e kt_fixed_zones=120 -no_slto_panic
+DARWINBOOT: inputs validated; exiting boot services
+```
+
+The green bar across the top of the panel is the hand-off marker the loader draws after
+`ExitBootServices`, so the hand-off to the kernel entry point happened.
+
+What it took after the menu appeared:
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `boot refused: Compromised Data` | the ADT had no `memory-map` entry because no Data seed was passed | build the payload with a Data seed so `/chosen/memory-map` carries `RAMDisk` |
+| `boot refused: Compromised Data` (again) | the trust cache was the raw IM4P from the IPSW, not the bundle DarwinBoot validates | unwrap the DER, keep the version-2 module, wrap it as count + offset table + module |
+| `boot refused: Out of Resources` | the loader needs one contiguous window as large as `payload.adt.owned_memory_size` (4 GiB) and the map described only the first DRAM bank | add the two upper banks the device tree reports as conventional memory |
+| `Compromised Data` with no `DARWINBOOT:` line | the loader read the virtual GOP on the console handle, whose `FrameBufferBase` is zero | validate that GOP and fall back to the platform framebuffer |
+
+Next: the kernel entry itself. The entry probe (docs/guide/debugging#color-bars) is the
+next observable.

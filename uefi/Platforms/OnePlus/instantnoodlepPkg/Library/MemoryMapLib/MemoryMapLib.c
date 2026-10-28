@@ -52,6 +52,13 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
   // so the span is split around it instead of straddling it.
   {"Free High",            0xA0000000, 0x010000000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},
   {"Free Tail",            0xB0400000, 0x00B700000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},
+
+  // The two upper DRAM banks the live device tree reports. DarwinBoot needs one
+  // contiguous window as large as payload.adt.owned_memory_size (4 GiB here), and the
+  // first bank alone cannot provide it; the third bank is exactly 4 GiB and sits at
+  // 0x180000000.
+  {"RAM Bank 2",           0xC0000000, 0x0C0000000, AddMem, SYS_MEM, SYS_MEM_CAP,  Conv,   WRITE_BACK},
+  {"RAM Bank 3",           0x180000000, 0x100000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},
   {"UEFI Stack",           0x9F000000, 0x00040000, AddMem, SYS_MEM, SYS_MEM_CAP,   BsData, WRITE_BACK_XN},
 
   // Reserved by the bootloader above the UEFI window.

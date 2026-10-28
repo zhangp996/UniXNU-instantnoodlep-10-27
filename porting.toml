@@ -103,7 +103,7 @@ next_action = [
   "Boot the built firmware once the payload and boot image exist, then record the menu, the framebuffer and the DarwinBoot handoff.",
 ]
 evidence = [
-  { kind = "device", reference = "docs/bring-up.md", command = "fastboot boot boot-hdr.img", revision = "HEAD", result = "The firmware starts DxeCore, dispatches the driver volume and reaches the BDS boot menu on the device. The console renders at 1080x2376; docs/bring-up.md records each assert that was fixed to get here." },
+  { kind = "device", reference = "docs/bring-up.md", command = "fastboot boot boot-hdr.img", revision = "HEAD", result = "The firmware starts DxeCore, dispatches the driver volume, reaches the UniXNU menu, reads its payload, and DarwinBoot validates the inputs and exits boot services into the kernel entry point; the panel shows the hand-off bar. docs/bring-up.md records every assert and refusal fixed to get here." },
   { kind = "host", reference = "docs/evidence/host-firmware-build.log", command = "unixnu build firmware -D ../UniXNU-instantnoodlep", revision = "a671af8a2769178f91eec1fe0ccb4c013bea94f7", result = "The EDK II build completes and produces SILICIUM_UEFI.fd: 4194304 bytes (0x400000), FV signature _FVH, FV length 0x333000, about 40 FFS files including UniXNU, UniXNUDxe, UniXNURamDiskDxe and DarwinBoot." },
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device unlocked: false, Device critical unlocked: false, secure:yes, Verity mode: true, slot-count 2; an unsigned UniXNU boot image cannot be started until the bootloader is unlocked." },
 ]

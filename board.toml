@@ -76,6 +76,11 @@ BUILDID_STRING = "instantnoodlep-research"
 
 [payload]
 volume = "INSTNPDLP"
+
+# The firmware volume has no keyboard driver yet, so nobody can pick an entry.
+# timeout = 0 boots the generated default entry ("xnu") immediately instead of
+# waiting; UniXNU falls back to its own fallback_timeout when no input device exists.
+timeout = 0
 # boot_a and boot_b are 96 MiB each (measured with fastboot getvar all). The ramdisk,
 # the boot shim, the firmware volume and the appended device tree all live in one of
 # them, and the image keeps 8 MiB of the partition free, so the volume is bounded here
@@ -104,7 +109,7 @@ kernel_args = [
 # restore image: Firmware/044-76040-038.dmg.trustcache, 59519 bytes, taken from
 # out/ipsw/21H461. The OS profile allowlist covers other images, so this board states
 # its own hash instead of accepting anything the image happens to carry.
-trust_cache_sha256 = ["4563bdbf6ed8f72237d45dbba3ccde432634338f95c10d79d5d4631678a97c7c"]
+trust_cache_sha256 = ["c9e50d678793ecaf8329ce022856c23c27775333181becb130c73ea93f376d17"]
 
 [payload.adt]
 # chip_id and owned_memory_size follow the OS profile and the SoC; the unique chip id
