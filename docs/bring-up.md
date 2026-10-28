@@ -367,3 +367,34 @@ Missing, and needed before the kernel can mount root:
 
 The register map gathered so far is in `porting.toml`; the probe lives in
 `uefi/Platforms/OnePlus/instantnoodlepPkg/Drivers/UfsProbeDxe`.
+## UFS: stop reimplementing it in the firmware
+
+The firmware probe now matches ShengUfs's `hostSubmit` on every parameter that the
+source shows:
+
+| Item | ShengUfs | Probe |
+| --- | --- | --- |
+| request-list run/stop | `0x60` | `0x60` |
+| `HCS` bit 1 wait after start | yes | yes |
+| UTRD words 0/2/4/5/6/7 | as listed | identical |
+| PRDT entry, length in `prd[3]` | `dataBytes - 1` | `dataBytes - 1` |
+| interrupt acknowledge before the doorbell | `0x20 = 1` | `0x20 = 1` |
+| cache clean and `dsb sy` before the ring | yes | yes |
+
+The queue now starts (`RSR 0x1`) and the controller reports `ocs 0`, yet neither the
+response UPIU at `UCD+0x200` nor the data at the PRDT address is written. Two things are
+still unknown and cannot be settled from the outside: where this controller looks for the
+response UPIU, and why it completes without a data phase.
+
+Continuing to reverse-engineer that in UEFI is the wrong vehicle. The documented design is
+a kernel driver with runtime class `NativeUfs` (`docs/drivers/sheng-ufs.md`), where the
+reference `NativeUfs.cpp` runs unchanged and its own diagnostics report `ocs`, doorbell and
+`IS` per command. The firmware probe has done its job: it proved register access, clock
+gates, the run/stop register and the command/PRDT layout.
+
+Next step, in order:
+
+1. Build ShengUfs's sources against the kona constants already recorded (host
+   `0x1d84000`, PHY `0x1d87000`, GCC ids, `core_reset` `0x21`, no SMMU).
+2. Keep the firmware's `UfsProbeDxe` as the cold-state check, not as the driver.
+3. Let the kernel driver publish the root IOMedia and hand the mount to XNU.

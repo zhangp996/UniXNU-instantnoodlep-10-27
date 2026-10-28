@@ -14,6 +14,7 @@
 **/
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/ArmLib.h>
 #include <Library/CacheMaintenanceLib.h>
 #include <Library/IoLib.h>
 #include <Library/MemoryAllocationLib.h>
@@ -31,7 +32,7 @@
 #define UFS_UTRLBA      0x0050
 #define UFS_UTRLBAU     0x0054
 #define UFS_UTRLDBR     0x0058
-#define UFS_UTRLRSR     0x005C
+#define UFS_UTRLRSR     0x0060   // Qualcomm's DWC layout, not the UFSHCI 0x5c
 #define UFS_UICCMD      0x0090
 #define UFS_UICCMDARG1  0x0094
 #define UFS_UICCMDARG2  0x0098
@@ -53,7 +54,7 @@
 #define URD_OFFSET      0x0000
 #define UCD_OFFSET      0x1000
 #define RSP_OFFSET      0x0200
-#define PRDT_OFFSET     0x1000
+#define PRDT_OFFSET     0x0400
 #define DATA_OFFSET     0x2000
 #define BUFFER_PAGES    8
 
@@ -85,13 +86,15 @@ SubmitCommand (
     Prd[0] = (UINT32)(mPhys + DATA_OFFSET);
     Prd[1] = (UINT32)((mPhys + DATA_OFFSET) >> 32);
     Prd[2] = 0;
-    Prd[3] = 0;
+    Prd[3] = DataBytes - 1;
     Prd[4] = 0;
     Prd[5] = 0;
   }
 
   WriteBackDataCacheRange (mBuffer, BUFFER_PAGES * 4096);
   WriteBackDataCacheRange ((VOID *)(UINTN)mUtRdBase, 32);
+  ArmDataSynchronizationBarrier ();
+  ArmInstructionSynchronizationBarrier ();
   Print (L"UFSPROBE:   utrd %08x %08x %08x %08x %08x %08x %08x %08x\n",
          Words[0], Words[1], Words[2], Words[3], Words[4], Words[5], Words[6], Words[7]);
   Print (L"UFSPROBE:   prd %08x %08x %08x %08x (dir %u len %u)\n",
@@ -153,11 +156,25 @@ UfsProbeEntry (
   mPhys   = (UINT64)(UINTN)mBuffer;
 
   mUtRdBase = mPhys;
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IE, 0);
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 0);
+  gBS->Stall (1000);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA, (UINT32)mPhys);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBAU, (UINT32)(mPhys >> 32));
+  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 0xFFFFFFFF);
   MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 1);
-  Print (L"UFSPROBE: UTRLBA 0x%lx RSR 0x%x\n",
-         mPhys, MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR));
+  {
+    UINTN Wait;
+    for (Wait = 0; Wait < 100; Wait++) {
+      if (MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS) & 2) {
+        break;
+      }
+      gBS->Stall (1000);
+    }
+  }
+  Print (L"UFSPROBE: UTRLBA 0x%lx RSR 0x%x HCS 0x%x\n",
+         mPhys, MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR),
+         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS));
 
   Ucd = mBuffer + UCD_OFFSET;
   Rsp = mBuffer + UCD_OFFSET + RSP_OFFSET;
@@ -179,8 +196,9 @@ UfsProbeEntry (
   SubmitCommand (2, 8);
   Ocs = PollOcs (2000);
   InvalidateDataCacheRange (mBuffer + DATA_OFFSET, 64);
-  Print (L"UFSPROBE:   where 0x%08x 0x%08x (at 0x2000, 0x3000)\n",
-         *(UINT32 *)(mBuffer + 0x2000), *(UINT32 *)(mBuffer + 0x3000));
+  Print (L"UFSPROBE:   where prd %08x %08x data %08x %08x\n",
+         *(UINT32 *)(mBuffer + 0x1400), *(UINT32 *)(mBuffer + 0x1404),
+         *(UINT32 *)(mBuffer + 0x2000), *(UINT32 *)(mBuffer + 0x2004));
   {
     volatile UINT8  *Data;
     UINT32          Word[4];
@@ -232,6 +250,9 @@ UfsProbeEntry (
     Print (L"UFSPROBE: READ(10) lba1 ocs 0x%x status 0x%x sig '%a'\n", Ocs, Rsp[6], Text);
     Print (L"UFSPROBE: lba1 %02x %02x %02x %02x %02x %02x %02x %02x\n",
            Data[0], Data[1], Data[2], Data[3], Data[4], Data[5], Data[6], Data[7]);
+    Print (L"UFSPROBE: after read prd %08x %08x data %08x %08x\n",
+           *(UINT32 *)(mBuffer + 0x1400), *(UINT32 *)(mBuffer + 0x1404),
+           *(UINT32 *)(mBuffer + 0x2000), *(UINT32 *)(mBuffer + 0x2004));
   }
 
   CpuDeadLoop ();
