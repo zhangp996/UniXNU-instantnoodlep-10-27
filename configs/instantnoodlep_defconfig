@@ -10,10 +10,11 @@ CONFIG_XNU_NATIVE_PAN=y
 # docs/guide/debugging.md: read the embedded panic region from the device tree instead
 # of the board header constant the arch profile otherwise compiles in.
 CONFIG_XNU_DT_PANIC_REGION=y
-# Storage: components/kona-ufs holds the ShengUfs fork with this board's measured
-# constants (host 0x1d84000, PHY 0x1d87000, the kona GCC branch table, no apps SMMU).
-# docs/porting/ufs.md is the procedure; the firmware probe already proved register access,
-# the run/stop register at 0x60 and the UTRD/PRDT layout.
-CONFIG_XNU_NATIVE_UFS=y
+# Storage follows docs/kebab-path-analysis.md: a BSD-level UFS disk driver (bdevsw) plus
+# the vendored Apple OSS HFS, both in the kernel. It needs no storage kext, so the
+# ShengUfs archive stays off: that one subclasses IOBlockStorageDevice, which only the
+# IOStorageFamily kext defines.
+CONFIG_XNU_KONA_UFS=y
+# CONFIG_XNU_NATIVE_UFS is not set
 # No catalog component has Adreno 650 scope yet.
 # CONFIG_XNU_NATIVE_ADRENO is not set
