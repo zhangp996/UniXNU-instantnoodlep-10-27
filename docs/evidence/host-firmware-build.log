@@ -1,0 +1,10 @@
+# Host: WSL2 Ubuntu 22.04, clang 14, EDK II CLANGPDB
+# built: 2026-10-28T12:58:51+08:00
+PS> unixnu build firmware -D ../UniXNU-instantnoodlep
+== firmware: SILICIUM_UEFI.fd
+
+-rw-r--r-- 1 dev dev 4194304 Oct 28 12:58 /home/dev/oneplus/sources/Mu-Silicium/Build/instantnoodlepPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd
+size=4194304 bytes (0x400000)
+00000000: 0e2a 0014 0000 0000 0000 0000 0000 0000  .*..............
+00000010: 78e5 8c8c 3d8a 1c4f 9935 8961 85c3 2dd3  x...=..O.5.a..-.
+00000020: 0030 3300 0000 0000 5f46 5648 fffe 0c00  .03....._FVH....

@@ -62,7 +62,7 @@ evidence = [
 
 [[area]]
 id = "firmware"
-status = "planned"
+status = "host-verified"
 components = []
 paths = [
   "proprietary-files.txt",
@@ -92,14 +92,15 @@ completion = [
   "The firmware image builds, enters UniXNU, publishes the framebuffer and preserves the documented reservations.",
 ]
 limits = [
-  "The platform package does not exist; the configured paths are the ones the port must create.",
-  "The ABL memory map and the splash region are unmeasured.",
-  "The bootloader is locked (unlocked:no, secure:yes, verity true), so fastboot refuses to boot an unsigned image until it is unlocked.",
+  "The platform package is written from scratch: it selects no vendor DXE driver, so the firmware has no touch input and no UEFI-side UFS driver.",
+  "The shared SiliciumPkg.dsc.inc and edk2 tools_def are patched locally for PE alignment: upstream links AArch64 images with /ALIGN:4096 (runtime drivers 0x10000) and no /FILEALIGN, which GenFv rejects when it rebases the images.",
+  "The bootloader is unlocked (verifiedbootstate orange), so fastboot accepts an unsigned image.",
 ]
 next_action = [
-  "Read the memory map and splash region over ADB, create Platforms/OnePlus/instantnoodlepPkg, then build and boot.",
+  "Boot the built firmware once the payload and boot image exist, then record the menu, the framebuffer and the DarwinBoot handoff.",
 ]
 evidence = [
+  { kind = "host", reference = "docs/evidence/host-firmware-build.log", command = "unixnu build firmware -D ../UniXNU-instantnoodlep", revision = "a671af8a2769178f91eec1fe0ccb4c013bea94f7", result = "The EDK II build completes and produces SILICIUM_UEFI.fd: 4194304 bytes (0x400000), FV signature _FVH, FV length 0x333000, about 40 FFS files including UniXNU, UniXNUDxe, UniXNURamDiskDxe and DarwinBoot." },
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device unlocked: false, Device critical unlocked: false, secure:yes, Verity mode: true, slot-count 2; an unsigned UniXNU boot image cannot be started until the bootloader is unlocked." },
 ]
 

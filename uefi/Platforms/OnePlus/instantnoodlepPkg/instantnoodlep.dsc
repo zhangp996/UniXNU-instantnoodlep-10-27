@@ -67,13 +67,13 @@
   #
   gQcomPkgTokenSpaceGuid.PcdPlatformType|"LA"
 
-[BuildOptions]
-  #
-  # The shared tools_def links AArch64 images with /ALIGN:4096 but leaves the file
-  # alignment at the linker default, and GenFv then refuses to rebase the DXE images
-  # it packs ("Section-Alignment and File-Alignment do not match"). Pin both.
-  #
-  *_CLANGPDB_AARCH64_DLINK_FLAGS = /FILEALIGN:0x1000
+##
+# GenFv rebases the images it packs and rejects any PE whose section and file
+# alignment differ. The link needs both values, and the module-type section takes
+# precedence over a generic entry, so the runtime-driver alignment is pinned here.
+##
+[BuildOptions.common.EDKII.DXE_RUNTIME_DRIVER]
+  *_CLANGPDB_*_DLINK_FLAGS = /ALIGN:0x1000 /FILEALIGN:0x1000
 
 [LibraryClasses]
   MemoryMapLib|instantnoodlepPkg/Library/MemoryMapLib/MemoryMapLib.inf
