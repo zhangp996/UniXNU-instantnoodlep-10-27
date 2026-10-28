@@ -133,7 +133,6 @@ jobs:
           text = path.read_text()
           if '"KonaUfs"' not in text:
               text = re.sub(r'(include = \[.*?)(\])', r'\1, "KonaUfs"\2', text, count=1)
-              text = re.sub(r'(archives = \[.*?)(\])', r'\1, "component:KonaUfs"\2', text, count=1)
               path.write_text(text)
               print('selected KonaUfs for this build')
           PY

@@ -54,6 +54,7 @@ archives = [
   "component:VirtioMmioBlock",
   "build-mockfs-fixture.py",
   "build-libpthread-kernel.py",
+  "component:KonaUfs",
 ]
 
 [firmware]
