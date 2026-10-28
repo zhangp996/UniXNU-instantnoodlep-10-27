@@ -83,9 +83,9 @@ volume = "INSTNPDLP"
 timeout = 0
 
 # Kernel entry probe (docs/guide/debugging#color-bars): the payload patches the
-# prelinked kernel so early entry points paint bars; the device resets after the
-# delay. Needed because this board has no serial console for kernel output.
-entry_probe_reset_delay = 6
+# prelinked kernel so early entry points paint bars. The timed reset is off now that
+# both bands appear; the kernel gets to continue past the MMU enable.
+panic_screen = true
 # boot_a and boot_b are 96 MiB each (measured with fastboot getvar all). The ramdisk,
 # the boot shim, the firmware volume and the appended device tree all live in one of
 # them, and the image keeps 8 MiB of the partition free, so the volume is bounded here

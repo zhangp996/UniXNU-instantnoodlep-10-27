@@ -133,3 +133,30 @@ The Mach-O of the payload kernel and the numbers the loader prints disagree:
 So either the base the loader reports is not the segment base it uses, or the entry it
 computed is not the Mach-O entry. The next step is to read `ParseKernel` against this
 kernel and settle which of the two is wrong, then check the jump target.
+## Kernel entry reached
+
+With the entry probe enabled the panel shows the three bands in order:
+
+| Band | Meaning | Observed |
+| --- | --- | --- |
+| Green | DarwinBoot exited boot services | yes |
+| Blue | kernel entry ran with the MMU off | yes |
+| Magenta | kernel reached the point before the MMU is enabled | yes |
+
+The loader's own sanity line confirms the entry address:
+
+```
+entry in __TEXT_EXEC offset 0x1B8488 executable yes
+```
+
+which matches the Mach-O analysis of the payload kernel: `LC_UNIXTHREAD` entry
+`0xFFFFFFF0073F0488` inside `__TEXT_EXEC` at offset `0x1B8488` from `__TEXT`'s
+`0xFFFFFFF007004000`. The earlier suspicion that the loader computed a wrong entry
+came from misreading hex digits in a photograph.
+
+Behaviour after the bars, in this build:
+
+| Probe setting | Result |
+| --- | --- |
+| `entry_probe_reset_delay = 6` | the device resets about six seconds after the MMU is on, then Android boots |
+| `panic_screen = true` (no reset) | the kernel is left to continue past the MMU enable |
