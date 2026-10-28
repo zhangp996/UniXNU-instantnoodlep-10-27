@@ -267,3 +267,27 @@ list is the right path, and the GCC clock ids, `core_reset` and PHY sequence rec
 
 The region is already mapped by the firmware memory map ("UFS", `0x01D84000`,
 `0x00100000`, MmIO), which is why the probe needs no clock or reset code to read it.
+## UTP round trip from the firmware
+
+`UfsProbeDxe` now takes the request list and issues two commands, using the UTRD and
+UPIU layout from ShengUfs's `RootCommands.h`:
+
+```
+UFSPROBE: HCS 0x0000010F, taking the queue
+UFSPROBE: UTRLBA 0x27FAC400 RSR 0x0
+UFSPROBE: NOP ocs 0x0 response-type 0x20 tag 0
+UFSPROBE: READ CAPACITY ocs 0x0 status 0x0
+UFSPROBE: data 7F7E2000 00000000 00000000 00000000
+```
+
+Both commands complete with `ocs 0` and the NOP answers with a `0x20` NOP IN UPIU, so the
+queue ownership, the UTRD encoding, the doorbell and the completion polling all work on
+this controller.
+
+The capacity decode is still wrong (the parsed block size is `0x02000000`). The data
+words are read without `volatile` after the cache invalidate, so the compiler is free to
+keep a stale copy; the reader must use volatile loads (or re-invalidate immediately
+before each read) and cross-check the response UPIU's residual length before trusting the
+numbers.
+
+Status: the transport works, the capacity decode does not yet.

@@ -17,7 +17,9 @@
 
 [LibraryClasses]
   BaseMemoryLib
+  CacheMaintenanceLib
   IoLib
+  MemoryAllocationLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
