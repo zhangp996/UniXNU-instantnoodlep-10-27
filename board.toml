@@ -52,9 +52,6 @@ archives = [
   "component:SoftwareAES",
   "build-software-aes-bindings.py",
   "component:VirtioMmioBlock",
-  # Option B in docs/bring-up.md: the public storage sources, so the archive-form UFS
-  # driver resolves IOBlockStorageDevice at the kernel link.
-  "build-storage-abi.py",
   "build-mockfs-fixture.py",
   "build-libpthread-kernel.py",
   "component:KonaUfs",
