@@ -65,7 +65,7 @@ jobs:
       DEVICE_DIR: ${{ github.workspace }}/device
     steps:
       - name: Check out UniXNU at the workspace root
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ inputs.unixnu_repository }}
           ref: ${{ inputs.unixnu_ref }}
@@ -73,7 +73,7 @@ jobs:
           persist-credentials: false
 
       - name: Check out the SoC repository beside the device repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ inputs.soc_repository }}
           ref: ${{ inputs.soc_ref }}
@@ -81,13 +81,13 @@ jobs:
           persist-credentials: false
 
       - name: Check out the device repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ inputs.device_repository || github.repository }}
           path: device
           persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
 
@@ -98,7 +98,9 @@ jobs:
           [ -f "device/configs/$DEFCONFIG" ] || fail "device/configs/$DEFCONFIG is missing"
           [ -d "$DEVELOPER_DIR" ] || fail "Xcode not found at $DEVELOPER_DIR"
           [ -x ./unixnu ] || fail 'the UniXNU CLI is missing at the workspace root'
-          grep -q 'board.example = true' device/board.toml && echo '::warning::board.example is true'
+          if grep -q 'board.example = true' device/board.toml; then
+            echo '::warning::board.example is true: the build will refuse to run'
+          fi
 
       - name: Install host tools
         run: |
@@ -129,7 +131,7 @@ jobs:
 
       - name: Publish logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: kernel-logs
           path: ${{ runner.temp }}/*.log
