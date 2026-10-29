@@ -1,0 +1,17 @@
+--- a/bsd/dev/kona_ufs.c
++++ b/bsd/dev/kona_ufs.c
+@@ -34,3 +34,12 @@
+ 	(void)c;
+ }
++
++/*
++ * iPadOS roots on APFS (a prelinked kext); the vendored HFS is not built, so
++ * the registration call from kona_ufs_rootdev resolves here.
++ */
++void
++kona_hfs_register(void)
++{
++}
+ #include <sys/buf.h>
+ #include <sys/conf.h>
+ #include <sys/disk.h>

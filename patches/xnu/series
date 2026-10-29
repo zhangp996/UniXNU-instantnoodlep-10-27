@@ -5,4 +5,5 @@
 # kebab-route/ stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.
 kebab-route/kona-ufs-driver.patch
 kebab-route/kona-ufs-early-putc.patch
+kebab-route/kona-hfs-noop.patch
 kebab-route/kona-ufs-integration.patch
