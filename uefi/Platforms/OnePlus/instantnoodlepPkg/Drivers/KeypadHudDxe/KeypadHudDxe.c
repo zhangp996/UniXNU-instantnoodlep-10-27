@@ -15,7 +15,7 @@
 
 #include <SpmiLib.h>
 
-#define CELL   16
+#define CELL   44
 
 STATIC EFI_GRAPHICS_OUTPUT_PROTOCOL  *mGop;
 
@@ -35,8 +35,8 @@ Cell (
   )
 {
   EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Pixel;
-  UINT32                         X = 8 + Col * (CELL + 4);
-  UINT32                         Y = 8 + Row * (CELL + 4);
+  UINT32                         X = 40 + Col * (CELL + 6);
+  UINT32                         Y = 40 + Row * (CELL + 6);
 
   if (mGop == NULL) {
     return;
@@ -59,6 +59,11 @@ Repaint (
   EFI_STATUS  DownStatus;
   UINTN       Bit;
 
+  {
+    EFI_GRAPHICS_OUTPUT_BLT_PIXEL  Panel;
+    Panel.Red = 0; Panel.Green = 0; Panel.Blue = 0; Panel.Reserved = 0;
+    mGop->Blt (mGop, &Panel, EfiBltVideoFill, 0, 0, 20, 20, 620, 190, 0);
+  }
   UpStatus   = SpmiRead (0, 0xC600, 0x10, 1, &Up);
   DownStatus = SpmiRead (0, 0xC700, 0x10, 1, &Down);
 
