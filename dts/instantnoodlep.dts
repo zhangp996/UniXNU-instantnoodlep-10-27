@@ -50,6 +50,12 @@
     chosen {
         embedded-panic-log-size = <0x80000>;
     };
+
+    // The BSD-level UFS disk (patches/xnu/kebab-route/kona-ufs-driver.patch) reads
+    // the controller base from /kona-ufs and checks the absolute address.
+    kona-ufs {
+        reg = <0 0x01d84000 0 0x00030000>;
+    };
 };
 
 

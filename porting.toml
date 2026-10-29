@@ -134,6 +134,7 @@ procedure = [
 findings = [
   "The shared DTSI models the split as four A55 and four A77 nodes, which matches Kryo 585; the board DTS carries only enablement and cluster tags.",
   "The cluster tags exist so the ADT carries cluster-type for the scheduler patch, which docs/porting/platform.md restricts to a one-E-plus-one-P layout.",
+  "dts/instantnoodlep.dts now also declares /kona-ufs (0x01d84000, 0x30000) for the bdevsw disk; CPU and GIC content is unchanged.",
 ]
 completion = [
   "Every enabled CPU reaches its entry checkpoint and timer and IPI handling works on each enabled CPU.",
@@ -171,6 +172,7 @@ procedure = [
 findings = [
   "docs/porting/platform.md requires each handoff allocation to have an owner and each DMA engine to reach its allocated range before it submits work.",
   "The panic region is a memory fact, not a display one: a board header constant that is wrong for kona hangs the boot CPU with the MMU on, which is why the defconfig selects CONFIG_XNU_DT_PANIC_REGION.",
+  "The same DTS change adds the /kona-ufs MMIO window (0x01d84000+0x30000); the DRAM and reservation entries are unchanged.",
 ]
 completion = [
   "All handoff regions are accounted for and every enabled DMA engine reaches its allocated range with the documented cache policy.",
@@ -225,7 +227,9 @@ findings = [
   "The kernel now reaches the root mount and refuses with Failed to mount root device @IOMediaBSDClient.cpp:984, which is the Stage 6 wall: with no block driver publishing OS and SystemOS there is no device to mount. The frames are fffffff0079b4a0 fffffff00792408 and the page counters advance, so the refusal is the storage gap and not an earlier kernel fault.",
   "docs/porting/ufs.md lists the inventory a storage port needs first: controller, PHY, clocks, resets, SMMU, DMA, handoff and layout; the board supplies every row.",
   "Selecting a component whose hardware scope is another SoC would produce a driver that programs the wrong registers, so the storage area stays planned until kona is reviewed.",
-  "The kebab bdevsw route is enabled (2026-10-29): patches/xnu/series applies the 926-line bsd/dev/kona_ufs.c (a BSD disk that publishes ufsroot0 with 512-byte sectors over 4 KiB device blocks and selects the userdata GPT partition by default), a kona_early_putc stub, and the IOKitBSDInit rd=ufsroot0 hook. CONFIG_XNU_KONA_UFS=y adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS because CFLAGS_EXTRA is not part of CXXFLAGS. The HFS patches stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel. The first host build is the macOS kernel workflow; no result yet.",
+  "The kebab bdevsw route is enabled (2026-10-29): patches/xnu/series applies the 926-line bsd/dev/kona_ufs.c (a BSD disk that publishes ufsroot0 with 512-byte sectors over 4 KiB device blocks and selects the userdata GPT partition by default), a kona_early_putc stub, and the IOKitBSDInit rd=ufsroot0 hook. CONFIG_XNU_KONA_UFS=y adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS because CFLAGS_EXTRA is not part of CXXFLAGS. The HFS patches stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.",
+  "The macOS workflow compiles and links the kernel with the bdevsw driver (kernel.macho sha256 842df627fe04c10231a124917e16b106917ae97d9c688125584620cf25ec829c); its payload step fails only because the workflow passes the raw IPSW trust cache while board.toml accepts the wrapped bundle, so the payload is built locally with trust.bundle and data-seed.img.",
+  "First device run of the bdevsw route (2026-10-29): the IOKitBSDInit rd= hook fired and panicked with 'KONA UFS root ufsroot0 unavailable: 6'. The driver's first check needs a /kona-ufs DT node, which the board DTS lacked; it is now declared. The driver also rejected the DWC VER 0x1587031F and 4 KiB kernel pages; it now warns on the vendor version, allows 4 KiB, and panics with the init stage (dt/arg/map/ver/page/dma/host/tur/capacity/partition/bdevsw).",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",
@@ -487,6 +491,7 @@ procedure = [
 findings = [
   "docs/porting/steps.md step 7 requires the kernel, package, firmware, payload and boot image in that order with each output checked before the next step.",
   "The board series now applies the kona bdevsw storage patches; the payload and boot-image layout are unchanged except the rd=ufsroot0 and ufsroot=userdata kernel arguments in board.toml.",
+  "The kona-ufs-driver patch now reports the init stage in its panic and accepts 4 KiB kernel pages and the DWC VER 0x1587031F; /kona-ufs supplies the controller base.",
 ]
 completion = [
   "Kernel and prelink succeed, the payload contains every declared input, and the boot image matches the bootloader format and size limit.",

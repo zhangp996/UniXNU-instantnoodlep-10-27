@@ -480,6 +480,19 @@ The HFS patches stay unapplied: iPadOS roots on APFS, not HFS.
 The first host build is the macOS kernel workflow. The expected log starts with
 `KONA UFS: VER ... CAP ... HCE ... HCS ...`, then the GPT partition, then the root mount;
 the first failure names the layer.
+
+The macOS workflow compiles and links this driver (kernel.macho sha256
+`842df627fe04c10231a124917e16b106917ae97d9c688125584620cf25ec829c`). Its payload step
+fails only because the workflow passes the raw IPSW trust cache while board.toml accepts
+the wrapped bundle; the payload is therefore built locally with `trust.bundle` and
+`data-seed.img`.
+
+First device run (2026-10-29): the `rd=ufsroot0` hook fired and panicked with
+`IOFindBSDRoot: KONA UFS root ufsroot0 unavailable: 6`. The driver's first check needs a
+`/kona-ufs` device-tree node, which the board DTS did not have; the node now carries
+`reg = <0 0x01d84000 0 0x30000>`. The driver also rejected the DWC version
+`0x1587031F` and the 4 KiB kernel pages; it now warns on the vendor version, allows
+4 KiB and 16 KiB pages, and panics with the init stage so the next run names the layer.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the

@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,926 @@
+@@ -0,0 +1,941 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -121,6 +121,7 @@
 +	bool failed;                           /* DMA storage is never reused after transport failure */
 +	bool init_attempted;
 +	int init_error;
++	const char *stage;
 +} su;
 +
 +static LCK_GRP_DECLARE(kona_ufs_grp, "kona_ufs");
@@ -767,6 +768,7 @@
 +	char want[64] = "userdata";
 +	int error;
 +
++	su.stage = "dt";
 +	if (SecureDTLookupEntry(NULL, "/kona-ufs", &node) != kSuccess ||
 +	    SecureDTGetProperty(node, "reg", &prop, &size) != kSuccess ||
 +	    size != sizeof(reg)) {
@@ -779,28 +781,34 @@
 +		printf("KONA UFS: invalid absolute /kona-ufs reg\n");
 +		return ENXIO;
 +	}
++	su.stage = "arg";
 +	PE_parse_boot_argn("ufsroot", want, sizeof(want));
 +	want[sizeof(want) - 1] = 0;
 +	if (want[0] == 0 || strlen(want) > 36) {
 +		return EINVAL;
 +	}
 +
++	su.stage = "map";
 +	su.regs = ml_io_map((vm_offset_t)reg[0], UFS_MMIO_SIZE);
 +	if (!su.regs) {
 +		return ENOMEM;
 +	}
++	su.stage = "ver";
 +	uint32_t ver = ufs_rd(REG_VER), cap = ufs_rd(REG_CAP);
 +	printf("KONA UFS: VER 0x%x CAP 0x%x HCE 0x%x HCS 0x%x\n",
 +	    ver, cap, ufs_rd(REG_HCE), ufs_rd(REG_HCS));
 +	/* 1.x command types differ; 4.x/MCQ and unknown versions are not handled. */
 +	if (ver != 0x200 && ver != 0x210 && ver != 0x300 && ver != 0x310) {
-+		printf("KONA UFS: unsupported UFSHCI version\n");
++		/* kona reports the DWC host version (0x1587031F), not the UFSHCI 2.x/3.x
++		 * minor; the legacy UTRL layout is still the one the bootloader used. */
++		printf("KONA UFS: UFSHCI VER 0x%x, continuing with the legacy list\n", ver);
++	}
++	su.stage = "page";
++	if (PAGE_SIZE != 0x1000 && PAGE_SIZE != 0x4000) {
++		printf("KONA UFS: unsupported kernel page size 0x%x\n", (unsigned)PAGE_SIZE);
 +		return ENXIO;
 +	}
-+	if (PAGE_SIZE != (0x4000)) {
-+		printf("KONA UFS: this DMA layout requires 16 KiB pages\n");
-+		return ENXIO;
-+	}
++	su.stage = "dma";
 +	ppnum_t max_pnum = (cap & CAP_64AS) ? 0 : (ppnum_t)atop_64(UINT32_MAX);
 +	if (kmem_alloc_contig(kernel_map, &su.dma, DMA_SIZE, PAGE_MASK, max_pnum, 0,
 +	    KMA_DATA | KMA_ZERO | KMA_PERMANENT, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) {
@@ -838,8 +846,10 @@
 +		su.writable = true;
 +	}
 +
++	su.stage = "host";
 +	error = ufs_take_over_host();
 +	if (!error) {
++		su.stage = "tur";
 +		static const uint8_t tur[6] = { 0x00 };
 +		/* The first command after the bootloader may report a unit attention. */
 +		for (int i = 0; i < 3; i++) {
@@ -849,9 +859,11 @@
 +			}
 +		}
 +	}
++	su.stage = "capacity";
 +	if (!error) {
 +		error = ufs_read_capacity();
 +	}
++	su.stage = "partition";
 +	if (!error) {
 +		error = ufs_find_partition(want);
 +	}
@@ -859,6 +871,7 @@
 +		return error;
 +	}
 +
++	su.stage = "bdevsw";
 +	su.bmajor = bdevsw_add(-1, &kona_ufs_bdevsw);
 +	if (su.bmajor < 0) {
 +		return ENXIO;
@@ -922,6 +935,8 @@
 +	int error = su.init_error;
 +	if (!error) {
 +		*dev = su.bdev;
++	} else {
++		panic("KONA UFS %s failed: %d", su.stage ? su.stage : "init", error);
 +	}
 +	lck_mtx_unlock(&kona_ufs_lock);
 +	return error;
