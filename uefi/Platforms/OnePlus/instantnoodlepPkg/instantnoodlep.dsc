@@ -100,6 +100,13 @@
   UniXNULib|UniXNUPkg/Library/UniXNULib/UniXNULib.inf
 
   #
+  # Volume keys: PM8150 SPMI GPIO 6/7 through the local SPMI reader, so the menu has input
+  # without a serial port.
+  #
+  SpmiLib|instantnoodlepPkg/Library/SpmiLib/SpmiLib.inf
+  KeypadDeviceLib|instantnoodlepPkg/Library/KeypadDeviceLib/KeypadDeviceLib.inf
+
+  #
   # Advanced Logger: the QR exporter pages the firmware log onto the panel, which is this
   # board's only log transport until a UART or USB debug link exists
   # (docs/porting/log-capture#qr-logs).
@@ -154,6 +161,15 @@
   # Display, memory and SMBIOS from the shared Silicium package.
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
+  # SiliciumPkg/Drivers/KeypadDeviceDxe/KeypadDeviceDxe.inf
+  # instantnoodlepPkg/Drivers/KeypadProbeDxe/KeypadProbeDxe.inf  (text is cleared by the menu)
+  instantnoodlepPkg/Drivers/KeypadHudDxe/KeypadHudDxe.inf
+  # instantnoodlepPkg/Drivers/KeypadPixelDxe/KeypadPixelDxe.inf
+  instantnoodlepPkg/Drivers/KonaKeysDxe/KonaKeysDxe.inf
+  # Vendor SPMI/PMIC binaries abort without their full dependency set (data abort at FAR 0x20).
+  # instantnoodlepPkg/Binaries/SPMIDxe/SPMIDxe.inf  (also aborts alone: needs the vendor platform)
+  # instantnoodlepPkg/Binaries/PmicDxe/PmicDxeLa.inf
+  # SiliciumPkg/Drivers/KeypadDxe/KeypadDxe.inf
   # UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf  (changes the GOP mode; keep the menu layout)
   # instantnoodlepPkg/Drivers/SpmiProbeDxe/SpmiProbeDxe.inf  (probe: it holds the panel)
   instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
