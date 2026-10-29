@@ -496,3 +496,61 @@ serdes 25, tx 6, rx 34, pcs 7 entries, extracted by script into `UfsPhyTables.h`
 Conclusion: the firmware route needs a real GCC clock/reset/power driver (RPMh votes, GDSC
 sequencing) before the UFS block is trustworthy. The kernel needs the same work and is the
 better place to host it.
+
+## Volume keys: the SPMI path
+
+The keys are PM8150 SPMI GPIOs, and the stock kernel's own interrupt table settles which
+peripheral each key sits on:
+
+| Key | Stock `gpio_keys` node | IRQ on the device | Decoded |
+| --- | --- | --- | --- |
+| volume up | `gpios = <0x61d 0x06 0x01>` | `pmic_arb 206569497 volume_up` | `0x0C500019`: per `0xC5`, APID 25 |
+| volume down | `gpios = <0x61d 0x07 0x01>` | `pmic_arb 207618074 volume_down` | `0x0C60001A`: per `0xC6`, APID 26 |
+
+The decode is `hwirq = (sid << 28) | (per << 20) | (irq << 16) | apid`, and the live device
+tree agrees: `pm8150_gpio6` carries interrupt specifier `0xC5`, `pm8150_gpio7` carries
+`0xC6` (`docs/evidence/device-fdt.dts`, gpio node). Each GPIO peripheral is one 0x100 block:
+GPIO6 is `0xC500`, GPIO7 is `0xC600`.
+
+The first firmware driver polled `0xC600` and `0xC700`, one block too high: "up" read the down
+key and "down" read GPIO8, which the device tree lists as disallowed. The address was not the
+only problem; the arbiter access itself did not match this controller:
+
+| Layer | First implementation | Arbiter requirement |
+| --- | --- | --- |
+| APID lookup | `CNFG + 0xB00 + 4*PPID` treated as an APID array | map is indexed by APID and stores the PPID (`(entry >> 8) & 0xFFF`); v2/v3 at `0x800`, v5 at `0x900`, v7 at `0x2000`. `0xB00` is only the v1 decision-tree root. |
+| Read command | `(len-1) \| (offset << 4)` | `(15 << 27) \| (offset << 4) \| (len-1)` |
+| Read data | `0x10` (WDATA0) | `0x18` (RDATA0) |
+| Observer channel | `0x1000*EE + 0x8000*APID` always | v2/v3 `0x1000*EE + 0x8000*APID`; v5 `0x10000*EE + 0x80*APID`; v7 `0x8000*EE + 0x20*APID` |
+| Status | DONE/FAIL only | DONE, FAILURE, DENIED, DROPPED |
+
+`SpmiLib` now reads the arbiter version at `0xC440000`, caches the APID map once, and builds
+the channel and command from the version. `KonaKeysDxe` carries the corrected
+`0xC500`/`0xC600` addresses and a two-sample debounce (20 ms at a 10 ms poll, covering the
+device tree's 15 ms). It also publishes the ConsoleInDevice GUID next to SimpleTextIn:
+ConSplitter refuses to bind a text-in handle without that tag, so the earlier driver could not
+reach the menu even if its SPMI reads had worked. `KeypadHudDxe` is now a live readout
+instead of a mapping scan: left square = volume up, right square = volume down (green pressed,
+dark released, magenta no APID, red other failure), with the raw status byte as eight cells
+below each square.
+
+Device result (2026-10-29, IN2020 `fa8620b3`): the arbiter reports v5.0.1, the APID map in
+the core window at `0x0900` holds 48 entries, APID 25/26 map PPIDs `0xC5`/`0xC6`, and the
+GPIO real-time status byte reads `0x01` released and `0x00` while either volume key is held;
+the HUD squares turn green. Both volume keys are verified on the device. The PM8150 PON at
+`0x0800` reports `KPDPWR_N` in RT_STS bit0 and is queued as Enter, so a short power-key
+press boots the selected menu entry; that is verified too.
+
+The first diagnostic build faulted at `0xE600C80` before any byte was read: `MemoryMapLib`
+mapped USB as `0x0A600000 + 0x04000000`, which ends exactly at the observer window, so the
+core, channel and configuration windows were reachable by accident and the observer was not.
+The map now carries `PMIC ARB OBS` (`0x0E600000 + 0x00100000`) and `PMIC ARB INTR`
+(`0x0E700000 + 0x000A0000`).
+
+The `input` area stays `planned` only because touch is still missing; the key path itself is
+device-verified. The diagnostic HUD is disabled in the DSC and FDF now that the keys are
+confirmed, so the menu is readable; `KonaKeysDxe` remains the console-input driver.
+
+A second gap surfaced when the menu still ignored the keys: `KonaKeysDxe` was listed in the
+DSC but **not in the FDF**, and the firmware volume is built from the FDF, so the driver had
+never been dispatched. The FDF now lists it next to the other key drivers.

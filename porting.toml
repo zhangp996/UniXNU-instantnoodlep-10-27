@@ -283,6 +283,10 @@ paths = [
   "package/*Touch*",
   "package/*Button*",
   "scripts/*touch*",
+  "uefi/Platforms/OnePlus/instantnoodlepPkg/Drivers/KonaKeysDxe/**",
+  "uefi/Platforms/OnePlus/instantnoodlepPkg/Drivers/KeypadHudDxe/**",
+  "uefi/Platforms/OnePlus/instantnoodlepPkg/Library/SpmiLib/**",
+  "uefi/Platforms/OnePlus/instantnoodlepPkg/Library/KeypadDeviceLib/**",
 ]
 inputs = [
   "Touch controller on a QUPv3 serial engine, with reset and interrupt GPIOs.",
@@ -290,12 +294,18 @@ inputs = [
 ]
 configuration = [
   "No touch component is selected: the catalog HID consumer depends on a board-specific probe that does not exist for this device.",
+  "Volume keys are board-local: KonaKeysDxe publishes EFI_SIMPLE_TEXT_INPUT_PROTOCOL from PM8150 SPMI GPIO reads through SpmiLib, and KeypadHudDxe paints the same reads on the panel. No catalog input component matches this board.",
 ]
 procedure = [
   "Read /proc/bus/input/devices and getevent -pl over ADB to identify bus, address, interrupt and report format.",
 ]
 findings = [
   "docs/porting/input.md requires the bus, protocol, pins, interrupt and coordinate mapping before the component is selected.",
+  "The stock kernel's /proc/interrupts decodes volume_up to hwirq 0x0C500019 (SPMI peripheral 0xC5, APID 25) and volume_down to 0x0C60001A (0xC6, APID 26); the live device tree's pm8150_gpio6/7 interrupt specifiers agree, so the keys are PM8150 GPIO6 (peripheral 0xC500) and GPIO7 (0xC600), not 0xC600/0xC700.",
+  "The first firmware reader looked up the APID at CNFG+0xB00+4*PPID, sent a read command without the opcode and read WDATA0 at 0x10. SpmiLib now detects the arbiter version, caches the APID map (indexed by APID, PPID in bits 8..19), uses the version's observer stride, sends opcode 15 and reads RDATA0 at 0x18; KonaKeysDxe uses 0xC500/0xC600 with a two-sample debounce and publishes the ConsoleInDevice tag ConSplitter requires.",
+  "Device result (2026-10-29, IN2020 fa8620b3): the arbiter reports 0x50010000 (v5), the core APID map at 0x0900 yields 48 entries, APID 25/26 map PPIDs 0xC5/0xC6, and the GPIO real-time status byte reads 0x01 released and 0x00 while either volume key is held; the HUD squares turn green, so both keys work. The first diagnostic build faulted at 0xE600C80 because MemoryMapLib's USB span ends exactly at the observer window; PMIC ARB OBS/INTR are now mapped.",
+  "KonaKeysDxe was listed in the DSC but absent from the FDF; the firmware volume is built from the FDF, so the driver was never dispatched and the menu ignored the keys even after the SPMI reads worked. The FDF now lists it.",
+  "The PM8150 PON at peripheral 0x0800 exposes KPDPWR_N in RT_STS (offset 0x10) bit0, active low; KonaKeysDxe queues it as Enter. On the device a short power-key press boots the selected menu entry, so the volume keys now select and the power key confirms.",
 ]
 completion = [
   "Touches map to the display, simultaneous contacts keep stable IDs, release events arrive and buttons produce expected HID reports.",
@@ -303,11 +313,16 @@ completion = [
 limits = [
   "Measured from the live device tree: the touch controller is a Synaptics S3908 (compatible synaptics-s3908) at I2C address 0x4B on i2c@a94000 (register block 0xa94000+0x4000), with irq-gpio TLMM 39 and reset-gpio TLMM 38, panel-coords 1080x2400, 16 TX and 36 RX lines, and up to 10 contacts.",
   "The HID report format and the touch firmware image are still unread.",
+  "The keys work with the bootloader's pin state, but the driver still does not write MODE_CTL/DIG_PULL_CTL/DIG_VIN_CTL; a cold boot that leaves GPIO6/7 disabled would need that sequence, and the device tree's wakeup property is not applied.",
+  "PON RT_STS bit0 (KPDPWR_N) is read as Enter; RESIN is not read and a long power press is left to the PMIC.",
 ]
 next_action = [
+  "Volume and power keys are device-verified; add the touch controller next so the menu and installer can be driven without a serial port.",
   "Identify the touch controller over ADB, then add a board kit.",
 ]
-evidence = []
+evidence = [
+  { kind = "device", reference = "docs/evidence/in2020-root-raw-permissive.txt", command = "cat /proc/interrupts; cat /proc/bus/input/devices", revision = "1f76692f4623b41d31798314b3d20f53bcebd8b0", result = "The pmic_arb lines decode volume_up to per 0xC5/APID 25 and volume_down to per 0xC6/APID 26; /proc/bus/input/devices names qpnp_pon (power-on@800) and gpio-keys." },
+]
 
 [[area]]
 id = "gpu"
