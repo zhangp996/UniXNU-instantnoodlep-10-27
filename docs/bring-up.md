@@ -501,9 +501,15 @@ failing SCSI command or GPT read in the panic detail.
 
 The partition READ(10) then reports CHECK CONDITION: response UPIU response 1, SCSI
 status 2, sense bytes `70 00 02 40 00 05 a1 0a 00 00 00 00 00 04` (sense key 2, NOT
-READY; the ASC/ASCQ bytes read 0x00/0x04). The driver now sends START STOP UNIT before
-the TUR, keeps the host running for a well-formed CHECK CONDITION instead of
-`ufs_fail()`, and retries the GPT header read five times with a short delay.
+READY; the ASC/ASCQ bytes read 0x00/0x04).
+
+The official `ShengUfs` source names this state and its fix: `NativeUfs.cpp` lines
+488-501 and 956-967 record `bCurrentPowerMode = 0x33` (UFS-PowerDown) with every LU
+returning NOT READY, and resume the device with START STOP UNIT, power condition ACTIVE
+(`0x10`), to the UFS Device well-known LU `0xD0`, then poll TUR. The bdevsw driver now
+does the same (50 ms settle, 20 TUR attempts); its earlier START UNIT to LUN 0 with
+START=1 could not wake the device. It also keeps the host running for a well-formed
+CHECK CONDITION instead of `ufs_fail()`, and retries the GPT header read five times.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the

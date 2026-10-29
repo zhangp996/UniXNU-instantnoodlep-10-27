@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,977 @@
+@@ -0,0 +1,980 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -879,20 +879,23 @@
 +	su.stage = "host";
 +	error = ufs_take_over_host();
 +	if (!error) {
-+		static const uint8_t start[6] = { 0x1b, 0, 0, 0, 0x01, 0 };
-+		/* The bootloader may leave the logical unit stopped; start it and
-+		 * ignore a command-level refusal, the TUR below reports readiness. */
-+		if (ufs_scsi(start, sizeof(start), 0, false) == EIO) {
-+			printf("KONA UFS: START UNIT refused\n");
-+		}
++		/* UFS-PowerDown (0x33) leaves every LU NOT READY; the device wakes
++		 * with START STOP UNIT, power condition ACTIVE, to well-known LU 0xD0
++		 * (ShengUfs NativeUfs.cpp and Linux ufshcd_set_dev_pwr_mode). */
++		static const uint8_t start[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
++		uint32_t saved_lun = su.lun;
++		su.lun = 0xd0;
++		ufs_scsi(start, sizeof(start), 0, false);
++		su.lun = saved_lun;
++		delay(50000);
 +		su.stage = "tur";
 +		static const uint8_t tur[6] = { 0x00 };
-+		/* The first command after the bootloader may report a unit attention. */
-+		for (int i = 0; i < 3; i++) {
++		for (int i = 0; i < 20; i++) {
 +			error = ufs_scsi(tur, sizeof(tur), 0, false);
-+			if (error != EAGAIN) {
++			if (!error) {
 +				break;
 +			}
++			delay(10000);
 +		}
 +	}
 +	su.stage = "capacity";
