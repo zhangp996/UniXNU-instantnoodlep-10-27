@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,960 @@
+@@ -0,0 +1,977 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -328,8 +328,11 @@
 +	}
 +
 +	uint32_t ocs = utrd->dw2 & 0xf;
-+	if (ocs || ucd->resp[0] != 0x21 || ucd->resp[2] != su.lun ||
-+	    ucd->resp[3] != 0 || ucd->resp[6]) {
++	/* A well-formed CHECK CONDITION is a command result, not a transport
++	 * failure: keep the host running so the caller can retry or report. */
++	bool transport_bad = ocs || ucd->resp[0] != 0x21 ||
++	    ucd->resp[2] != su.lun || ucd->resp[3] != 0;
++	if (transport_bad || (ucd->resp[6] && ucd->resp[7] != 2)) {
 +		ufs_fail();
 +	}
 +	if (su.failed || ucd->resp[7]) {
@@ -403,8 +406,16 @@
 +ufs_find_partition(const char *want)
 +{
 +	const uint8_t *b = (const uint8_t *)(su.dma + DMA_BOUNCE);
-+	snprintf(su.detail, sizeof(su.detail), "gpt header lba 1 of %llu", su.device_blocks);
-+	int error = ufs_read_blocks(1, 1);
++	int error = 0;
++	for (int i = 0; i < 5; i++) {
++		snprintf(su.detail, sizeof(su.detail), "gpt header lba 1 of %llu try %d",
++		    su.device_blocks, i);
++		error = ufs_read_blocks(1, 1);
++		if (!error) {
++			break;
++		}
++		delay(1000);
++	}
 +	if (error) {
 +		return error;
 +	}
@@ -868,6 +879,12 @@
 +	su.stage = "host";
 +	error = ufs_take_over_host();
 +	if (!error) {
++		static const uint8_t start[6] = { 0x1b, 0, 0, 0, 0x01, 0 };
++		/* The bootloader may leave the logical unit stopped; start it and
++		 * ignore a command-level refusal, the TUR below reports readiness. */
++		if (ufs_scsi(start, sizeof(start), 0, false) == EIO) {
++			printf("KONA UFS: START UNIT refused\n");
++		}
 +		su.stage = "tur";
 +		static const uint8_t tur[6] = { 0x00 };
 +		/* The first command after the bootloader may report a unit attention. */

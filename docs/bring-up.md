@@ -500,8 +500,10 @@ passed `dt` and stopped at `partition` with EIO 5, so the driver now records the
 failing SCSI command or GPT read in the panic detail.
 
 The partition READ(10) then reports CHECK CONDITION: response UPIU response 1, SCSI
-status 2, sense bytes `70 00 02 ...` (sense key 2, NOT READY). The driver now prints
-the sense length and 14 bytes, enough for the ASC/ASCQ that names the cause.
+status 2, sense bytes `70 00 02 40 00 05 a1 0a 00 00 00 00 00 04` (sense key 2, NOT
+READY; the ASC/ASCQ bytes read 0x00/0x04). The driver now sends START STOP UNIT before
+the TUR, keeps the host running for a well-formed CHECK CONDITION instead of
+`ufs_fail()`, and retries the GPT header read five times with a short delay.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the

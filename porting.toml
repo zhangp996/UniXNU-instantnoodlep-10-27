@@ -231,7 +231,7 @@ findings = [
   "The macOS workflow compiles and links the kernel with the bdevsw driver (kernel.macho sha256 842df627fe04c10231a124917e16b106917ae97d9c688125584620cf25ec829c); its payload step fails only because the workflow passes the raw IPSW trust cache while board.toml accepts the wrapped bundle, so the payload is built locally with trust.bundle and data-seed.img.",
   "First device run of the bdevsw route (2026-10-29): the IOKitBSDInit rd= hook fired and panicked with 'KONA UFS root ufsroot0 unavailable: 6'. The driver's first check needs a /kona-ufs DT node, which the board DTS lacked; it is now declared. The driver also rejected the DWC VER 0x1587031F and 4 KiB kernel pages; it now warns on the vendor version, allows 4 KiB, and panics with the init stage (dt/arg/map/ver/page/dma/host/tur/capacity/partition/bdevsw).",
   "The curated ADT puts hardware nodes under /arm-io, so /kona-ufs was still absent; scripts/unixnu/devicetree.py now carries it top-level. With the node in the ADT the same kernel passed dt and stopped at partition with EIO 5, so the driver now records the SCSI OCS/UPIU/status or the GPT read in the panic detail.",
-  "The partition READ(10) returns CHECK CONDITION: UPIU response 1, SCSI status 2, sense 70 00 02 ... (sense key 2, NOT READY). The driver now prints the sense length and 14 bytes so the next run exposes the ASC/ASCQ.",
+  "The partition READ(10) returns CHECK CONDITION: UPIU response 1, SCSI status 2, sense 70 00 02 40 00 05 a1 0a 00 00 00 00 00 04 (sense key 2, NOT READY; the ASC/ASCQ bytes read 0x00/0x04). The driver now sends START STOP UNIT before the TUR, keeps the host running for a well-formed CHECK CONDITION, and retries the GPT header read five times.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",
@@ -495,7 +495,7 @@ findings = [
   "The board series now applies the kona bdevsw storage patches; the payload and boot-image layout are unchanged except the rd=ufsroot0 and ufsroot=userdata kernel arguments in board.toml.",
   "The kona-ufs-driver patch now reports the init stage in its panic and accepts 4 KiB kernel pages and the DWC VER 0x1587031F; /kona-ufs supplies the controller base.",
   "The ADT generator exports /kona-ufs top-level (hardware nodes otherwise live under /arm-io), and the driver's panic detail carries the failing SCSI command or GPT read.",
-  "The panic detail now prints the sense length and 14 sense bytes, enough for the ASC/ASCQ of the partition READ failure.",
+  "The panic detail now prints the sense length and 14 sense bytes; the driver also sends START STOP UNIT, retries the GPT header read and no longer stops the host for a CHECK CONDITION.",
 ]
 completion = [
   "Kernel and prelink succeed, the payload contains every declared input, and the boot image matches the bootloader format and size limit.",
