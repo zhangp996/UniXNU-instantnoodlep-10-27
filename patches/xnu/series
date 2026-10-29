@@ -1,6 +1,8 @@
 # Board patch paths, one per line in application order.
 #
-# Empty on purpose: the storage work follows docs/porting/ufs.md and docs/guide/build-kernel.md,
-# and its staging patches live in kebab-route/ so they are not applied. The kebab route
-# (BSD-level bdevsw driver plus a vendored HFS) is recorded in docs/kebab-path-analysis.md
-# and can be enabled by listing those patches here once the decision changes.
+# Kebab bdevsw route (docs/kebab-path-analysis.md): a BSD-level UFS disk publishes ufsroot0
+# without IOStorageFamily, and IOKitBSDInit's rd=ufsroot0 hook selects it. The HFS patches in
+# kebab-route/ stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.
+kebab-route/kona-ufs-driver.patch
+kebab-route/kona-ufs-early-putc.patch
+kebab-route/kona-ufs-integration.patch

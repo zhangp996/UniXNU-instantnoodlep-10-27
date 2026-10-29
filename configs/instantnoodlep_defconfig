@@ -10,11 +10,12 @@ CONFIG_XNU_NATIVE_PAN=y
 # docs/guide/debugging.md: read the embedded panic region from the device tree instead
 # of the board header constant the arch profile otherwise compiles in.
 CONFIG_XNU_DT_PANIC_REGION=y
-# Storage is not selected: docs/guide/build-kernel.md prepares only the public
-# IOStorageFamily headers, and the documented binding route (audit-storage-interface.py
-# plus the bindings scripts) needs a live debugger snapshot this board cannot capture.
-# The ShengUfs fork stays in components/kona-ufs and the kebab route stays staged in
-# patches/xnu/kebab-route for later.
+# Storage: the board uses the kebab bdevsw route, not the IOStorageFamily archive.
+# CONFIG_XNU_KONA_UFS adds -DKONA to the kernel build and patches/xnu/series applies
+# kebab-route/kona-ufs-driver.patch + kona-ufs-integration.patch, so bsd/dev/kona_ufs.c
+# publishes ufsroot0 and IOKitBSDInit's rd=ufsroot0 hook selects it.
+CONFIG_XNU_KONA_UFS=y
+# The ShengUfs archive stays in components/kona-ufs until a kext-form driver is chosen.
 # CONFIG_XNU_NATIVE_UFS is not set
 # No catalog component has Adreno 650 scope yet.
 # CONFIG_XNU_NATIVE_ADRENO is not set

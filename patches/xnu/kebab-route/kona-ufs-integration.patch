@@ -6,7 +6,7 @@
  bsd/dev/cpu_copy_in_cksum_gen.c			optional skywalk
 +
 +# KONA: BSD-level UFS root disk, parsed from the device GPT (no IOMedia, no storage kext).
-+bsd/dev/kona_ufs.c			optional kona_ufs
++bsd/dev/kona_ufs.c			standard
 +
 +# KONA: Apple OSS hfs-627 built into the kernel (no HFS kext, no APFS).
 +bsd/kona_hfs/core/BTree.c		optional kona_hfs
@@ -56,7 +56,7 @@
  #endif
  
 +#if defined(KONA)
-+extern int kona_ufs_rootdev(dev_t *dev);
++extern "C" int kona_ufs_rootdev(dev_t *dev);
 +#endif
 +
  extern dev_t mdevadd(int devid, uint64_t base, unsigned int size, int phys);

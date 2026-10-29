@@ -1,0 +1,19 @@
+--- a/bsd/dev/kona_ufs.c
++++ b/bsd/dev/kona_ufs.c
+@@ -24,7 +24,15 @@
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ 
+-extern void kona_early_putc(char c);
++/*
++ * The board's early framebuffer putc is not part of this tree yet; keep konacon
++ * linkable and drop its bytes until a real console helper lands.
++ */
++void
++kona_early_putc(char c)
++{
++	(void)c;
++}
+ #include <sys/buf.h>
+ #include <sys/conf.h>
+ #include <sys/disk.h>
