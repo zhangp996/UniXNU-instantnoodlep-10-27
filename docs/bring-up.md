@@ -475,3 +475,24 @@ exercises `Tools → Advanced Logger`. The exporter has `gAdvancedLoggerProtocol
 dependency: the entry only shows data once a producer installs that protocol, which needs
 the platform DebugLib routed into `AdvLoggerPkg`. That producer wiring is the next step; until
 then the menu entry reports an empty log instead of failing.
+## UFS bring-up from the firmware: what the probe established
+
+The probe drives the host to a block read and holds the panel, so each run is one photograph.
+Findings below are device-measured on IN2020, serial fa8620b3.
+
+| Observation | Meaning |
+| --- | --- |
+| The descriptor written to RAM reads back unchanged after a cache invalidate | the UTRD/PRDT encoding reaches the controller |
+| `utrd[0]=0x15000000`, `[7]=0x01000001`, PRDT `{addr_lo,addr_hi,0,len-1}` | matches GFander/UniXNU-kebab's working encoding, including bit 24 |
+| Earlier runs: `OCS=0`, response UPIU all zero, data area keeps its 0xAA pattern | a *stale* register file reports completion while nothing transfers |
+| After enabling GDSC/clocks/BCR and writing the QMP PHY tables: `OCS=0x0F`, `IS=0x4` | the state is now real, but commands never complete |
+| `GDSCR` reads `0xF822F000` before and after a write that clears bit 31 | the power-domain register ignores our write |
+| `VER` reads `0x00000210`, then `0x1697031F`, then `0x1507031F` across boots | the UFS register block is not consistently clocked, so reads are unreliable |
+| `orig UTRLBA` is `0` on one boot and `0x9A12E000` on another | the bootloader handoff state varies per boot |
+
+The QMP tables come from Linux v5.10 (`phy-qcom-qmp.c/.h`; SM8250 uses the SM8150 v4 layout):
+serdes 25, tx 6, rx 34, pcs 7 entries, extracted by script into `UfsPhyTables.h`.
+
+Conclusion: the firmware route needs a real GCC clock/reset/power driver (RPMh votes, GDSC
+sequencing) before the UFS block is trustworthy. The kernel needs the same work and is the
+better place to host it.

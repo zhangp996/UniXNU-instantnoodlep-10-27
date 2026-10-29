@@ -82,8 +82,9 @@ READ_LOCK_STATUS   = TRUE
 
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   INF UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf
+  # INF instantnoodlepPkg/Drivers/SpmiProbeDxe/SpmiProbeDxe.inf  (probe: it holds the panel)
   # INF instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf  (menu test: the driver halts)
-  # INF instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf  (menu test: the driver halts)
+  INF instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
   #
   # RamManagerDxe is left out: it links QcomPkg/Library/RamManagerLib, whose
   # constructor requires the RAM Partition protocol that the vendor RamPartitionDxe

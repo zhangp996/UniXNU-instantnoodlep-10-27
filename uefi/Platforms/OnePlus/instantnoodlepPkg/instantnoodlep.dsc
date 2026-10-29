@@ -156,6 +156,7 @@
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf
+  # instantnoodlepPkg/Drivers/SpmiProbeDxe/SpmiProbeDxe.inf  (probe: it holds the panel)
   instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
   instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
   SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
