@@ -42,6 +42,7 @@ findings = [
   "UniXNU's zzz-boot-progress.patch carries a hunk whose context is the XNU_SHENG_PMGR block that only the sheng platform-power patch adds to bsd_init.c; a kona tree has no such block, so the hunk is dropped before the series runs (the macOS workflow does it in the Adapt the shared patch series step).",
   "Kernel and payload build on the macOS runner because the kernel step calls Xcode and the payload step may call hdiutil; the workflow publishes kernel.macho and the payload directory as the boot-artifacts artifact so the boot image can be assembled wherever the firmware volume was built.",
   "The boot image uses header version 0: unixnu appends the device tree to the gzip kernel and passes no --dtb to mkbootimg, which a version 2 header would require. The shim is built without the ARM64 kernel header because Mu-Silicium writes FD_SIZE there while unixnu checks for shim plus volume.",
+  "Storage moved to the bdevsw route on 2026-10-29: the defconfig sets CONFIG_XNU_KONA_UFS=y and [payload] kernel_args carries rd=ufsroot0/ufsroot=userdata; the driver and its memory-map/transport details stay in the storage area.",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
@@ -195,6 +196,8 @@ paths = [
   "scripts/*ufs*",
   "scripts/*storage*",
   "scripts/*userdata*",
+  "patches/xnu/series",
+  "patches/xnu/kebab-route/**",
 ]
 inputs = [
   "Measured from docs/evidence/device-fdt.dts: ufshc@1d84000 covers ufs_mem 0x1d84000+0x3000 and ufs_ice 0x1d90000+0x8000 on SPI 265; the PHY is ufsphy_mem@1d87000, phy_mem 0x1d87000+0xe00, two lanes per direction.",
@@ -205,7 +208,9 @@ inputs = [
   "The board GPT: boot_a, boot_b and the userdata extent.",
 ]
 configuration = [
-  "CONFIG_XNU_NATIVE_UFS is not set: ShengUfs is the official implementation but its controller and policy constants are SM8550 and need review for kona (docs/porting/ufs.md).",
+  "CONFIG_XNU_KONA_UFS=y selects the bdevsw route: build-xnu-4k-baseline.sh adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS, patches/xnu/series applies kona-ufs-driver, kona-ufs-early-putc and kona-ufs-integration, and bsd/dev/kona_ufs.c is a standard file.",
+  "kernel_args carries rd=ufsroot0 and ufsroot=userdata, so IOKitBSDInit selects the BSD disk before root-media matching; APFS mounts the container inside the userdata GPT partition.",
+  "CONFIG_XNU_NATIVE_UFS is not set: the ShengUfs archive still cannot link against the IOStorageFamily kext class.",
   "[userdata] holds the write window and names the OS and SystemOS IPSW components.",
 ]
 procedure = [
@@ -220,6 +225,7 @@ findings = [
   "The kernel now reaches the root mount and refuses with Failed to mount root device @IOMediaBSDClient.cpp:984, which is the Stage 6 wall: with no block driver publishing OS and SystemOS there is no device to mount. The frames are fffffff0079b4a0 fffffff00792408 and the page counters advance, so the refusal is the storage gap and not an earlier kernel fault.",
   "docs/porting/ufs.md lists the inventory a storage port needs first: controller, PHY, clocks, resets, SMMU, DMA, handoff and layout; the board supplies every row.",
   "Selecting a component whose hardware scope is another SoC would produce a driver that programs the wrong registers, so the storage area stays planned until kona is reviewed.",
+  "The kebab bdevsw route is enabled (2026-10-29): patches/xnu/series applies the 926-line bsd/dev/kona_ufs.c (a BSD disk that publishes ufsroot0 with 512-byte sectors over 4 KiB device blocks and selects the userdata GPT partition by default), a kona_early_putc stub, and the IOKitBSDInit rd=ufsroot0 hook. CONFIG_XNU_KONA_UFS=y adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS because CFLAGS_EXTRA is not part of CXXFLAGS. The HFS patches stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel. The first host build is the macOS kernel workflow; no result yet.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",
@@ -228,12 +234,12 @@ completion = [
 ]
 limits = [
   "Measured from the dumped GPT: userdata runs from LBA 4133800 to 30513146 with 4096-byte sectors (26379347 sectors, 100.63 GiB), matching the bootloader's partition-size report.",
-  "No UFS register read or link-state observation exists for this board: the clock, reset, PHY and interrupt values above come from the device tree, not from driver runs.",
+  "The firmware probe read VER/CAP/HCS/HCE/IS and the PHY PLL, but the register file is only trustworthy while the bootloader's clocks and power domain stay up; the kernel driver reuses that state and has no cold-init sequence.",
   "ShengUfs's constants target SM8550 host 0x1d84000 with PHY 0x1d80000 and apps SMMU stream 0x60; kona differs in the PHY offset (0x1d87000), the GCC ids and the absence of an SMMU stream, so its table cannot be reused unchanged.",
 ]
 next_action = [
-  "Collect the GPT start of userdata and the UFS link data over ADB, then review ShengUfs's kona constants.",
-  "Decide between a kona ShengUfs port and a RAM root image for the first userland milestone; the kernel already accepts the hand-off and stops only at the missing media.",
+  "Push the device and fork commits, run the macOS kernel workflow, and read the KONA UFS log: the driver should print VER/CAP/HCE/HCS, find the userdata GPT partition, and reach the root mount; iterate the transport on the first failure.",
+  "If the BSD disk publishes but APFS refuses the container, compare the GPT window, the 512-byte sector mapping and the APFS container block size before changing the driver.",
 ]
 evidence = [
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device fa8620b3 (product kona, hw-revision 20001, current-slot a of 2): boot_a and boot_b 96 MiB, userdata 100.63 GiB (26379347 4096-byte sectors), super 14 GiB; the bootloader is locked with verity on, so the storage path cannot run yet." },

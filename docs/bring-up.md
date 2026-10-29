@@ -219,6 +219,13 @@ frames fffffff0079b4a0 fffffff00792408 fffffff0076b50c ...
 That is Stage 6 of the bring-up guide ("Storage and root"): no block driver publishes
 `OS` and `SystemOS` yet, so there is no device for the kernel to mount.
 
+With the 2026-10-29 payload the same wall prints
+`Failed to mount root device @IOKitBSDInit.cpp:984`, frames
+`fffffff007a10f50 fffffff007924018 fffffff0076b05ec fffffff00798a940 fffffff0073f24a4`,
+pages `0xf7c63`, free `0xf6a63`. The `rd=ufsroot0` hook in the staged kebab-route
+integration patch (`patches/xnu/kebab-route/kona-ufs-integration.patch`) is in
+`IOKitBSDInit.cpp`, at exactly this point.
+
 ### Skipping the AMFI refusal
 
 `AMFI: No PMGR?` came from the prelinked kext's report function, which always ends in
@@ -457,6 +464,22 @@ So the remaining work is a decision, not a bug:
 
 Until then \`CONFIG_XNU_NATIVE_UFS\` pulls in a driver whose storage base class the kernel
 cannot resolve, which is why the kernel lane stops at this link.
+
+## Storage: the bdevsw route enabled
+
+The kext and storage-ABI options keep IOStorageFamily in the link and were not taken. The
+board now takes the BSD-level route from the kebab analysis. `patches/xnu/series` applies
+`kebab-route/kona-ufs-driver.patch` (the 926-line `bsd/dev/kona_ufs.c`), a
+`kona_early_putc` stub, and `kona-ufs-integration.patch` (`bsd/conf/files` plus the
+`rd=ufsroot0` hook in `IOKitBSDInit.cpp`). `CONFIG_XNU_KONA_UFS=y` makes the kernel build
+add `-DKONA=1` to `CFLAGS_EXTRA` and `OTHER_CXXFLAGS`, because `CFLAGS_EXTRA` is not part
+of the C++ flags. `[payload] kernel_args` carries `rd=ufsroot0` and `ufsroot=userdata`;
+the driver exposes the userdata GPT partition and APFS mounts the container inside it.
+The HFS patches stay unapplied: iPadOS roots on APFS, not HFS.
+
+The first host build is the macOS kernel workflow. The expected log starts with
+`KONA UFS: VER ... CAP ... HCE ... HCS ...`, then the GPT partition, then the root mount;
+the first failure names the layer.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
