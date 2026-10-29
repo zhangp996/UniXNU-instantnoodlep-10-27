@@ -230,6 +230,7 @@ findings = [
   "The kebab bdevsw route is enabled (2026-10-29): patches/xnu/series applies the 926-line bsd/dev/kona_ufs.c (a BSD disk that publishes ufsroot0 with 512-byte sectors over 4 KiB device blocks and selects the userdata GPT partition by default), a kona_early_putc stub, and the IOKitBSDInit rd=ufsroot0 hook. CONFIG_XNU_KONA_UFS=y adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS because CFLAGS_EXTRA is not part of CXXFLAGS. The HFS patches stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.",
   "The macOS workflow compiles and links the kernel with the bdevsw driver (kernel.macho sha256 842df627fe04c10231a124917e16b106917ae97d9c688125584620cf25ec829c); its payload step fails only because the workflow passes the raw IPSW trust cache while board.toml accepts the wrapped bundle, so the payload is built locally with trust.bundle and data-seed.img.",
   "First device run of the bdevsw route (2026-10-29): the IOKitBSDInit rd= hook fired and panicked with 'KONA UFS root ufsroot0 unavailable: 6'. The driver's first check needs a /kona-ufs DT node, which the board DTS lacked; it is now declared. The driver also rejected the DWC VER 0x1587031F and 4 KiB kernel pages; it now warns on the vendor version, allows 4 KiB, and panics with the init stage (dt/arg/map/ver/page/dma/host/tur/capacity/partition/bdevsw).",
+  "The curated ADT puts hardware nodes under /arm-io, so /kona-ufs was still absent; scripts/unixnu/devicetree.py now carries it top-level. With the node in the ADT the same kernel passed dt and stopped at partition with EIO 5, so the driver now records the SCSI OCS/UPIU/status or the GPT read in the panic detail.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",
@@ -492,6 +493,7 @@ findings = [
   "docs/porting/steps.md step 7 requires the kernel, package, firmware, payload and boot image in that order with each output checked before the next step.",
   "The board series now applies the kona bdevsw storage patches; the payload and boot-image layout are unchanged except the rd=ufsroot0 and ufsroot=userdata kernel arguments in board.toml.",
   "The kona-ufs-driver patch now reports the init stage in its panic and accepts 4 KiB kernel pages and the DWC VER 0x1587031F; /kona-ufs supplies the controller base.",
+  "The ADT generator exports /kona-ufs top-level (hardware nodes otherwise live under /arm-io), and the driver's panic detail carries the failing SCSI command or GPT read.",
 ]
 completion = [
   "Kernel and prelink succeed, the payload contains every declared input, and the boot image matches the bootloader format and size limit.",

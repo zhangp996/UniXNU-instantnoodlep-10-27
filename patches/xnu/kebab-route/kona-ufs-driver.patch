@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,941 @@
+@@ -0,0 +1,955 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -122,6 +122,7 @@
 +	bool init_attempted;
 +	int init_error;
 +	const char *stage;
++	char detail[96];
 +} su;
 +
 +static LCK_GRP_DECLARE(kona_ufs_grp, "kona_ufs");
@@ -249,6 +250,8 @@
 +	}
 +	if (ufs_rd(REG_UTRLDBR) || !(ufs_rd(REG_UTRLRSR) & 1) ||
 +	    !(ufs_rd(REG_HCE) & 1) || (ufs_rd(REG_IS) & IS_FATAL)) {
++		snprintf(su.detail, sizeof(su.detail), "precheck db 0x%x rsr 0x%x hce 0x%x is 0x%x",
++		    ufs_rd(REG_UTRLDBR), ufs_rd(REG_UTRLRSR), ufs_rd(REG_HCE), ufs_rd(REG_IS));
 +		ufs_fail();
 +		return EIO;
 +	}
@@ -295,11 +298,13 @@
 +	deadline += mach_absolute_time();
 +	while (ufs_rd(REG_UTRLDBR) & 1) {
 +		if (ufs_rd(REG_IS) & IS_FATAL) {
++			snprintf(su.detail, sizeof(su.detail), "fatal IS 0x%x", ufs_rd(REG_IS));
 +			printf("KONA UFS: fatal host error: IS 0x%x\n", ufs_rd(REG_IS));
 +			ufs_fail();
 +			return EIO;
 +		}
 +		if (mach_absolute_time() >= deadline) {
++			snprintf(su.detail, sizeof(su.detail), "cmd 0x%02x timeout", cdb[0]);
 +			ufs_fail();
 +			printf("KONA UFS: command 0x%02x timed out\n", cdb[0]);
 +			return ETIMEDOUT;
@@ -310,6 +315,7 @@
 +	uint32_t status = ufs_rd(REG_IS);
 +	ufs_wr(REG_IS, status);                 /* W1C, after saving error status */
 +	if (status & IS_FATAL) {
++		snprintf(su.detail, sizeof(su.detail), "fatal IS 0x%x", status);
 +		printf("KONA UFS: fatal completion: IS 0x%x\n", status);
 +		ufs_fail();
 +		return EIO;
@@ -329,6 +335,9 @@
 +	if (su.failed || ucd->resp[7]) {
 +		printf("KONA UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
 +		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7]);
++		snprintf(su.detail, sizeof(su.detail),
++		    "cmd 0x%02x ocs 0x%x upiu 0x%x resp 0x%x st 0x%x",
++		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7]);
 +		/* Retry only TEST UNIT READY with a well-formed unit attention. */
 +		unsigned data_len = (unsigned)ucd->resp[10] << 8 | ucd->resp[11];
 +		unsigned sense_len = (unsigned)ucd->resp[32] << 8 | ucd->resp[33];
@@ -343,6 +352,8 @@
 +		return EIO;
 +	}
 +	if ((ucd->resp[1] & 0x60) || ufs_be32(ucd->resp + 12) != 0) {
++		snprintf(su.detail, sizeof(su.detail), "cmd 0x%02x short flags 0x%x res 0x%x",
++		    cdb[0], ucd->resp[1], ufs_be32(ucd->resp + 12));
 +		printf("KONA UFS: short/overflow transfer for command 0x%02x\n", cdb[0]);
 +		return EIO;
 +	}
@@ -387,11 +398,13 @@
 +ufs_find_partition(const char *want)
 +{
 +	const uint8_t *b = (const uint8_t *)(su.dma + DMA_BOUNCE);
++	snprintf(su.detail, sizeof(su.detail), "gpt header lba 1");
 +	int error = ufs_read_blocks(1, 1);
 +	if (error) {
 +		return error;
 +	}
 +	if (memcmp(b, "EFI PART", 8) != 0) {
++		snprintf(su.detail, sizeof(su.detail), "no GPT magic at lba 1");
 +		printf("KONA UFS: LUN %u has no GPT\n", su.lun);
 +		return ENXIO;
 +	}
@@ -405,9 +418,11 @@
 +	memcpy(&last_usable, b + 48, 8);
 +	if (first_usable < 2 || last_usable < first_usable || last_usable >= su.device_blocks ||
 +	    esz != 128 || nent == 0 || nent > BOUNCE_SIZE / esz) {
++		snprintf(su.detail, sizeof(su.detail), "bad GPT entries %u x %u", nent, esz);
 +		printf("KONA UFS: unsupported GPT entries %u x %u\n", nent, esz);
 +		return ENXIO;
 +	}
++	snprintf(su.detail, sizeof(su.detail), "gpt entries lba %llu n %u", entry_lba, nent);
 +	error = ufs_read_blocks(entry_lba, (nent * esz + UFS_BLOCK - 1) / UFS_BLOCK);
 +	if (error) {
 +		return error;
@@ -763,22 +778,21 @@
 +{
 +	DTEntry node;
 +	const void *prop = NULL;
-+	uint64_t reg[2];
++	uint64_t reg[2] = { UFS_MMIO_BASE, UFS_MMIO_SIZE };
 +	unsigned int size = 0;
 +	char want[64] = "userdata";
 +	int error;
 +
 +	su.stage = "dt";
-+	if (SecureDTLookupEntry(NULL, "/kona-ufs", &node) != kSuccess ||
-+	    SecureDTGetProperty(node, "reg", &prop, &size) != kSuccess ||
-+	    size != sizeof(reg)) {
-+		printf("KONA UFS: no /kona-ufs node in the device tree\n");
-+		return ENXIO;
++	/* The curated ADT this board boots does not carry /kona-ufs; the measured
++	 * controller window is the default and a DT node may override it. */
++	if (SecureDTLookupEntry(NULL, "/kona-ufs", &node) == kSuccess &&
++	    SecureDTGetProperty(node, "reg", &prop, &size) == kSuccess &&
++	    size == sizeof(reg)) {
++		memcpy(reg, prop, sizeof(reg));
 +	}
-+	/* ADT properties are only 4-byte aligned: copy the two LE uint64_t cells. */
-+	memcpy(reg, prop, sizeof(reg));
 +	if (reg[0] != UFS_MMIO_BASE || reg[1] < UFS_MMIO_SIZE) {
-+		printf("KONA UFS: invalid absolute /kona-ufs reg\n");
++		printf("KONA UFS: invalid UFS window 0x%llx+0x%llx\n", reg[0], reg[1]);
 +		return ENXIO;
 +	}
 +	su.stage = "arg";
@@ -936,7 +950,7 @@
 +	if (!error) {
 +		*dev = su.bdev;
 +	} else {
-+		panic("KONA UFS %s failed: %d", su.stage ? su.stage : "init", error);
++		panic("KONA UFS %s failed: %d [%s]", su.stage ? su.stage : "init", error, su.detail);
 +	}
 +	lck_mtx_unlock(&kona_ufs_lock);
 +	return error;

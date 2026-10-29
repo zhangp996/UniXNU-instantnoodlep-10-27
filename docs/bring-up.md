@@ -493,6 +493,11 @@ First device run (2026-10-29): the `rd=ufsroot0` hook fired and panicked with
 `reg = <0 0x01d84000 0 0x30000>`. The driver also rejected the DWC version
 `0x1587031F` and the 4 KiB kernel pages; it now warns on the vendor version, allows
 4 KiB and 16 KiB pages, and panics with the init stage so the next run names the layer.
+
+The curated ADT puts hardware nodes under `/arm-io`, so `/kona-ufs` was still absent;
+`scripts/unixnu/devicetree.py` now carries it top-level. With that node the same kernel
+passed `dt` and stopped at `partition` with EIO 5, so the driver now records the
+failing SCSI command or GPT read in the panic detail.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
