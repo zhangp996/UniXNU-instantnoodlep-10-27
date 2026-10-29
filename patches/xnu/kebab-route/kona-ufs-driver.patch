@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,956 @@
+@@ -0,0 +1,960 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -122,7 +122,7 @@
 +	bool init_attempted;
 +	int init_error;
 +	const char *stage;
-+	char detail[160];
++	char detail[192];
 +} su;
 +
 +static LCK_GRP_DECLARE(kona_ufs_grp, "kona_ufs");
@@ -336,9 +336,13 @@
 +		printf("KONA UFS: command 0x%02x failed: ocs 0x%x upiu 0x%x response 0x%x status 0x%x\n",
 +		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7]);
 +		snprintf(su.detail, sizeof(su.detail),
-+		    "cmd 0x%02x ocs 0x%x upiu 0x%x resp 0x%x st 0x%x sense %02x %02x %02x %02x %02x",
++		    "cmd 0x%02x ocs 0x%x upiu 0x%x resp 0x%x st 0x%x len %u s %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
 +		    cdb[0], ocs, ucd->resp[0], ucd->resp[6], ucd->resp[7],
-+		    ucd->resp[34], ucd->resp[35], ucd->resp[36], ucd->resp[37], ucd->resp[38]);
++		    ((unsigned)ucd->resp[32] << 8) | ucd->resp[33],
++		    ucd->resp[34], ucd->resp[35], ucd->resp[36], ucd->resp[37],
++		    ucd->resp[38], ucd->resp[39], ucd->resp[40], ucd->resp[41],
++		    ucd->resp[42], ucd->resp[43], ucd->resp[44], ucd->resp[45],
++		    ucd->resp[46], ucd->resp[47]);
 +		/* Retry only TEST UNIT READY with a well-formed unit attention. */
 +		unsigned data_len = (unsigned)ucd->resp[10] << 8 | ucd->resp[11];
 +		unsigned sense_len = (unsigned)ucd->resp[32] << 8 | ucd->resp[33];
