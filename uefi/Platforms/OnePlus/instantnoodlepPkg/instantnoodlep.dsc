@@ -163,7 +163,7 @@
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   # SiliciumPkg/Drivers/KeypadDeviceDxe/KeypadDeviceDxe.inf
   # instantnoodlepPkg/Drivers/KeypadProbeDxe/KeypadProbeDxe.inf  (text is cleared by the menu)
-  instantnoodlepPkg/Drivers/KeypadHudDxe/KeypadHudDxe.inf
+  # instantnoodlepPkg/Drivers/KeypadHudDxe/KeypadHudDxe.inf  (keys verified; disabled so the menu stays readable)
   # instantnoodlepPkg/Drivers/KeypadPixelDxe/KeypadPixelDxe.inf
   instantnoodlepPkg/Drivers/KonaKeysDxe/KonaKeysDxe.inf
   # Vendor SPMI/PMIC binaries abort without their full dependency set (data abort at FAR 0x20).

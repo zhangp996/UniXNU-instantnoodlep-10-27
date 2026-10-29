@@ -1,9 +1,12 @@
 /** @file
   KeypadDeviceLib for instantnoodlep.
 
-  The volume keys are PM8150 SPMI GPIO 6 (up) and 7 (down), active low, as recorded in the
-  board device tree (gpio_keys, pinctrl under /soc/qcom,spmi@c440000). Each poll reads the
-  GPIO real-time status byte (offset 0x10, bit 0) and reports a scan code on a transition.
+  The volume keys are PM8150 SPMI GPIO 6 (up, peripheral 0xC500) and GPIO 7 (down,
+  0xC600), active low. The stock kernel's /proc/interrupts decodes volume_up/down to
+  SPMI peripheral 0xC5/0xC6 and APID 25/26, which fixes the addresses; the device
+  tree's gpio_keys node supplies the polarity and the 15 ms debounce. Each poll reads the
+  GPIO real-time status byte (offset 0x10, bit 0) and reports a scan code on a
+  transition. KonaKeysDxe is the driver currently built into the firmware.
 **/
 #include <Uefi.h>
 #include <Library/BaseMemoryLib.h>
@@ -13,10 +16,10 @@
 #include <SpmiLib.h>
 
 #define PM8150_SID        0
-#define GPIO6_ADDRESS     0xC600
-#define GPIO7_ADDRESS     0xC700
+#define GPIO6_ADDRESS     0xC500
+#define GPIO7_ADDRESS     0xC600
 #define GPIO_RT_STS       0x10
-#define POLL_MS           15
+#define POLL_MS           15   /* device-tree debounce hint; KonaKeysDxe polls every 10 ms */
 
 STATIC BOOLEAN  mVolumeUp;
 STATIC BOOLEAN  mVolumeDown;

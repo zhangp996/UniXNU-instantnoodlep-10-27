@@ -88,6 +88,14 @@ STATIC EFI_MEMORY_REGION_DESCRIPTOR gMemoryDescriptor[] = {
   {"PERIPH SS",            0x08800000, 0x00200000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"IPC ROUTER",           0x00400000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
   {"USB",                  0x0A600000, 0x04000000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  //
+  // SPMI PMIC arbiter. The core, channel and configuration windows fall inside the
+  // USB span above, but the observer window starts exactly at its end (the USB
+  // region ends at 0xE600000) and the interrupt block follows it. Without these the
+  // first observer read (channel 0x80*APID) faults at 0xE600C80.
+  //
+  {"PMIC ARB OBS",         0x0E600000, 0x00100000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
+  {"PMIC ARB INTR",        0x0E700000, 0x000A0000, AddDev, MMAP_IO, UNCACHEABLE,   MmIO,   NS_DEVICE},
 };
 
 VOID

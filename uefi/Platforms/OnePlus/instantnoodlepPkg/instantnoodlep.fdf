@@ -83,7 +83,11 @@ READ_LOCK_STATUS   = TRUE
   INF SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   # INF SiliciumPkg/Drivers/KeypadDeviceDxe/KeypadDeviceDxe.inf  (replaced by KonaKeysDxe)
   # INF instantnoodlepPkg/Drivers/KeypadProbeDxe/KeypadProbeDxe.inf  (text is cleared by the menu)
-  INF instantnoodlepPkg/Drivers/KeypadHudDxe/KeypadHudDxe.inf
+  # INF instantnoodlepPkg/Drivers/KeypadHudDxe/KeypadHudDxe.inf  (keys verified; disabled so the menu stays readable)
+  INF instantnoodlepPkg/Drivers/KonaKeysDxe/KonaKeysDxe.inf
+  # The driver above was in the DSC but not in this FDF until 2026-10-29: the DSC
+  # only lists components, the FV is built from this file, so the key driver had
+  # never been dispatched.
   # INF instantnoodlepPkg/Binaries/SPMIDxe/SPMIDxe.inf  (also aborts alone)
   # INF instantnoodlepPkg/Binaries/PmicDxe/PmicDxeLa.inf
   # INF SiliciumPkg/Drivers/KeypadDxe/KeypadDxe.inf  (replaced by KonaKeysDxe)

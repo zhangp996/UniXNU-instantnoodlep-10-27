@@ -23,5 +23,8 @@
 [Protocols]
   gEfiSimpleTextInProtocolGuid
 
+[Guids]
+  gEfiConsoleInDeviceGuid          ## PRODUCES
+
 [Depex]
   TRUE
