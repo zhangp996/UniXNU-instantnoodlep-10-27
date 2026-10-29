@@ -479,13 +479,14 @@ inputs = [
 configuration = [
   "payload.volume INSTNPDLP, loader firmware, title Boot; size_mib is 80 because boot_a measures 96 MiB and the image keeps 8 MiB of it free.",
   "payload.adt sets chip_id 0x164 for kona, owned_memory_size 0x100000000 and unique_chip_id required.",
-  "patches/xnu/series is empty: kona needs no XNU patch beyond the arch, SoC and OS series.",
+  "patches/xnu/series carries the kona bdevsw storage route: kona-ufs-driver, kona-ufs-early-putc, kona-hfs-noop and kona-ufs-integration; CONFIG_XNU_KONA_UFS makes the kernel build add -DKONA for C and C++.",
 ]
 procedure = [
   "./unixnu build kernel, build package, build payload --unique-chip-id <hex> --trust-cache <bundle> --data-ramdisk <seed>, then bootimg --dtb <board.dtb>.",
 ]
 findings = [
   "docs/porting/steps.md step 7 requires the kernel, package, firmware, payload and boot image in that order with each output checked before the next step.",
+  "The board series now applies the kona bdevsw storage patches; the payload and boot-image layout are unchanged except the rd=ufsroot0 and ufsroot=userdata kernel arguments in board.toml.",
 ]
 completion = [
   "Kernel and prelink succeed, the payload contains every declared input, and the boot image matches the bootloader format and size limit.",
