@@ -510,6 +510,14 @@ returning NOT READY, and resume the device with START STOP UNIT, power condition
 does the same (50 ms settle, 20 TUR attempts); its earlier START UNIT to LUN 0 with
 START=1 could not wake the device. It also keeps the host running for a well-formed
 CHECK CONDITION instead of `ufs_fail()`, and retries the GPT header read five times.
+
+With that wake the GPT read, bdevsw publication and APFS mount all succeed; `bsd_init`
+then panics at `bsd_init.c:1093` with "rootvp not authenticated after mounting" because
+`FSIOC_KERNEL_ROOTAUTH` fails on the unsealed Data volume that mountroot picked. The
+iOS container is on `userdata` (`ufsroot=root` has no GPT entry). The official fix is
+`[payload.adt] root_match_volume_uuid` from the OS component's APFS root volume
+(`guide/userdata.md` step 3); the payload does not set it yet, and the workflow now
+extracts the OS component and prints `diskutil apfs list`.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the

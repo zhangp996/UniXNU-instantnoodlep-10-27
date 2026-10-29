@@ -136,6 +136,22 @@ jobs:
           set -o pipefail
           ./unixnu ipsw fetch -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/ipsw.log"
 
+      - name: Show the OS image APFS volumes
+        # [payload.adt] root_match_volume_uuid comes from the OS component's APFS root
+        # volume; the userdata image on the board was built from the same component.
+        if: inputs.fetch_ipsw
+        continue-on-error: true
+        run: |
+          ./unixnu ipsw fetch OS -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/osimage.log"
+          OSDMG=$(ls -S out/ipsw/21H461/*.dmg 2>/dev/null | head -1)
+          echo "OSDMG=$OSDMG"
+          if [ -n "$OSDMG" ]; then
+            hdiutil attach -nomount -readonly "$OSDMG" | tee "$RUNNER_TEMP/apfs-attach.log"
+            diskutil apfs list | tee "$RUNNER_TEMP/apfs-list.log"
+            DEV=$(head -1 "$RUNNER_TEMP/apfs-attach.log" | awk '{print $1}')
+            if [ -n "$DEV" ]; then hdiutil detach "$DEV" || true; fi
+          fi
+
       - name: Build the kernel
         run: |
           set -o pipefail

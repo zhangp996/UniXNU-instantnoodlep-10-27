@@ -43,6 +43,7 @@ findings = [
   "Kernel and payload build on the macOS runner because the kernel step calls Xcode and the payload step may call hdiutil; the workflow publishes kernel.macho and the payload directory as the boot-artifacts artifact so the boot image can be assembled wherever the firmware volume was built.",
   "The boot image uses header version 0: unixnu appends the device tree to the gzip kernel and passes no --dtb to mkbootimg, which a version 2 header would require. The shim is built without the ARM64 kernel header because Mu-Silicium writes FD_SIZE there while unixnu checks for shim plus volume.",
   "Storage moved to the bdevsw route on 2026-10-29: the defconfig sets CONFIG_XNU_KONA_UFS=y and [payload] kernel_args carries rd=ufsroot0/ufsroot=userdata; the driver and its memory-map/transport details stay in the storage area.",
+  "The macOS workflow now also extracts the IPSW OS component and prints its APFS volumes with diskutil; [payload.adt] root_match_volume_uuid will take the System volume UUID from that output.",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
@@ -172,6 +173,7 @@ procedure = [
 findings = [
   "docs/porting/platform.md requires each handoff allocation to have an owner and each DMA engine to reach its allocated range before it submits work.",
   "The panic region is a memory fact, not a display one: a board header constant that is wrong for kona hangs the boot CPU with the MMU on, which is why the defconfig selects CONFIG_XNU_DT_PANIC_REGION.",
+  "The bdevsw root reaches the APFS mount (bsd_init.c:1093 rootauth panic), so the memory map, DMA window and UFS handoff are working; the remaining root failure is the unsealed volume selection, not a mapping.",
   "The same DTS change adds the /kona-ufs MMIO window (0x01d84000+0x30000); the DRAM and reservation entries are unchanged.",
 ]
 completion = [
@@ -232,6 +234,7 @@ findings = [
   "First device run of the bdevsw route (2026-10-29): the IOKitBSDInit rd= hook fired and panicked with 'KONA UFS root ufsroot0 unavailable: 6'. The driver's first check needs a /kona-ufs DT node, which the board DTS lacked; it is now declared. The driver also rejected the DWC VER 0x1587031F and 4 KiB kernel pages; it now warns on the vendor version, allows 4 KiB, and panics with the init stage (dt/arg/map/ver/page/dma/host/tur/capacity/partition/bdevsw).",
   "The curated ADT puts hardware nodes under /arm-io, so /kona-ufs was still absent; scripts/unixnu/devicetree.py now carries it top-level. With the node in the ADT the same kernel passed dt and stopped at partition with EIO 5, so the driver now records the SCSI OCS/UPIU/status or the GPT read in the panic detail.",
   "The partition READ(10) returns CHECK CONDITION: UPIU response 1, SCSI status 2, sense 70 00 02 40 00 05 a1 0a 00 00 00 00 00 04 (sense key 2, NOT READY; the ASC/ASCQ bytes read 0x00/0x04). The official ShengUfs NativeUfs.cpp (lines 488-501 and 956-967) records the same state: bCurrentPowerMode 0x33 (UFS-PowerDown) makes every LU return NOT READY, and the device is resumed with START STOP UNIT, power condition ACTIVE (0x10), to the UFS Device well-known LU 0xD0, then TUR is polled. The bdevsw driver now follows that sequence (50 ms settle, 20 TUR attempts); the earlier START UNIT to LUN 0 with START=1 could not wake the device. It also keeps the host running for a well-formed CHECK CONDITION and retries the GPT header read five times.",
+  "With the LU 0xD0 wake the GPT read, bdevsw publication and APFS mount all succeed, then bsd_init.c:1093 panics 'rootvp not authenticated after mounting': FSIOC_KERNEL_ROOTAUTH fails because the mountroot picked the unsealed Data volume of the userdata container. ufsroot=root has no GPT entry (the iOS container is on userdata). The official fix is [payload.adt] root_match_volume_uuid from the OS component's APFS root volume (guide/userdata.md step 3); the payload does not set it yet, and the workflow now extracts the OS component and prints its volumes for that value.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",

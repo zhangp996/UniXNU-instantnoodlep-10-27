@@ -150,9 +150,10 @@ kernel_args = [
   # docs/xnu/boot-arguments.md: diagnostic boot without AMFI enforcement, which is
   # what panics with "AMFI: No PMGR?" until this board has a PMGR provider.
   "amfi_get_out_of_my_way=1",
-  # Kebab bdevsw route: bsd/dev/kona_ufs.c publishes ufsroot0 from the userdata GPT
-  # partition and IOKitBSDInit's rd= hook selects it before root-media matching.
-  # APFS mounts the container that lives in that partition; no IOStorageFamily is used.
+  # Kebab bdevsw route: bsd/dev/kona_ufs.c publishes ufsroot0 from the GPT
+  # partition named by ufsroot and IOKitBSDInit's rd= hook selects it before
+  # root-media matching. The iOS container lives on "userdata"; the APFS root
+  # volume is selected by [payload.adt] root_match_volume_uuid.
   "rd=ufsroot0",
   "ufsroot=userdata",
 ]
