@@ -104,8 +104,7 @@
   # board's only log transport until a UART or USB debug link exists
   # (docs/porting/log-capture#qr-logs).
   #
-  AdvancedLoggerAccessLib|AdvLoggerPkg/Library/AdvancedLoggerAccessLib/AdvancedLoggerAccessLib.inf
-  QrEncoderLib|MsGraphicsPkg/Library/QrEncoderLib/QrEncoderLib.inf
+
 
 [Components]
   #
@@ -155,10 +154,10 @@
   # Display, memory and SMBIOS from the shared Silicium package.
   #
   SiliciumPkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
-  UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf
+  # UniXNUPkg/Driver/AdvancedLogDxe/AdvancedLogDxe.inf  (changes the GOP mode; keep the menu layout)
   # instantnoodlepPkg/Drivers/SpmiProbeDxe/SpmiProbeDxe.inf  (probe: it holds the panel)
   instantnoodlepPkg/Drivers/PanicLogDxe/PanicLogDxe.inf
-  instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf
+  # instantnoodlepPkg/Drivers/UfsProbeDxe/UfsProbeDxe.inf  (probe: it holds the panel)
   SiliciumPkg/Drivers/RamManagerDxe/RamManagerDxe.inf
   SiliciumPkg/Drivers/SmBiosTableDxe/SmBiosTableDxe.inf
   MdeModulePkg/Universal/SmbiosDxe/SmbiosDxe.inf

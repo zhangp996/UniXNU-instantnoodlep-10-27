@@ -272,11 +272,6 @@ UfsProbeEntry (
          MmioRead32 ((UINTN)GCC_BASE + GCC_UFS_AUX),
          MmioRead32 ((UINTN)GCC_BASE + GCC_UFS_RX1),
          MmioRead32 ((UINTN)GCC_BASE + GCC_UFS_AGGR));
-  Print (L"UFSPROBE: VER 0x%08x CAP 0x%08x HCE 0x%08x HCS 0x%08x\n",
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_VER),
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_CAP),
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCE),
-         MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS));
 
   /* HCE bit 0 enables the host controller. Without it the controller acknowledges a
    * descriptor but performs no transfer, which is what the earlier runs showed. */
@@ -295,16 +290,42 @@ UfsProbeEntry (
            MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS));
   }
 
-  UfsPowerAndPhyInit ();
+  /* docs/porting/ufs.md: adopt the firmware state or cold-initialise, never both. A usable
+   * handoff means HCE enabled, the request list running and a nonzero list base. */
+  /* ShengUfs adopts the firmware's existing request list. When the
+   * bootloader left one (UTRLBA nonzero) keep that base and only replace its descriptors,
+   * so the controller never sees the list move underneath it. */
+  {
+    UINT64  OrigList = ((UINT64)MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBAU) << 32) |
+                       MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA);
 
-  mUtRdBase = mPhys;
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IE, 0);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 0);
-  gBS->Stall (1000);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA, (UINT32)mPhys);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBAU, (UINT32)(mPhys >> 32));
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 0xFFFFFFFF);
-  MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 1);
+    Print (L"UFSPROBE: handoff HCE 0x%08x HCS 0x%08x RSR 0x%08x IS 0x%08x list 0x%08x%08x\n",
+           MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCE),
+           MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCS),
+           MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR),
+           MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_IS),
+           (UINT32)(OrigList >> 32), (UINT32)OrigList);
+
+    if ((OrigList != 0) && ((MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_HCE) & 1U) != 0)) {
+      mUtRdBase = OrigList;
+      Print (L"UFSPROBE: adopting the bootloader list at 0x%08x%08x\n",
+             (UINT32)(OrigList >> 32), (UINT32)OrigList);
+      if ((MmioRead32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR) & 1U) == 0) {
+        MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 1);
+      }
+    } else {
+      Print (L"UFSPROBE: handoff unusable, cold initialising\n");
+      UfsPowerAndPhyInit ();
+      mUtRdBase = mPhys;
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IE, 0);
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 0);
+      gBS->Stall (1000);
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBA, (UINT32)mPhys);
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLBAU, (UINT32)(mPhys >> 32));
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_IS, 0xFFFFFFFF);
+      MmioWrite32 ((UINTN)UFS_HOST_BASE + UFS_UTRLRSR, 1);
+    }
+  }
   {
     UINTN Wait;
     for (Wait = 0; Wait < 100; Wait++) {
