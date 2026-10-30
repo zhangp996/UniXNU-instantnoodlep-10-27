@@ -193,6 +193,8 @@ jobs:
             out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
           echo "== bootstrap: errors =="
           grep -n -B2 -A6 -E "error:|fatal error" out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 120
+          echo "== bootstrap: tail =="
+          tail -n 80 out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null
           echo "== kernel build log (tail) =="
           tail -n 60 out/*/*/*/logs/kernel.log 2>/dev/null
           echo "== component build logs: errors and warnings =="
