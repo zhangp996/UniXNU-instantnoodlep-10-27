@@ -1,9 +1,8 @@
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
-@@ -89,2 +89,3 @@
- #include <sys/vnode_internal.h>
+@@ -89,1 +89,2 @@
 +#include <sys/uio_internal.h>
- #include <sys/file_internal.h>
+ #include <sys/vnode_internal.h>
 @@ -1091,3 +1092,4 @@
  			if (autherr && !owner_authorized) {
 -				panic("rootvp not authenticated after mounting");
