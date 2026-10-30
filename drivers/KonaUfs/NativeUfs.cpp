@@ -83,6 +83,7 @@ OSDefineMetaClassAndStructors (NativeUfs, IOService)
 // IOKit match on the boot thread, and the UFS work busy-waits for seconds per stage.
 static NativeUfs *gRootBringUpService;
 static IOService *gRootBringUpProvider;
+static unsigned gRootBringUpDelay;   // native-ufs-delay=<seconds>, 0 = start immediately
 
 static uint32_t read32 (uintptr_t base, unsigned offset)
 {
@@ -2175,6 +2176,9 @@ bool NativeUfs::start (IOService *provider)
     // its first frame and bsd_init waited: the control boot with native-ufs-root=0 kept both
     // alive. The bring-up therefore runs on its own thread; the windows publish when it finishes
     // and IOFindBSDRoot is the party that waits for them.
+    unsigned delay = 0;
+    PE_parse_boot_argn ("native-ufs-delay", &delay, sizeof (delay));
+    gRootBringUpDelay = delay;
     provider->retain ();
     gRootBringUpService = this;
     gRootBringUpProvider = provider;
@@ -2196,8 +2200,16 @@ void NativeUfs::rootBringUpEntry (void *, wait_result_t)
 {
   NativeUfs *service = gRootBringUpService;
   IOService *provider = gRootBringUpProvider;
+  unsigned delay = gRootBringUpDelay;
   gRootBringUpService = nullptr;
   gRootBringUpProvider = nullptr;
+  // The bdevsw driver reads the same controller from IOFindBSDRoot without trouble, so a first
+  // access during IOKit matching may be too early. A delay turns that into a measurement.
+  if (delay) {
+    if (delay > 120) delay = 120;
+    IOLog ("NativeUfs: holding the root bring-up for %u s\n", delay);
+    IOSleep (delay * 1000);
+  }
   if (service && provider) service->startRoot (provider);
   if (provider) provider->release ();
 }
