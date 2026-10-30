@@ -1,12 +1,16 @@
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
-@@ -1091,3 +1091,4 @@
+@@ -89,2 +89,3 @@
+ #include <sys/vnode_internal.h>
++#include <sys/uio_internal.h>
+ #include <sys/file_internal.h>
+@@ -1091,3 +1092,4 @@
  			if (autherr && !owner_authorized) {
 -				panic("rootvp not authenticated after mounting");
 +				/* kona bdevsw bring-up: the 17.7.11 image is an unsealed owner root. */
 +				printf("kona: rootvp not authenticated (%d), continuing\n", autherr);
  			}
-@@ -1094,2 +1095,18 @@
+@@ -1094,2 +1096,18 @@
 +			{
 +				vnode_t kona_lvp = NULL;
 +				char kona_hdr[32] = {0};

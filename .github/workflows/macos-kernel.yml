@@ -191,6 +191,8 @@ jobs:
           echo "== bootstrap: startup/mockfs/KonaUfs =="
           grep -n -E "startup\.o|mockfs|KonaUfs|sheng-ufs|kona-ufs|Undefined symbols|MOCKFS" \
             out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 25
+          echo "== bootstrap: errors =="
+          grep -n -B2 -A6 -E "error:|fatal error" out/*/*/*/logs/kernel-bootstrap.log 2>/dev/null | tail -n 120
           echo "== kernel build log (tail) =="
           tail -n 60 out/*/*/*/logs/kernel.log 2>/dev/null
           echo "== component build logs: errors and warnings =="
