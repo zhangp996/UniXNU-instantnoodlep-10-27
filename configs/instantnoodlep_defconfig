@@ -20,6 +20,10 @@ CONFIG_XNU_KONA_UFS=y
 # then was the whole userdata partition (vnode size 108049805312 = 26379347 x 4096) and
 # execve returned ENOEXEC on raw APFS bytes. This board roots on APFS, so drop mockfs.
 # CONFIG_XNU_SOURCE_MOCKFS is not set
+# IOMedia feasibility probe: link RamBlock (IOBlockStorageDevice) to see whether the
+# IOStorageFamily imports resolve here. APFS declines a bdevsw disk with ENOENT, so the
+# root needs a real IOMedia; RamBlock is the in-tree template for such a driver.
+CONFIG_XNU_NATIVE_RAM_BLOCK=y
 # The ShengUfs archive stays in components/kona-ufs until a kext-form driver is chosen.
 # CONFIG_XNU_NATIVE_UFS is not set
 # No catalog component has Adreno 650 scope yet.
