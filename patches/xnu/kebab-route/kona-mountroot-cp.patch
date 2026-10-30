@@ -1,0 +1,46 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -801,4 +801,10 @@
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	bsd_autoconf();
++	{
++		int konacp_want = 0;
++		if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 5) {
++			panic("kona cp 5: after bsd_autoconf");
++		}
++	}
+ 
+ #if CONFIG_DTRACE
+@@ -871,4 +877,10 @@
+ 	 */
+ 	bsd_init_kprintf("calling net_init_run\n");
++	{
++		int konacp_want = 0;
++		if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 6) {
++			panic("kona cp 6: before net_init_run");
++		}
++	}
+ 	net_init_run();
+ #endif /* NETWORKING */
+@@ -1014,5 +1026,11 @@
+ 		bsd_init_kprintf("vfs_mountroot\n");
+ 		boot_progress_stage("vfs_mountroot enter");
++		{
++			int konacp_want = 0;
++			if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 7) {
++				panic("kona cp 7: before vfs_mountroot");
++			}
++		}
+ 		if (0 == (err = vfs_mountroot())) {
+ 			boot_progress_stage("vfs_mountroot mounted; authentication pending");
+ 			break;
+@@ -1019,3 +1037,10 @@
+ #endif
+ 		printf("cannot mount root, errno = %d\n", err);
++		{
++			int konacp_want = 0;
++			if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 8) {
++				panic("kona cp 8: mountroot failed, errno %d", err);
++			}
++		}
+ 	}
