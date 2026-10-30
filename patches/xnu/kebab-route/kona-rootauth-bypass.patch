@@ -9,22 +9,33 @@
 +				/* kona bdevsw bring-up: the 17.7.11 image is an unsealed owner root. */
 +				printf("kona: rootvp not authenticated (%d), continuing\n", autherr);
  			}
-@@ -1094,2 +1096,18 @@
+@@ -1094,2 +1096,29 @@
 +			{
 +				vnode_t kona_lvp = NULL;
-+				char kona_hdr[32] = {0};
-+				int kona_resid = 0;
++				vnode_t kona_pvp = NULL;
++				uint32_t kona_hdr[4] = {0};
++				uint32_t kona_pl[4] = {0};
++				off_t kona_lsz = 0, kona_psz = 0;
++				int kona_lerr = 0, kona_perr = 0, kona_lres = 0, kona_pres = 0;
 +				if (vnode_lookup("/sbin/launchd", 0, &kona_lvp, vfs_context_kernel()) == 0) {
-+					(void)vn_rdwr(UIO_READ, kona_lvp, kona_hdr, sizeof(kona_hdr), 0,
-+					    UIO_SYSSPACE, 0, kauth_cred_get(), &kona_resid, current_proc());
++					(void)vnode_size(kona_lvp, &kona_lsz, vfs_context_kernel());
++					kona_lerr = vn_rdwr(UIO_READ, kona_lvp, (caddr_t)kona_hdr, sizeof(kona_hdr), 0,
++					    UIO_SYSSPACE, 0, kauth_cred_get(), &kona_lres, current_proc());
 +					vnode_put(kona_lvp);
-+					panic("kona launchd hdr %02x %02x %02x %02x %02x %02x %02x %02x resid %d",
-+					    (unsigned)kona_hdr[0], (unsigned)kona_hdr[1],
-+					    (unsigned)kona_hdr[2], (unsigned)kona_hdr[3],
-+					    (unsigned)kona_hdr[4], (unsigned)kona_hdr[5],
-+					    (unsigned)kona_hdr[6], (unsigned)kona_hdr[7], kona_resid);
++				} else {
++					kona_lerr = -1;
 +				}
-+				panic("kona launchd lookup failed");
++				if (vnode_lookup("/System/Library/CoreServices/SystemVersion.plist", 0, &kona_pvp, vfs_context_kernel()) == 0) {
++					(void)vnode_size(kona_pvp, &kona_psz, vfs_context_kernel());
++					kona_perr = vn_rdwr(UIO_READ, kona_pvp, (caddr_t)kona_pl, sizeof(kona_pl), 0,
++					    UIO_SYSSPACE, 0, kauth_cred_get(), &kona_pres, current_proc());
++					vnode_put(kona_pvp);
++				} else {
++					kona_perr = -2;
++				}
++				panic("kona l sz %lld e %d h %08x %08x r %d | p sz %lld e %d h %08x %08x r %d",
++				    kona_lsz, kona_lerr, kona_hdr[0], kona_hdr[1], kona_lres,
++				    kona_psz, kona_perr, kona_pl[0], kona_pl[1], kona_pres);
 +			}
  		}
  	}
