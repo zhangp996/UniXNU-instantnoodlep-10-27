@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,1120 @@
+@@ -0,0 +1,1133 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -778,6 +778,19 @@
 +	int state;                              /* 0 = untried, 1 = ready, -1 = absent */
 +} kona_con;
 +
++/*
++ * xnu's own console record (osfmk/console/video_console.c): v_baseaddr is the
++ * virtual address it mapped the frame buffer at, and it is what
++ * scripts/xnu-panic-screen.c draws through. PE_state.video holds the physical
++ * base instead. The symbol is named through an assembler label so no header
++ * declaration can collide with it.
++ */
++struct kona_vc_info {
++	uint32_t v_height, v_width, v_depth, v_rowbytes;
++	uint64_t v_baseaddr;
++};
++extern char kona_vinfo[] __asm__("_vinfo");
++
 +void
 +kona_early_putc(char c)
 +{
@@ -786,19 +799,19 @@
 +	uint32_t top, bottom, row, col, dy, dx;
 +
 +	if (kona_con.state == 0) {
-+		PE_Video *v = &PE_state.video;
++		volatile struct kona_vc_info *v =
++		    (volatile struct kona_vc_info *)(void *)kona_vinfo;
 +		vm_offset_t va;
 +		kona_con.state = -1;
-+		if (v->v_baseAddr && v->v_depth == 32 && v->v_rowBytes >= 64 && v->v_height > 200) {
-+			/* PE_state.video.v_baseAddr is already the kernel's mapping of the
-+			 * frame buffer (scripts/xnu-panic-screen.c draws through the same
-+			 * pointer), so nothing is mapped here: ml_io_map asked
-+			 * kernel_memory_allocate for round_page(1080*2376*4) = 10 MiB and
-+			 * panicked with KERN_NO_SPACE inside IOFindBSDRoot. */
-+			va = (vm_offset_t)v->v_baseAddr;
++		if (v->v_baseaddr && v->v_depth == 32 && v->v_rowbytes >= 64 && v->v_height > 200) {
++			/* Two wrong turns came first: PE_state.video.v_baseAddr is the physical
++			 * frame buffer, so drawing through it faulted at 0x9c00a8e0, and asking
++			 * ml_io_map for the whole panel panicked in kmem_alloc. This record is
++			 * already mapped, so nothing is mapped here. */
++			va = (vm_offset_t)v->v_baseaddr;
 +			if (va) {
 +				kona_con.base = (uint8_t *)va;
-+				kona_con.stride = (uint32_t)v->v_rowBytes;
++				kona_con.stride = (uint32_t)v->v_rowbytes;
 +				kona_con.width = (uint32_t)v->v_width;
 +				kona_con.height = (uint32_t)v->v_height;
 +				kona_con.x = 8;
