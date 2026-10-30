@@ -528,9 +528,12 @@ failed check and continues for bring-up; dropping it restores the stock panic. T
 proper fix is the VerifiedRoot owner policy.
 
 After the bypass the kernel reaches `load_init_program`, but `execve("/sbin/launchd")`
-fails with ENOEXEC (8). The workflow now mounts the OS dmg and prints
-`file`/`xattr`/`otool`/`lipo` for the image's `/sbin/launchd`, to separate a
-compressed or differently sliced root binary from the wrong mounted volume.
+fails with ENOEXEC (8). The workflow mounts the OS dmg and prints
+`file`/`xattr`/`otool`/`lipo`: `/sbin/launchd` is a valid uncompressed arm64
+Mach-O with no `com.apple.decmpfs` xattr, so ENOEXEC is not the binary format. A
+debug patch (`kona-launchd-debug.patch`) reads the file with `vnode_lookup`/
+`vn_rdwr` before the init exec and prints the Mach-O header the kernel actually
+reads (magic/cputype/filetype/ncmds/sizeofcmds and the residual) in the panic.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
