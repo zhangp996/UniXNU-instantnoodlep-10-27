@@ -112,7 +112,10 @@ volume = "INSTNPDLP"
 # Menu timeout in seconds. 0 boots the default entry at once, which is why the menu
 # never stayed on the panel; this board has no key input driver yet, so a few seconds
 # are also the only way to see the menu at all.
-timeout = 10
+# 2026-10-30: the KonaKeysDxe path is present now, but this boot the menu neither
+# counted down nor took the power key, so the entry was never started. 0 removes the
+# menu from the loop; a bring-up image should not wait for a key press.
+timeout = 0
 
 # The early entry probe is deliberately off: it proved the entry and the MMU enable,
 # but its inline assembly uses an identity-mapped address and dies once pmap switches,

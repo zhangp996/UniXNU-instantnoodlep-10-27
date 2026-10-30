@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,980 @@
+@@ -0,0 +1,995 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -123,7 +123,18 @@
 +	int init_error;
 +	const char *stage;
 +	char detail[192];
++	int cp;
 +} su;
++	static void
++	kona_cp(int n)
++{
++	if (su.cp == 0 && !PE_parse_boot_argn("konacp", &su.cp, sizeof(su.cp))) {
++		su.cp = -1;
++	}
++	if (su.cp == n) {
++		panic("kona cp %d", n);
++	}
++}
 +
 +static LCK_GRP_DECLARE(kona_ufs_grp, "kona_ufs");
 +static LCK_MTX_DECLARE(kona_ufs_lock, &kona_ufs_grp);
@@ -545,6 +556,7 @@
 +	int error = 0;
 +	caddr_t vaddr = NULL;
 +	uint32_t count = buf_count(bp);
++	kona_cp(3);
 +	uint64_t part_bytes = su.nblocks * UFS_BLOCK;
 +
 +	lck_mtx_lock(&kona_ufs_lock);
@@ -580,13 +592,14 @@
 +		uint64_t pos = off + done;
 +		uint64_t lba = pos / UFS_BLOCK;
 +		uint32_t skip = (uint32_t)(pos % UFS_BLOCK);
-+		uint32_t want = MIN(count - done, UFS_BLOCK - skip);  /* one device block per command */
++		uint32_t want = MIN(count - done, BOUNCE_SIZE - skip);
 +		uint32_t blocks = (skip + want + UFS_BLOCK - 1) / UFS_BLOCK;
 +		void *bounce = (void *)(su.dma + DMA_BOUNCE);
 +		if (rd) {
 +			error = ufs_read_blocks(su.first_block + lba, blocks);
 +			if (!error) {
 +				memcpy(vaddr + done, (const char *)bounce + skip, want);
++				kona_cp(4);
 +			}
 +		} else {
 +			/* Partial device blocks at either end: read, merge, write back. */
@@ -950,6 +963,7 @@
 +		return ENOMEM;
 +	}
 +	su.ready = true;
++	kona_cp(2);
 +	printf("KONA UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, read-only\n",
 +	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20);
 +	return 0;
@@ -961,6 +975,7 @@
 +int
 +kona_ufs_rootdev(dev_t *dev)
 +{
++	kona_cp(1);
 +	/* The vendored Apple OSS HFS has no kext: register it before vfs_mountroot walks
 +	 * vfsconf. This runs from IOFindBSDRoot, which is earlier than the mount. */
 +	extern void kona_hfs_register(void);
