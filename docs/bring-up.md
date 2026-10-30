@@ -579,6 +579,57 @@ fix: publish the device **as a real IOMedia**. A bdevsw disk publishes none, so 
 looks at its contents. The kebab route pairs bdevsw with HFS for that reason; iPadOS roots on
 APFS, so this board needs an `IOBlockStorageDevice` driver (RamBlock is the in-tree template)
 instead of a bdevsw disk.
+
+## The IOMedia route: the storage class binds at link time
+
+The 2026-10-30 build swapped the bdevsw disk for that driver: `board.toml` selected
+`KonaUfs` beside `VerifiedRoot`, and the kernel link force-loaded
+`build/kona-ufs/libKonaUfs.a`. The component compiled clean under `-Werror`
+(`KonaUfs: -Werror build and actual ARM64/iOS 17 object audit passed`; 9 warnings,
+all `snprintf` size arithmetic and the GET_LUN byte packing, stay non-fatal in the
+KonaUfs branch of `build-arm-driver.py`), and the link then stopped on exactly the
+base class the archive cannot carry:
+
+```
+Undefined symbols for architecture arm64:
+  "vtable for IOBlockStorageDevice"
+  "IOBlockStorageDevice::IOBlockStorageDevice(OSMetaClass const*)"
+  "IOBlockStorageDevice::~IOBlockStorageDevice()"
+  "IOBlockStorageDevice::init(OSDictionary*)"
+  "IOBlockStorageDevice::getProperty(OSSymbol const*) const"
+  "IOBlockStorageDevice::doUnmap(IOBlockStorageDeviceExtent*, unsigned int, unsigned int)"
+  "IOBlockStorageDevice::doGetProvisionStatus(...)"
+    NOTE: a missing vtable usually means the first non-inline virtual member function has no definition.
+```
+
+`NativeUfsBlock` overrides every other operation, so only the methods it inherits
+are missing, and they belong to the IOStorageFamily kext inside the pinned
+kernelcache rather than to the kernel text. Those seven imports need the same
+absolute-symbol binding the AES component already carries: `.globl`/`.set` lines in
+a recorded `scripts/data/*-original-bindings.S`, compiled to `original-bindings.o`
+and archived next to the driver object. `build-software-aes-bindings.py` is the
+working example of that fallback and `build-virtio-mmio-bindings.py` the qualified
+variant; the latter refuses to run without `build/storage-abi/interface-audit.json`,
+which `audit-storage-interface.py` derives from a live `gdb-stop.json` snapshot this
+board cannot capture. The recorded addresses belong to the kernelcache and prelink
+slide `board.toml` pins, so one record serves every device on this OS profile and the
+storage record can be produced by reading the pinned kernelcache.
+
+That record now exists: `scripts/derive-storage-bindings.py` (ported from
+`57UU/UniXNU-sirius`) walks `__PRELINK_INFO` to `com.apple.iokit.IOStorageFamily` and
+proves the single dispatch table whose 176 kernel-exported slots carry the pinned export
+and whose other 14 are the kext's own traps, plus the constructor, the destructor and the
+metaclass. Against this profile's kernelcache it recorded 18 addresses, the seven the link
+asked for among them, and `build-arm-driver.py` now binds the object's own undefined
+imports at address plus slide before archiving it. `component:KonaUfs` and
+`CONFIG_XNU_NATIVE_UFS` are back on. Two limits belong with it: the
+binding only satisfies the linker, because the IOMedia itself is published at run
+time by the original kext the driver waits for with `serviceMatching("IOMedia")`, so
+a kext that never binds reads as no media instead of as a link error; and the tty
+console still does not complete on this board, which is why `kona-ufs-driver.patch`
+now draws userland output through `/dev/konacon` with 5x12 firmware glyphs at
+scale 2 (the tty path stops at cnopen -> cndev -> km_tty[0] -> kmopen).
+
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the

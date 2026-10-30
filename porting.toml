@@ -194,7 +194,9 @@ evidence = [
 [[area]]
 id = "storage"
 status = "planned"
-components = []
+# VerifiedRoot is selected in board.toml; KonaUfs is the IOMedia driver kept opt-in until
+# the storage original bindings exist (see findings).
+components = ["VerifiedRoot", "KonaUfs"]
 paths = [
   "drivers/**",
   "scripts/*ufs*",
@@ -212,9 +214,9 @@ inputs = [
   "The board GPT: boot_a, boot_b and the userdata extent.",
 ]
 configuration = [
-  "CONFIG_XNU_KONA_UFS=y selects the bdevsw route: build-xnu-4k-baseline.sh adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS, patches/xnu/series applies kona-ufs-driver, kona-ufs-early-putc and kona-ufs-integration, and bsd/dev/kona_ufs.c is a standard file.",
+  "CONFIG_XNU_KONA_UFS=y selects the bdevsw route: build-xnu-4k-baseline.sh adds -DKONA to CFLAGS_EXTRA and OTHER_CXXFLAGS, patches/xnu/series applies kona-ufs-driver (which now carries the frame-buffer early putc and /dev/konacon), kona-hfs-noop, kona-ufs-integration, kona-rootauth-bypass and the konacp checkpoint patches, and bsd/dev/kona_ufs.c is a standard file.",
   "kernel_args carries rd=ufsroot0 and ufsroot=userdata, so IOKitBSDInit selects the BSD disk before root-media matching; APFS mounts the container inside the userdata GPT partition.",
-  "CONFIG_XNU_NATIVE_UFS is not set: the ShengUfs archive still cannot link against the IOStorageFamily kext class.",
+  "CONFIG_XNU_NATIVE_UFS is not set and board.toml keeps component:KonaUfs out of include: the IOMedia route compiles the archive but cannot link it until the storage original bindings exist, so both switches stay off together and turn the root over to IOStorageFamily in one step.",
   "[userdata] holds the write window and names the OS and SystemOS IPSW components.",
 ]
 procedure = [
@@ -239,6 +241,9 @@ findings = [
   "After the bypass the kernel reaches load_init_program, but execve('/sbin/launchd') fails with ENOEXEC (8). The workflow mounts the OS dmg and prints file/xattr/otool/lipo: /sbin/launchd is a valid uncompressed arm64 Mach-O (no com.apple.decmpfs xattr), so ENOEXEC is not the binary format. The bypass patch now reads /sbin/launchd with vnode_lookup/vn_rdwr after the root auth and panics with the first 8 header bytes and the residual (kona launchd hdr), so the next boot proves whether the read path returns the Mach-O.",
   "The probe settled it: the root was not APFS. vnode_size('/sbin/launchd') returned 108049805312, exactly the userdata partition size (26379347 x 4096), SystemVersion.plist did not resolve, and the first 8 bytes were the checksum at offset 0 of the APFS container. That is mockfs legacy behaviour: the OS profile sets CONFIG_XNU_SOURCE_MOCKFS=y, mockfs_mountroot accepts any device, and vfs_mountroot tried it before APFS, so /sbin/launchd was the whole partition. configs/instantnoodlep_defconfig now sets '# CONFIG_XNU_SOURCE_MOCKFS is not set'; mockfs is an offline fixture, not the board root.",
   "The bdevsw route cannot host APFS. konacp checkpoints (patches/xnu/kebab-route/kona-mountroot-cp.patch and kona-vfs-cp.patch) walk the boot: rootdev entry, disk published, bsd_autoconf, before net_init_run and before vfs_mountroot all fire, then vfs_mountroot returns ENODEV while the apfs mountroot returns ENOENT (2) without a single block request reaching kona_ufs_strategy. apfs is registered (konacp=10 lists 'apfs,' as the only mountroot-capable file system), and removing /chosen/root-matching changes nothing. UniXNU's alioth record measures the same failure through /dev/md0 (2026-10-26, 'offline scratch Data mount failed: 2') and names the fix: publish the device as a real IOMedia. A bdevsw disk has no IOMedia, so APFS declines it before I/O.",
+  "The IOMedia route ran on 2026-10-30: board.toml selected KonaUfs beside VerifiedRoot for one CI run and the kernel link force-loaded build/kona-ufs/libKonaUfs.a. The component compiled clean under -Werror ('KonaUfs: -Werror build and actual ARM64/iOS 17 object audit passed'; 9 warnings, snprintf size arithmetic and the GET_LUN byte packing, stay non-fatal in the KonaUfs branch of build-arm-driver.py), then the link failed on exactly the base class the archive cannot carry: vtable for IOBlockStorageDevice, its OSMetaClass constructor and destructor, init, getProperty, doUnmap and doGetProvisionStatus. NativeUfsBlock overrides every other operation, so only the methods it inherits are missing, and they belong to the IOStorageFamily kext of the pinned kernelcache rather than to the kernel text. board.toml then kept component:KonaUfs out of include and the defconfig kept CONFIG_XNU_NATIVE_UFS unset; the record below binds them and both switches are back on.",
+  "That binding has a recorded-value precedent in the tree: scripts/data/native-aes-original-bindings.S pins each imported original-kernelcache symbol with .globl/.set at an address measured once, and build-software-aes-bindings.py compiles the .S into original-bindings.o and archives it beside the driver object when the live audit evidence is absent. The addresses follow the kernelcache and prelink slide board.toml pins, not the board, so one record serves every device on this OS profile; the same file can therefore be produced for the storage class by reading the pinned kernelcache, which is the only route this board has.",
+  "scripts/derive-storage-bindings.py (ported from UniXNU-sirius, BSD-2-Clause-Patent) derives that record offline: it walks __PRELINK_INFO to com.apple.iokit.IOStorageFamily, takes the single __DATA_CONST dispatch table whose 176 kernel-exported slots carry the pinned export and whose other 14 are the kext's own BRK traps, and proves the protected constructor, the base destructor and the metaclass by the code that materialises them. Against the kernelcache this profile pins (f18b4df865405f2a... at slide -0x1000000) it recorded 18 addresses and the dispatch table 0xfffffff006cb44c0, which covers all seven imports the link reported. build-arm-driver.py reads the compiled object's own undefined IOStorageFamily symbols, binds exactly those at address plus slide as absolute symbols in original-bindings.S, and archives the result with the driver, so the import list can never drift from the driver.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",
@@ -249,10 +254,12 @@ limits = [
   "Measured from the dumped GPT: userdata runs from LBA 4133800 to 30513146 with 4096-byte sectors (26379347 sectors, 100.63 GiB), matching the bootloader's partition-size report.",
   "The firmware probe read VER/CAP/HCS/HCE/IS and the PHY PLL, but the register file is only trustworthy while the bootloader's clocks and power domain stay up; the kernel driver reuses that state and has no cold-init sequence.",
   "ShengUfs's constants target SM8550 host 0x1d84000 with PHY 0x1d80000 and apps SMMU stream 0x60; kona differs in the PHY offset (0x1d87000), the GCC ids and the absence of an SMMU stream, so its table cannot be reused unchanged.",
+  "scripts/data carries the recorded original bindings for AES (native-aes-original-bindings.S) and for the Adreno kit, but none for the storage class: build-virtio-mmio-bindings.py is the only producer of that record and it reads build/storage-abi/interface-audit.json, which audit-storage-interface.py derives from a live gdb-stop.json this board cannot capture.",
 ]
 next_action = [
-  "Push the device and fork commits, run the macOS kernel workflow, and read the KONA UFS log: the driver should print VER/CAP/HCE/HCS, find the userdata GPT partition, and reach the root mount; iterate the transport on the first failure.",
-  "If the BSD disk publishes but APFS refuses the container, compare the GPT window, the 512-byte sector mapping and the APFS container block size before changing the driver.",
+  "Record the seven IOBlockStorageDevice imports (vtable, OSMetaClass constructor and destructor, init, getProperty, doUnmap, doGetProvisionStatus) from the pinned kernelcache as scripts/data/storage-original-bindings.S, in the format of native-aes-original-bindings.S.",
+  "Compile that record into original-bindings.o and archive it into build/kona-ufs/libKonaUfs.a the way build-software-aes-bindings.py does for AES, then re-enable component:KonaUfs in board.toml and CONFIG_XNU_NATIVE_UFS in the defconfig.",
+  "Boot again and read the result: IOStorageFamily should publish the userdata IOMedia and APFS should mount it; a missing kext reads as no media rather than as a link error, and /dev/konacon is the channel the panel draws once userland output starts.",
 ]
 evidence = [
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device fa8620b3 (product kona, hw-revision 20001, current-slot a of 2): boot_a and boot_b 96 MiB, userdata 100.63 GiB (26379347 4096-byte sectors), super 14 GiB; the bootloader is locked with verity on, so the storage path cannot run yet." },
