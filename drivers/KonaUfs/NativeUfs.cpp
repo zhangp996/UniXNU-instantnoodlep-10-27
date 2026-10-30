@@ -1918,83 +1918,6 @@ static char gPendingUuid[4][37];
 static UfsRootPlan gPublicationPlan;
 static NativeUfs *gPendingProvider;
 
-static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
-{
-  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
-  OSDictionary *properties = OSDictionary::withCapacity (1);
-  OSString *wanted = OSString::withCString (uuid);
-  bool found = false;
-  if (matching && properties && wanted && properties->setObject ("UUID", wanted) &&
-      matching->setObject ("IOPropertyMatch", properties)) {
-    OSIterator *iterator = IOService::getMatchingServices (matching);
-    if (iterator) {
-      for (unsigned matches = 0; matches < 64 && !found; ++matches) {
-        IORegistryEntry *media = OSDynamicCast (IORegistryEntry, iterator->getNextObject ());
-        if (!media) break;
-        IORegistryIterator *parents = IORegistryIterator::iterateOver (
-          media, gIOServicePlane, kIORegistryIterateRecursively | kIORegistryIterateParents);
-        if (parents) {
-          found = ufsMediaHasAncestor (*parents, window);
-          parents->release ();
-        }
-      }
-      iterator->release ();
-    }
-  }
-  OSSafeReleaseNULL (wanted);
-  OSSafeReleaseNULL (properties);
-  OSSafeReleaseNULL (matching);
-  return found;
-}
-
-// The bring-up build publishes without signed identities, so gPendingUuid stays empty and no
-// APFS volume can ever carry it. The dependency the kernel needs is the same either way: one
-// IOMedia of this window in the service plane. Match that instead of a UUID.
-static bool mediaForWindowExists (NativeUfsBlock *window)
-{
-  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
-  bool found = false;
-  if (matching) {
-    OSIterator *iterator = IOService::getMatchingServices (matching);
-    if (iterator) {
-      for (unsigned matches = 0; matches < 64 && !found; ++matches) {
-        IORegistryEntry *media = OSDynamicCast (IORegistryEntry, iterator->getNextObject ());
-        if (!media) break;
-        IORegistryIterator *parents = IORegistryIterator::iterateOver (
-          media, gIOServicePlane, kIORegistryIterateRecursively | kIORegistryIterateParents);
-        if (parents) {
-          found = ufsMediaHasAncestor (*parents, window);
-          parents->release ();
-        }
-      }
-      iterator->release ();
-    }
-    matching->release ();
-  }
-  return found;
-}
-
-static void captureMissingMedia (const char *uuid)
-{
-  int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for signed UUID %s\n", uuid);
-  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
-  OSIterator *iterator = matching ? IOService::getMatchingServices (matching) : nullptr;
-  unsigned count = 0;
-  while (iterator && used < int (sizeof (gRootMediaText)) - 180 && count++ < 8) {
-    IOService *media = OSDynamicCast (IOService, iterator->getNextObject ());
-    if (!media) break;
-    OSString *id = OSDynamicCast (OSString, media->getProperty ("UUID"));
-    OSString *bsd = OSDynamicCast (OSString, media->getProperty (kIOBSDNameKey));
-    OSNumber *size = OSDynamicCast (OSNumber, media->getProperty ("Size"));
-    used += snprintf (gRootMediaText + used, sizeof (gRootMediaText) - used,
-                      "media %.24s bytes=%llx uuid=%.36s\n",
-                      bsd ? bsd->getCStringNoCopy () : "-", size ? size->unsigned64BitValue () : 0ULL,
-                      id ? id->getCStringNoCopy () : "-");
-  }
-  OSSafeReleaseNULL (iterator);
-  OSSafeReleaseNULL (matching);
-}
-
 // Used only for objects that were never started/published. Started objects
 // retain their owner references even on a later failure; clients can have I/O.
 static void discardPendingWindow (unsigned index)
@@ -2026,18 +1949,14 @@ static void publishThread (void *, wait_result_t)
       gRootDiagnostic.stage = "media publication";
       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Media);
       gRootDiagnostic.publicationWindow = index;
-      bool ready = false;
-      // Diagnostic mode affects reporting only, never the dependency gate. Without a signed
-      // identity there is no UUID to look for, so the window's own media is the gate.
-      const bool haveIdentity = uuid[0] != '\0';
-      for (unsigned tick = 0; tick <= 300; ++tick) {
-        ready = haveIdentity ? mediaWithUuidExists (uuid, device) : mediaForWindowExists (device);
-        if (ready || tick == 300) break;
-        IOSleep (100);
-      }
-      IOLog ("NativeUfs: %s volume %s %s\n", device->windowLabel (), uuid, ready ? "ready" : "not ready");
-      if (!ready) captureMissingMedia (uuid);
-      return ready;
+      // start() already published the media with registerService(); the kernel's own root
+      // matching (IOFindBSDRoot) is what has to wait for it, not this thread. Polling the
+      // service plane here stalled the boot page on 2026-10-31: with the poll the page stopped
+      // sampling after its first frame and stayed frozen for minutes, without it the same
+      // kernel booted with the page live. The pass therefore records the window and moves on.
+      // The UUID is empty in this build (no NATIVE_VERIFIED_BLOCK), so the log states that.
+      IOLog ("NativeUfs: %s window published (uuid '%.36s' not polled)\n", device->windowLabel (), uuid);
+      return true;
     }
     void discard (unsigned index) { discardPendingWindow (index); }
   } operations;
