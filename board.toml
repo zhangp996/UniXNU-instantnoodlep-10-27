@@ -127,7 +127,12 @@ timeout = 0
 # so anything after that point would be the probe failing, not the kernel. The panic
 # screen stays on, because it runs inside the kernel's own panic path and is what makes
 # a fault readable on a board without a serial console.
-panic_screen = true
+#
+# Off while the boot progress layer is linked: its 0xa3f-byte screen no longer fits the
+# kernel's panic cave (0xfffffff0073f45c0 + 0xa3f ends past the padding at 0xfffffff0073f4ff0),
+# and the diagnostic page is the output channel this build is testing. Turn it back on, or
+# give the patch more room, before shipping an image meant to survive a fault.
+panic_screen = false
 
 # A bisect with entry_probe_reset_after = "_arm_vm_init" is not usable on this
 # kernel: patch-xnu-entry-probe.py exits without a message when it cannot resolve

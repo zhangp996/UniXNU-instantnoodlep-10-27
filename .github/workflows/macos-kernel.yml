@@ -38,6 +38,10 @@ on:
         description: Download and extract the OS image on the runner before the build
         type: boolean
         default: true
+      inspect_osimage:
+        description: Mount the OS image and print its APFS volumes and launchd
+        type: boolean
+        default: false
       unique_chip_id:
         description: Platform seed for the payload (hex); not stored in any repository
         required: true
@@ -138,12 +142,14 @@ jobs:
 
       - name: Show the OS image APFS volumes
         # [payload.adt] root_match_volume_uuid comes from the OS component's APFS root
-        # volume; the userdata image on the board was built from the same component.
-        if: inputs.fetch_ipsw
+        # volume; the userdata image on the board was built from the same component. Opt-in:
+        # the value is recorded in the porting record, so a normal build does not pay for the
+        # attach, and the profile directory is globbed instead of pinned.
+        if: inputs.fetch_ipsw && inputs.inspect_osimage
         continue-on-error: true
         run: |
           ./unixnu ipsw fetch OS -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/osimage.log"
-          OSDMG=$(ls -S out/ipsw/21H461/*.dmg 2>/dev/null | head -1)
+          OSDMG=$(ls -S out/ipsw/*/*.dmg 2>/dev/null | head -1)
           echo "OSDMG=$OSDMG"
           if [ -n "$OSDMG" ]; then
             hdiutil attach -nomount -readonly "$OSDMG" | tee "$RUNNER_TEMP/apfs-attach.log"
@@ -155,10 +161,10 @@ jobs:
       - name: Inspect the OS image launchd
         # load_init_program execve('/sbin/launchd') returns ENOEXEC; check whether the
         # root binary is compressed or a different slice before changing the kernel.
-        if: inputs.fetch_ipsw
+        if: inputs.fetch_ipsw && inputs.inspect_osimage
         continue-on-error: true
         run: |
-          OSDMG=$(ls -S out/ipsw/21H461/*.dmg 2>/dev/null | head -1)
+          OSDMG=$(ls -S out/ipsw/*/*.dmg 2>/dev/null | head -1)
           echo "OSDMG=$OSDMG"
           {
             MP=$(hdiutil attach "$OSDMG" | grep -E '/Volumes/' | tail -1 | awk '{print $NF}')
@@ -217,7 +223,7 @@ jobs:
         run: |
           set -o pipefail
           # The static trust cache is the large one; the cryptex ones next to it are tiny.
-          TRUST=$(ls -S out/ipsw/21H461/*.trustcache 2>/dev/null | head -1)
+          TRUST=$(ls -S out/ipsw/*/*.trustcache 2>/dev/null | head -1)
           echo "trust cache: ${TRUST:-none}"
           if [ -n "$TRUST" ]; then
             ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" 2>&1 | tee "$RUNNER_TEMP/payload.log"
