@@ -34,7 +34,7 @@
  		if (0 == (err = vfs_mountroot())) {
  			boot_progress_stage("vfs_mountroot mounted; authentication pending");
  			break;
-@@ -1019,3 +1037,10 @@
+@@ -1019,3 +1037,9 @@
  #endif
  		printf("cannot mount root, errno = %d\n", err);
 +		{
