@@ -28,7 +28,7 @@ static inline int formatUfsRootDiagnostics(char *buffer, size_t capacity,
     "%s: %s\nstage=%s result=%08x\n"
     "HC cap=%08x ver=%08x hcs=%08x hce=%08x db=%08x is=%08x\n"
     "DMA=%llx UTRL=%llx SMMU smr=%08x s2cr=%08x cbar=%08x sctlr=%08x\n"
-    "CMD n=%u type=%02x op=%02x lun=%02x ocs=%02x rsp=%08x scsi=%04x power=%02x\n"
+    "CMD n=%u type=%02x op=%02x lun=%02x ocs=%02x rsp=%08x scsi=%04x power=%02x why=%.42s\n"
     "PROTOCOL reject=%u residual=%u sense=%06x SMMU slot=%u id1=%x\n"
     "QUEUE rsr=%x ahit=%x polls=%u dbSeen=%x isSeen=%x isBefore=%x contiguous=%llx\n"
     "FAULT global=%x->%x syn=%x cb=%x->%x syn=%x far=%llx id2=%x cba2r=%x\n"
@@ -38,7 +38,7 @@ static inline int formatUfsRootDiagnostics(char *buffer, size_t capacity,
     "IO reads=%llu failures=%llu pubPhase=%u window=%u\n",
     title, reason, d.stage, d.result, d.cap, d.version, d.hcs, d.hce, d.doorbell, d.interrupt,
     (unsigned long long)d.dma, (unsigned long long)d.list, d.smr, d.s2cr, d.cbar, d.sctlr,
-    d.command, d.type, d.opcode, d.lun, d.ocs, d.response, d.scsi, d.power,
+    d.command, d.type, d.opcode, d.lun, d.ocs, d.response, d.scsi, d.power, reason,
     d.protocol, d.residual, d.sense, d.smmuSlot, d.smmuId1,
     d.runStop, d.ahit, d.polls, d.dbSeen, d.isSeen, d.isBefore, (unsigned long long)d.contiguous,
     d.gfsrBefore, d.gfsr, d.gsyn, d.fsrBefore, d.fsr, d.fsyn, (unsigned long long)d.far,
