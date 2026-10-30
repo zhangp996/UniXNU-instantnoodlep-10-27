@@ -166,6 +166,10 @@ kernel_args = [
   # Bring-up bisect: panic at storage checkpoint N of bsd/dev/kona_ufs.c
   # (1 rootdev entry, 2 disk published, 3 first block I/O, 4 first read done).
   "konacp=11",
+  # KonaUfs (IOBlockStorageDevice) only enters its root-publication path when
+  # native-ufs-root is set: NativeUfs::probe returns false otherwise, which is what the
+  # diagnostic page showed as probe=21 match=1 root=0 published=0.
+  "native-ufs-root=1",
   # The bdevsw disk is no longer forced as the root device: with rd=ufsroot0 the
   # mountroot handed APFS that disk and it answered ENOENT without a block request
   # (kona cp 11, vfs_subr.c:1419). The root now comes from the IOMedia that the
