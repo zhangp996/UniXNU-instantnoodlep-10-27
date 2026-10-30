@@ -288,4 +288,5 @@ jobs:
             ${{ runner.temp }}/*.log
             out/*/*/*/logs/kernel-bootstrap.log
             out/*/*/*/logs/component-*.log
+            out/*/*/*/tree/build/*/compile.log
           if-no-files-found: warn
