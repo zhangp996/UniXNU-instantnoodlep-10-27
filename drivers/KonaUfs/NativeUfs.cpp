@@ -166,6 +166,10 @@ static uintptr_t mapPhys (uint64_t phys, uint64_t length, OSSharedPtr<IOMemoryMa
   return keep ? static_cast<uintptr_t> (keep->getVirtualAddress ()) : 0;
 }
 
+// iOS 17's XNU does not declare ml_io_map in its public headers; the bdevsw driver in this
+// repository declares it the same way (patches/xnu/kebab-route/kona-ufs-driver.patch).
+extern "C" vm_offset_t ml_io_map (vm_offset_t phys_addr, vm_size_t size);
+
 // Device registers go through ml_io_map, the mapping the bdevsw driver uses: the controller's
 // first read never returned through the IOMemoryDescriptor path above, while the same range
 // answers immediately in firmware (MmioRead32, device memory) and in kona_ufs.c (ml_io_map).
