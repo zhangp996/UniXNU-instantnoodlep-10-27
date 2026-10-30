@@ -580,7 +580,7 @@
 +		uint64_t pos = off + done;
 +		uint64_t lba = pos / UFS_BLOCK;
 +		uint32_t skip = (uint32_t)(pos % UFS_BLOCK);
-+		uint32_t want = MIN(count - done, BOUNCE_SIZE - skip);
++		uint32_t want = MIN(count - done, UFS_BLOCK - skip);  /* one device block per command */
 +		uint32_t blocks = (skip + want + UFS_BLOCK - 1) / UFS_BLOCK;
 +		void *bounce = (void *)(su.dma + DMA_BOUNCE);
 +		if (rd) {
