@@ -21,7 +21,9 @@ CONFIG_XNU_KONA_UFS=y
 # execve returned ENOEXEC on raw APFS bytes. This board roots on APFS, so drop mockfs.
 # CONFIG_XNU_SOURCE_MOCKFS is not set
 # APFS declines a bdevsw disk with ENOENT (docs/bring-up.md), so the root has to come from
-# an IOBlockStorageDevice driver: KonaUfs publishes the media APFS can attach to.
-CONFIG_XNU_NATIVE_UFS=y
+# an IOBlockStorageDevice driver. KonaUfs compiles, but its link needs the original
+# IOBlockStorageDevice methods and vtable from the storage ABI bindings, which are not
+# generated for this board yet. Enable this once they are:
+# CONFIG_XNU_NATIVE_UFS is not set
 # No catalog component has Adreno 650 scope yet.
 # CONFIG_XNU_NATIVE_ADRENO is not set
