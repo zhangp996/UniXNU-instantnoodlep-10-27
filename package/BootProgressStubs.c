@@ -9,11 +9,16 @@
 #include <stdint.h>
 #include <stddef.h>
 
+volatile uint64_t native_ufs_block_reads __attribute__((weak)) = 0;
 volatile uint64_t native_ufs_verified_blocks __attribute__((weak)) = 0;
 volatile uint64_t native_ufs_verify_ticks __attribute__((weak)) = 0;
 volatile uint64_t native_ufs_read_ticks __attribute__((weak)) = 0;
+volatile uint64_t native_ufs_block_failures __attribute__((weak)) = 0;
+volatile uint32_t native_ufs_integrity_failures __attribute__((weak)) = 0;
+volatile uint32_t native_ufs_blocks_published __attribute__((weak)) = 0;
 volatile uint32_t native_ufs_probe_calls __attribute__((weak)) = 0;
 volatile uint32_t native_ufs_matched __attribute__((weak)) = 0;
+volatile uint32_t native_ufs_root_step __attribute__((weak)) = 0;
 const char *volatile native_ufs_root_failure __attribute__((weak)) = 0;
 volatile uint32_t native_virtio_ready __attribute__((weak)) = 0;
 volatile uint32_t native_virtio_read_requests __attribute__((weak)) = 0;
