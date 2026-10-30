@@ -535,6 +535,25 @@ bypass patch now also reads `/sbin/launchd` with `vnode_lookup`/`vn_rdwr`
 after the root auth and panics with the first 8 header bytes and the residual
 (`kona launchd hdr`), so the next boot proves whether the read path returns the
 Mach-O.
+
+The probe settled it: the root was not APFS. It printed
+
+```
+kona l sz 108049805312 e 0 h 57dc9a14 0b63ce7f r 0 | p sz 0 e 4294967294 ...
+```
+
+| Observation | Meaning |
+| --- | --- |
+| 108049805312 = 26379347 x 4096 | the vnode size is the whole userdata partition |
+| the first 8 bytes are the container checksum at offset 0 | the "file" is the raw partition |
+| `/System/Library/CoreServices/SystemVersion.plist` did not resolve | the mounted root has no OS tree |
+
+That is mockfs legacy behaviour. The OS profile sets
+`CONFIG_XNU_SOURCE_MOCKFS=y`, `mockfs_mountroot` accepts any device, and
+`vfs_mountroot` tried it before APFS, so the mount the earlier boots reported
+as APFS was mockfs and exec read the partition. `configs/instantnoodlep_defconfig`
+now sets `# CONFIG_XNU_SOURCE_MOCKFS is not set`; mockfs is an offline fixture,
+not the board root.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
