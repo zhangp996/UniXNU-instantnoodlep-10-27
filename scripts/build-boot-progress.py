@@ -54,7 +54,18 @@ command += ['-DXNU_BOOT_PROGRESS=1', '-mgeneral-regs-only', '-Wall', '-Wextra', 
 (OUT / 'compile-command.json').write_text(json.dumps(command, indent=2) + '\n')
 subprocess.run(command, cwd=record['directory'], check=True, timeout=300)
 
+# The renderer names the counters of sheng's own board (Virtio, verified blocks, touch,
+# legacy display, Adreno, PMGR). The kernel link does not honour weak_import, so those
+# names have to exist: BootProgressStubs.c defines them weakly, and a strong definition
+# from a component still wins. The file is generated from the extern declarations of
+# BootProgress.c; see its header.
+stubs = ROOT / 'kits' / 'instantnoodlep' / 'BootProgressStubs.c'
+stub_obj = OUT / 'BootProgressStubs.o'
+stub_command = [str(stubs) if arg == str(source) else str(stub_obj) if arg == str(obj) else arg
+                for arg in command]
+subprocess.run(stub_command, cwd=record['directory'], check=True, timeout=300)
+
 archive = OUT / 'libBootProgress.a'
 archive.unlink(missing_ok=True)
-subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj)], check=True, timeout=30)
+subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj)], check=True, timeout=30)
 print('PASS: boot progress renderer built against the source kernel ABI')
