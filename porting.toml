@@ -543,6 +543,7 @@ inputs = [
 ]
 configuration = [
   "kernel_args carry -v, debug=0x14e and the panic-screen switch in [payload].",
+  "CONFIG_XNU_BOOT_PROGRESS=y links the boot progress layer and kernel_args carry boot-progress=2, the on-screen diagnostic page docs/guide/debugging.md describes.",
   "board.example = true keeps the build from producing an image out of zeroed geometry.",
 ]
 procedure = [
@@ -551,6 +552,8 @@ procedure = [
 ]
 findings = [
   "docs/guide/debugging.md documents the green-bar entry probe and the device-tree panic region as the two evidence channels before the kernel can draw.",
+  "The documented kernel-to-panel transport on a board without a UART is the boot progress diagnostic page (docs/guide/debugging.md: boot-progress=1 freezes after a stall, 2 runs continuously; 48 rows of 120 columns, scale 3 above 2160x1400). Its renderer binds the frame buffer from vinfo.v_baseaddr and re-binds after console init, which is the same record scripts/xnu-panic-screen.c draws through and the reason PE_state.video (physical) and a fresh ml_io_map (10 MiB of kmem on this panel) both fail on this board.",
+  "The layer's implementation is not part of the UniXNU revision this port builds: scripts/build-boot-progress.py and kits/sheng/BootProgress.c that the shared interlock and zzz-boot-progress.patch call are absent, while the interlock also demands the audited owner-root build and the Virtio transport. UniXNU-sheng at 08cde20 carries both files; BootProgress.c is vendored byte-identical under kits/boot-progress with its Font.h, and a kona builder compiles the single object. Of the storage symbols it reads, native_ufs_block_reads, native_ufs_block_failures, native_ufs_integrity_failures and native_ufs_progress_text are defined by the KonaUfs component and the rest are weak imports, so nothing is stubbed. The interlock is relaxed to the source crypto provider, the deviation docs/devices/sirius.md records for sdm710.",
 ]
 completion = [
   "Each claimed milestone has a reproducible command, a matching source and image revision, and an accessible result.",

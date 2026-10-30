@@ -167,6 +167,10 @@ kernel_args = [
   # volume is selected by [payload.adt] root_match_volume_uuid.
   "rd=ufsroot0",
   "ufsroot=userdata",
+  # docs/guide/debugging.md: the on-screen diagnostic page is this board's only kernel
+  # log transport (no UART). Level 2 runs continuously, so the last checkpoint survives
+  # on the panel for a photograph.
+  "boot-progress=2",
 ]
 
 # The trust cache the payload embeds is the static one from the 17.7.11 (21H461)
