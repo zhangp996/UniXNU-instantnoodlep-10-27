@@ -1,0 +1,27 @@
+--- a/bsd/vfs/vfs_subr.c
++++ b/bsd/vfs/vfs_subr.c
+@@ -1210,6 +1210,24 @@
+ int
+ vfs_mountroot(void)
+ {
++	{
++		int konacp_want = 0;
++		extern boolean_t PE_parse_boot_argn(const char *, void *, int);
++		if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 10) {
++			static char konacp_names[160];
++			struct vfstable *konacp_v;
++			konacp_names[0] = 0;
++			for (konacp_v = vfsconf; konacp_v; konacp_v = konacp_v->vfc_next) {
++				if (konacp_v->vfc_mountroot == NULL &&
++				    !ISSET(konacp_v->vfc_vfsflags, VFC_VFSCANMOUNTROOT)) {
++					continue;
++				}
++				strlcat(konacp_names, konacp_v->vfc_name, sizeof(konacp_names));
++				strlcat(konacp_names, ",", sizeof(konacp_names));
++			}
++			panic("kona cp 10: candidates %s", konacp_names);
++		}
++	}
+ #if CONFIG_MACF
+ 	struct vnode *vp;
+ #endif

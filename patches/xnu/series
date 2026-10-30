@@ -10,3 +10,5 @@ kebab-route/kona-ufs-integration.patch
 kebab-route/kona-rootauth-bypass.patch
 # konacp 5-8: bsd_init checkpoints around net_init_run/inittodr/vfs_mountroot.
 kebab-route/kona-mountroot-cp.patch
+# konacp 10: list the filesystems that carry a mountroot routine.
+kebab-route/kona-vfs-cp.patch
