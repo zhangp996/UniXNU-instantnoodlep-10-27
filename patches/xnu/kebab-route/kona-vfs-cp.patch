@@ -25,3 +25,16 @@
  #if CONFIG_MACF
  	struct vnode *vp;
  #endif
+@@ -1393,4 +1401,12 @@
+ 		if (error != EINVAL) {
+ 			printf("%s_mountroot failed: %d\n", vfsp->vfc_name, error);
+ 		}
++		{
++			int konacp_want = 0;
++			extern boolean_t PE_parse_boot_argn(const char *, void *, int);
++			if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) &&
++			    konacp_want == 11 && !strcmp(vfsp->vfc_name, "apfs")) {
++				panic("kona cp 11: apfs mountroot error %d", error);
++			}
++		}
+ 	}
