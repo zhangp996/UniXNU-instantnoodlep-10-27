@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,1006 @@
+@@ -0,0 +1,1116 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -739,6 +739,109 @@
 + * fight the tty layer for a bring-up test, expose the framebuffer console as a
 + * plain character device: whatever a process writes is drawn directly.
 + */
++/*
++ * Minimal frame buffer console. The tty console does not complete on this board
++ * (cnopen -> cndev -> km_tty[0] -> kmopen), so userland output is drawn here
++ * instead: /dev/konacon feeds this one character at a time through the kernel's
++ * own frame buffer mapping. 5x12 glyphs from the firmware font, scale 2.
++ */
++static const uint64_t kona_font[95] = {
++	0x0000000000000000, 0x0842108000020084, 0x0005294000000000, 0x15F528000000295F,
++	0x1C52F88000023E94, 0x088556400004D542, 0x04528800000B2725, 0x0002108000000000,
++	0x0421108800821042, 0x1084108200221108, 0x0957548000000000, 0x3E42000000000084,
++	0x0000000000223000, 0x3E00000000000000, 0x0000000000471000, 0x0884420000008442,
++	0x2318A88000022A31, 0x08429880000F9084, 0x1108C5C0000F8444, 0x1C4443E000074610,
++	0x14A62100000423E9, 0x26D087E000074610, 0x1E10C5C000074631, 0x088443E000010844,
++	0x1D18C5C000074631, 0x3D18C5C000074610, 0x08E2000000471000, 0x08E2000000223000,
++	0x0222220000082082, 0x01F00000000003E0, 0x2082082000008888, 0x1108C5C000020084,
++	0x2B98C5C0000F05B5, 0x2318A8800008C63F, 0x1D2949E00007CA52, 0x0210C5C000074421,
++	0x252949E00007CA52, 0x1E1087E0000F8421, 0x1E1087E000008421, 0x0210C5C000074639,
++	0x3F18C6200008C631, 0x084211C000071084, 0x1084238000032508, 0x0654C6200008C525,
++	0x02108420000F8421, 0x2B5DC6200008C631, 0x2B59CE200008C739, 0x2318C5C000074631,
++	0x1F18C5E000008421, 0x2318C5C001075631, 0x1F18C5E00008C525, 0x1C10C5C000074610,
++	0x084213E000021084, 0x2318C62000074631, 0x1518C6200002114A, 0x2B18C620000556B5,
++	0x08A546200008C54A, 0x08A5462000021084, 0x088443E0000F8442, 0x0421084E00E10842,
++	0x0821042000084108, 0x1084210E00E42108, 0x0008A88000000000, 0x0000000001F00000,
++	0x0000010400000000, 0x20E00000000B663E, 0x22F084200007C631, 0x22E0000000074421,
++	0x23E84200000F4631, 0x22E000000007443F, 0x1E21498000010842, 0x22E000001D187A31,
++	0x26D084200008C631, 0x0860100000071084, 0x10C020000C94A108, 0x0A9084200008A4A3,
++	0x084210C000071084, 0x2AB000000008D6B5, 0x26D000000008C631, 0x22E0000000074631,
++	0x22F000000210BE31, 0x23E0000021087A31, 0x26D0000000008421, 0x22E0000000074506,
++	0x04F1080000064842, 0x23100000000B6631, 0x2310000000022951, 0x23100000000556B5,
++	0x151000000008A884, 0x231000001D185B31, 0x11F00000000F8444, 0x0642109801821084,
++	0x0842108000021084, 0x3042108300321084, 0x0004D64000000000,
++};
++
++static struct {
++	uint8_t *base;
++	uint32_t stride, width, height, x, y;
++	int state;                              /* 0 = untried, 1 = ready, -1 = absent */
++} kona_con;
++
++void
++kona_early_putc(char c)
++{
++	const uint32_t scale = 2, cell = 6 * scale, line = 14 * scale;
++	uint64_t glyph;
++	uint32_t top, bottom, row, col, dy, dx;
++
++	if (kona_con.state == 0) {
++		PE_Video *v = &PE_state.video;
++		vm_offset_t va;
++		kona_con.state = -1;
++		if (v->v_baseAddr && v->v_depth == 32 && v->v_rowBytes >= 64 && v->v_height > 200) {
++			va = ml_io_map((vm_offset_t)v->v_baseAddr,
++			    (vm_size_t)(v->v_rowBytes * v->v_height));
++			if (va) {
++				kona_con.base = (uint8_t *)va;
++				kona_con.stride = (uint32_t)v->v_rowBytes;
++				kona_con.width = (uint32_t)v->v_width;
++				kona_con.height = (uint32_t)v->v_height;
++				kona_con.x = 8;
++				kona_con.y = 8;
++				kona_con.state = 1;
++			}
++		}
++	}
++	if (kona_con.state != 1) {
++		return;
++	}
++	if (c == '\n') {
++		kona_con.x = 8;
++		kona_con.y += line;
++	} else if (c == '\r') {
++		kona_con.x = 8;
++	} else if (c >= 32 && c <= 126) {
++		if (kona_con.x + cell > kona_con.width) {
++			kona_con.x = 8;
++			kona_con.y += line;
++		}
++		glyph = kona_font[(unsigned char)c - 32];
++		top = (uint32_t)(glyph >> 32);
++		bottom = (uint32_t)glyph;
++		for (row = 0; row < 12; row++) {
++			uint32_t data = (row < 6) ? (top >> (row * 5)) : (bottom >> ((row - 6) * 5));
++			for (col = 0; col < 5; col++) {
++				if (!((data >> col) & 1)) {
++					continue;
++				}
++				for (dy = 0; dy < scale; dy++) {
++					for (dx = 0; dx < scale; dx++) {
++						*(volatile uint32_t *)(kona_con.base +
++						    (uint64_t)(kona_con.y + row * scale + dy) * kona_con.stride +
++						    (uint64_t)(kona_con.x + col * scale + dx) * 4) = 0xFFFFFFFFu;
++					}
++				}
++			}
++		}
++		kona_con.x += cell;
++	}
++	if (kona_con.y + line > kona_con.height) {
++		kona_con.x = 8;
++		kona_con.y = 8;
++	}
++}
++
 +static int
 +konacon_open(__unused dev_t dev, __unused int flags, __unused int devtype,
 +    __unused struct proc *p)
@@ -963,6 +1066,13 @@
 +		return ENOMEM;
 +	}
 +	su.ready = true;
++	{
++		static const char kona_banner[] = "konacon: framebuffer console ready\n";
++		const char *kona_p;
++		for (kona_p = kona_banner; *kona_p; kona_p++) {
++			kona_early_putc(*kona_p);
++		}
++	}
 +	kona_cp(2);
 +	{
 +		int konacp_want = 0;

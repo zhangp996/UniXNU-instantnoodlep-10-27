@@ -4,7 +4,8 @@
 # without IOStorageFamily, and IOKitBSDInit's rd=ufsroot0 hook selects it. The HFS patches in
 # kebab-route/ stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.
 kebab-route/kona-ufs-driver.patch
-kebab-route/kona-ufs-early-putc.patch
+# kona_early_putc now lives in the driver patch: it draws through the kernel frame
+# buffer mapping, so the separate no-op stub (kona-ufs-early-putc.patch) is gone.
 kebab-route/kona-hfs-noop.patch
 kebab-route/kona-ufs-integration.patch
 kebab-route/kona-rootauth-bypass.patch
