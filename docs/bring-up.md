@@ -554,6 +554,31 @@ That is mockfs legacy behaviour. The OS profile sets
 as APFS was mockfs and exec read the partition. `configs/instantnoodlep_defconfig`
 now sets `# CONFIG_XNU_SOURCE_MOCKFS is not set`; mockfs is an offline fixture,
 not the board root.
+
+## APFS declines the bdevsw disk
+
+With mockfs gone the kernel reached `vfs_mountroot` and failed there. Checkpoints in
+`kona_ufs.c` and `bsd_init.c` (boot argument `konacp=N`) walked the path on the device:
+
+| `konacp` | Result |
+| --- | --- |
+| 1 rootdev entry | fires |
+| 2 disk published | fires |
+| 3 first block request | never fires |
+| 5 after `bsd_autoconf` | fires |
+| 6 before `net_init_run` | fires |
+| 7 before `vfs_mountroot` | fires |
+| 8 mountroot failed | fires with `ENODEV` |
+| 10 candidates | `apfs,` is the only mountroot-capable file system |
+| 11 apfs error | `ENOENT` (2) |
+
+So `bsd_init` loops on `vfs_mountroot` returning `ENODEV`, and the APFS mountroot declines
+the device with `ENOENT` before issuing any I/O. Removing `/chosen/root-matching` does not
+change it. UniXNU's alioth record measures the same failure through `/dev/md0` and names the
+fix: publish the device **as a real IOMedia**. A bdevsw disk publishes none, so APFS never
+looks at its contents. The kebab route pairs bdevsw with HFS for that reason; iPadOS roots on
+APFS, so this board needs an `IOBlockStorageDevice` driver (RamBlock is the in-tree template)
+instead of a bdevsw disk.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
