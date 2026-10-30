@@ -16,7 +16,7 @@
 +				int kona_resid = 0;
 +				if (vnode_lookup("/sbin/launchd", 0, &kona_lvp, vfs_context_kernel()) == 0) {
 +					(void)vn_rdwr(UIO_READ, kona_lvp, kona_hdr, sizeof(kona_hdr), 0,
-+					    UIO_SYSSPACE, 0, vfs_context_kernel(), &kona_resid);
++					    UIO_SYSSPACE, 0, kauth_cred_get(), &kona_resid, current_proc());
 +					vnode_put(kona_lvp);
 +					panic("kona launchd hdr %02x %02x %02x %02x %02x %02x %02x %02x resid %d",
 +					    (unsigned)kona_hdr[0], (unsigned)kona_hdr[1],
