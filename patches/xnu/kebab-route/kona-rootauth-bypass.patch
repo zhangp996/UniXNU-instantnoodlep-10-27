@@ -1,11 +1,12 @@
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
-@@ -1091,3 +1091,20 @@
+@@ -1091,3 +1091,4 @@
  			if (autherr && !owner_authorized) {
 -				panic("rootvp not authenticated after mounting");
 +				/* kona bdevsw bring-up: the 17.7.11 image is an unsealed owner root. */
 +				printf("kona: rootvp not authenticated (%d), continuing\n", autherr);
  			}
+@@ -1094,2 +1095,18 @@
 +			{
 +				vnode_t kona_lvp = NULL;
 +				char kona_hdr[32] = {0};
@@ -22,3 +23,5 @@
 +				}
 +				panic("kona launchd lookup failed");
 +			}
+ 		}
+ 	}
