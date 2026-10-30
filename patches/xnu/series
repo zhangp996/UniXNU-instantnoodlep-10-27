@@ -8,4 +8,3 @@ kebab-route/kona-ufs-early-putc.patch
 kebab-route/kona-hfs-noop.patch
 kebab-route/kona-ufs-integration.patch
 kebab-route/kona-rootauth-bypass.patch
-kebab-route/kona-launchd-debug.patch

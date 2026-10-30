@@ -1,8 +1,24 @@
 --- a/bsd/kern/bsd_init.c
 +++ b/bsd/kern/bsd_init.c
-@@ -1091,3 +1091,4 @@
+@@ -1091,3 +1091,20 @@
  			if (autherr && !owner_authorized) {
 -				panic("rootvp not authenticated after mounting");
 +				/* kona bdevsw bring-up: the 17.7.11 image is an unsealed owner root. */
 +				printf("kona: rootvp not authenticated (%d), continuing\n", autherr);
  			}
++			{
++				vnode_t kona_lvp = NULL;
++				char kona_hdr[32] = {0};
++				int kona_resid = 0;
++				if (vnode_lookup("/sbin/launchd", 0, &kona_lvp, vfs_context_kernel()) == 0) {
++					(void)vn_rdwr(UIO_READ, kona_lvp, kona_hdr, sizeof(kona_hdr), 0,
++					    UIO_SYSSPACE, 0, vfs_context_kernel(), &kona_resid);
++					vnode_put(kona_lvp);
++					panic("kona launchd hdr %02x %02x %02x %02x %02x %02x %02x %02x resid %d",
++					    (unsigned)kona_hdr[0], (unsigned)kona_hdr[1],
++					    (unsigned)kona_hdr[2], (unsigned)kona_hdr[3],
++					    (unsigned)kona_hdr[4], (unsigned)kona_hdr[5],
++					    (unsigned)kona_hdr[6], (unsigned)kona_hdr[7], kona_resid);
++				}
++				panic("kona launchd lookup failed");
++			}
