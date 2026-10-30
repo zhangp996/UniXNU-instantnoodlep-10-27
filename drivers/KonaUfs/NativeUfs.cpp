@@ -2217,6 +2217,11 @@ static void logHostState (const char *why)
     uint32_t aux = read32 (gcc, GCC_UFS_PHY_PHY_AUX_ENABLE - 0x77000);
     bool powered = (gdsc & 0x80000000U) != 0;
     bool busClocks = !(axi & 0x80000000U) && (axi & 0x1U) && (ahb & 0x1U);
+    // The page prints these from the CMD row, which a live page draws, so the refusal carries its
+    // own clock evidence even when the console section has scrolled past.
+    gRootDiagnostic.gdsc = gdsc;
+    gRootDiagnostic.gccAxi = axi;
+    gRootDiagnostic.gccAhb = ahb;
     IOLog ("NativeUfs: gcc gdsc=%08x axi=%08x ahb=%08x unipro=%08x aux=%08x memgdsc=%08x powered=%u branches=%u\n",
            gdsc, axi, ahb, unipro, aux, memPhy ? read32 (memPhy, 0) : 0,
            powered ? 1U : 0U, busClocks ? 1U : 0U);
