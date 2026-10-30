@@ -1947,6 +1947,33 @@ static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
   return found;
 }
 
+// The bring-up build publishes without signed identities, so gPendingUuid stays empty and no
+// APFS volume can ever carry it. The dependency the kernel needs is the same either way: one
+// IOMedia of this window in the service plane. Match that instead of a UUID.
+static bool mediaForWindowExists (NativeUfsBlock *window)
+{
+  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
+  bool found = false;
+  if (matching) {
+    OSIterator *iterator = IOService::getMatchingServices (matching);
+    if (iterator) {
+      for (unsigned matches = 0; matches < 64 && !found; ++matches) {
+        IORegistryEntry *media = OSDynamicCast (IORegistryEntry, iterator->getNextObject ());
+        if (!media) break;
+        IORegistryIterator *parents = IORegistryIterator::iterateOver (
+          media, gIOServicePlane, kIORegistryIterateRecursively | kIORegistryIterateParents);
+        if (parents) {
+          found = ufsMediaHasAncestor (*parents, window);
+          parents->release ();
+        }
+      }
+      iterator->release ();
+    }
+    matching->release ();
+  }
+  return found;
+}
+
 static void captureMissingMedia (const char *uuid)
 {
   int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for signed UUID %s\n", uuid);
@@ -2000,9 +2027,11 @@ static void publishThread (void *, wait_result_t)
       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Media);
       gRootDiagnostic.publicationWindow = index;
       bool ready = false;
-      // Diagnostic mode affects reporting only, never the dependency gate.
+      // Diagnostic mode affects reporting only, never the dependency gate. Without a signed
+      // identity there is no UUID to look for, so the window's own media is the gate.
+      const bool haveIdentity = uuid[0] != '\0';
       for (unsigned tick = 0; tick <= 300; ++tick) {
-        ready = mediaWithUuidExists (uuid, device);
+        ready = haveIdentity ? mediaWithUuidExists (uuid, device) : mediaForWindowExists (device);
         if (ready || tick == 300) break;
         IOSleep (100);
       }
