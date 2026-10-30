@@ -166,9 +166,19 @@ static uintptr_t mapPhys (uint64_t phys, uint64_t length, OSSharedPtr<IOMemoryMa
   return keep ? static_cast<uintptr_t> (keep->getVirtualAddress ()) : 0;
 }
 
+// Device registers go through ml_io_map, the mapping the bdevsw driver uses: the controller's
+// first read never returned through the IOMemoryDescriptor path above, while the same range
+// answers immediately in firmware (MmioRead32, device memory) and in kona_ufs.c (ml_io_map).
+// A Normal-attribute mapping of MMIO is not architecturally supported on arm64 and can stall
+// the reader instead of faulting, which is what left root=1 for the life of the boot.
+static uintptr_t mapRegisters (uint64_t phys, uint64_t length)
+{
+  return static_cast<uintptr_t> (ml_io_map (phys, length));
+}
+
 void NativeUfs::inspect (void)
 {
-  OSSharedPtr<IOMemoryMap> gccMap, memPhyMap, hcMap;
+  OSSharedPtr<IOMemoryMap> gccMap, memPhyMap;
   uintptr_t gcc = mapPhys (GCC_BASE + 0x77000, 0x1000, gccMap);
   uintptr_t memPhy = mapPhys (GCC_BASE + 0x9e000, 0x1000, memPhyMap);
   if (!gcc || !memPhy) {
@@ -190,7 +200,7 @@ void NativeUfs::inspect (void)
   uint32_t cap = 0, ver = 0, hcs = 0, hce = 0, utrlba = 0, is = 0;
   unsigned readHc = 0;
   if (powered && busClocks) {
-    uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
+    uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
     if (hc) {
       cap = read32 (hc, 0x00);
       ver = read32 (hc, 0x08);
@@ -434,8 +444,7 @@ static void smmuBypassStream (uint16_t stream, OSSharedPtr<IOMemoryMap> &keep, u
 
 void NativeUfs::adoptAndRead (unsigned level)
 {
-  OSSharedPtr<IOMemoryMap> hcMap;
-  uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
+  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
   if (!hc) {
     panic ("NATIVE_UFS adopt: controller map failed");
   }
@@ -777,8 +786,8 @@ static uint32_t dumpWord (const volatile uint32_t *base, unsigned index)
 
 void NativeUfs::dumpFirmwareList (void)
 {
-  OSSharedPtr<IOMemoryMap> hcMap, listMap, ucdMap;
-  uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
+  OSSharedPtr<IOMemoryMap> listMap, ucdMap;
+  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
   if (!hc) {
     panic ("NATIVE_UFS dump: controller map failed");
   }
@@ -1002,7 +1011,7 @@ static bool hostBringUp (const char **why)
     return true;
   }
   gRootDiagnostic.stage = "controller map";
-  gHost.hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, gHost.hcMap);
+  gHost.hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
   if (!gHost.hc) {
     *why = "controller map";
   native_ufs_root_step = 102;   // why="controller map"
@@ -1042,7 +1051,9 @@ static bool hostBringUp (const char **why)
   gRootDiagnostic.stage = "SMMU and request list";
   if (!hostStopQueue (why)) return false;
   smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, kDmaBytes);
-  gHost.smmu = gHost.smmuMap->getVirtualAddress ();
+  // kona's ufshc node carries no iommus property, so the bypass above is a documented no-op and
+  // leaves smmuMap empty: never dereference it. Everything below guards on a nonzero base.
+  gHost.smmu = gHost.smmuMap ? static_cast<uintptr_t> (gHost.smmuMap->getVirtualAddress ()) : 0;
   // The board's WiFi endpoint (sheng-wifi=2 or more) needs a pass-through stream of its own, set up here with the same code and at the same moment as the
   // storage stream: the registers of the stream matching group are not safe to touch from another thread later (a read of the first one never returned).
   uint32_t wifi = 0;
@@ -1167,9 +1178,11 @@ static bool hostBringUp (const char **why)
       native_ufs_dpu_state = 0xdead0001U;
     }
   }
-  uint32_t idr1 = read32 (gHost.smmu, 0x24);
-  gHost.cb = gHost.smmu + ((1U << (((idr1 >> 28) & 7) + 1)) + (report[0] >> 16)) * 4096;
-  if (gRootDiagnosticEnabled) {
+  if (gHost.smmu) {
+    uint32_t idr1 = read32 (gHost.smmu, 0x24);
+    gHost.cb = gHost.smmu + ((1U << (((idr1 >> 28) & 7) + 1)) + (report[0] >> 16)) * 4096;
+  }
+  if (gHost.smmu && gRootDiagnosticEnabled) {
     gRootDiagnostic.gfsrBefore = read32 (gHost.smmu, 0x48);
     gRootDiagnostic.fsrBefore = read32 (gHost.cb, 0x58);
     gRootDiagnostic.smmuId2 = read32 (gHost.smmu, 0x28);
