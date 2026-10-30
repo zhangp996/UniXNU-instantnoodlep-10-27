@@ -286,6 +286,7 @@ jobs:
           name: kernel-logs
           path: |
             ${{ runner.temp }}/*.log
+            out/*/*/*/logs/kernel.log
             out/*/*/*/logs/kernel-bootstrap.log
             out/*/*/*/logs/component-*.log
             out/*/*/*/tree/build/*/compile.log
