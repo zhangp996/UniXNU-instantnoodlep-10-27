@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Root queue takeover; shared with the host fault-injection harness.
 // native_ufs_root_step carries the refusing branch to the boot page: 111-114 and 121-122 here.
-extern volatile uint32_t native_ufs_root_step;
+// The global is defined before this header is included, inside the anonymous namespace that
+// holds the root media code, so no declaration belongs here (declaring one made the name
+// ambiguous between the global and a namespace-local copy).
 
 static bool hostWaitRegister (unsigned offset, uint32_t mask, uint32_t value)
 {
