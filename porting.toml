@@ -43,7 +43,7 @@ findings = [
   "Kernel and payload build on the macOS runner because the kernel step calls Xcode and the payload step may call hdiutil; the workflow publishes kernel.macho and the payload directory as the boot-artifacts artifact so the boot image can be assembled wherever the firmware volume was built.",
   "The boot image uses header version 0: unixnu appends the device tree to the gzip kernel and passes no --dtb to mkbootimg, which a version 2 header would require. The shim is built without the ARM64 kernel header because Mu-Silicium writes FD_SIZE there while unixnu checks for shim plus volume.",
   "Storage moved to the bdevsw route on 2026-10-29: the defconfig sets CONFIG_XNU_KONA_UFS=y and [payload] kernel_args carries rd=ufsroot0/ufsroot=userdata; the driver and its memory-map/transport details stay in the storage area.",
-  "The macOS workflow now also extracts the IPSW OS component and prints its APFS volumes with diskutil; [payload.adt] root_match_volume_uuid will take the System volume UUID from that output.",
+  "The macOS workflow now also extracts the IPSW OS component and prints its APFS volumes with diskutil, then mounts it to inspect /sbin/launchd; [payload.adt] root_match_volume_uuid takes the System volume UUID from that output.",
   "board.example = true is deliberate while REQUIRED values remain: build and bootimg refuse an example repository, which is the only guard against an image built from zeroed geometry.",
 ]
 completion = [
@@ -173,7 +173,7 @@ procedure = [
 findings = [
   "docs/porting/platform.md requires each handoff allocation to have an owner and each DMA engine to reach its allocated range before it submits work.",
   "The panic region is a memory fact, not a display one: a board header constant that is wrong for kona hangs the boot CPU with the MMU on, which is why the defconfig selects CONFIG_XNU_DT_PANIC_REGION.",
-  "The bdevsw root reaches the APFS mount (bsd_init.c:1093 rootauth report with the bring-up patch), so the memory map, DMA window and UFS handoff are working; the remaining root failure is the unsealed System volume, not a mapping.",
+  "The bdevsw root reaches the APFS mount (bsd_init.c:1093 rootauth report with the bring-up patch), so the memory map, DMA window and UFS handoff are working; load_init_program's launchd ENOEXEC is a root-image/exec issue, not a mapping.",
   "The same DTS change adds the /kona-ufs MMIO window (0x01d84000+0x30000); the DRAM and reservation entries are unchanged.",
 ]
 completion = [
@@ -236,6 +236,7 @@ findings = [
   "The partition READ(10) returns CHECK CONDITION: UPIU response 1, SCSI status 2, sense 70 00 02 40 00 05 a1 0a 00 00 00 00 00 04 (sense key 2, NOT READY; the ASC/ASCQ bytes read 0x00/0x04). The official ShengUfs NativeUfs.cpp (lines 488-501 and 956-967) records the same state: bCurrentPowerMode 0x33 (UFS-PowerDown) makes every LU return NOT READY, and the device is resumed with START STOP UNIT, power condition ACTIVE (0x10), to the UFS Device well-known LU 0xD0, then TUR is polled. The bdevsw driver now follows that sequence (50 ms settle, 20 TUR attempts); the earlier START UNIT to LUN 0 with START=1 could not wake the device. It also keeps the host running for a well-formed CHECK CONDITION and retries the GPT header read five times.",
   "With the LU 0xD0 wake the GPT read, bdevsw publication and APFS mount all succeed, then bsd_init.c:1093 panics 'rootvp not authenticated after mounting': FSIOC_KERNEL_ROOTAUTH fails because the mountroot picked the unsealed Data volume of the userdata container. ufsroot=root has no GPT entry (the iOS container is on userdata).",
   "The OS component's System volume is 04769D26-2CA0-4825-B443-E2E5F88300F2 (diskutil apfs list), and [payload.adt] root_match_volume_uuid now carries it; the panic persists because that volume is unsealed (diskutil reports Sealed: No), so the sealed-root ioctl fails. A device-series patch kona-rootauth-bypass.patch reports the failed check and continues for bring-up; the stock panic returns when the patch is dropped, and the proper route is the VerifiedRoot owner policy.",
+  "After the bypass the kernel reaches load_init_program, but execve('/sbin/launchd') fails with ENOEXEC (8). The workflow now mounts the OS dmg and prints file/xattr/otool/lipo for the image's /sbin/launchd, to separate a compressed or differently sliced root binary from the wrong mounted volume.",
 ]
 completion = [
   "Host: register, clock, link and SMMU facts match the board inventory.",

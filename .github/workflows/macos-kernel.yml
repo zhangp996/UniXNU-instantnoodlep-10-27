@@ -152,6 +152,25 @@ jobs:
             if [ -n "$DEV" ]; then hdiutil detach "$DEV" || true; fi
           fi
 
+      - name: Inspect the OS image launchd
+        # load_init_program execve('/sbin/launchd') returns ENOEXEC; check whether the
+        # root binary is compressed or a different slice before changing the kernel.
+        if: inputs.fetch_ipsw
+        continue-on-error: true
+        run: |
+          OSDMG=$(ls -S out/ipsw/21H461/*.dmg 2>/dev/null | head -1)
+          echo "OSDMG=$OSDMG"
+          {
+            MP=$(hdiutil attach "$OSDMG" | grep -E '/Volumes/' | tail -1 | awk '{print $NF}')
+            echo "MP=$MP"
+            ls -l "$MP/sbin/launchd" || true
+            file "$MP/sbin/launchd" || true
+            xattr -l "$MP/sbin/launchd" || true
+            otool -h "$MP/sbin/launchd" || true
+            lipo -info "$MP/sbin/launchd" || true
+            hdiutil detach "$MP" || true
+          } 2>&1 | tee "$RUNNER_TEMP/inspect-osimage.log"
+
       - name: Build the kernel
         run: |
           set -o pipefail

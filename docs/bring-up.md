@@ -526,6 +526,11 @@ because that volume is unsealed (`diskutil` reports `Sealed: No`), so the sealed
 ioctl fails. The device series adds `kona-rootauth-bypass.patch`, which reports the
 failed check and continues for bring-up; dropping it restores the stock panic. The
 proper fix is the VerifiedRoot owner policy.
+
+After the bypass the kernel reaches `load_init_program`, but `execve("/sbin/launchd")`
+fails with ENOEXEC (8). The workflow now mounts the OS dmg and prints
+`file`/`xattr`/`otool`/`lipo` for the image's `/sbin/launchd`, to separate a
+compressed or differently sliced root binary from the wrong mounted volume.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
