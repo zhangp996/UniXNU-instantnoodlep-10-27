@@ -170,6 +170,10 @@ trust_cache_sha256 = ["c9e50d678793ecaf8329ce022856c23c27775333181becb130c73ea93
 chip_id = "0x164"
 owned_memory_size = "0x100000000"
 unique_chip_id = "required"
+# The 17.7.11 OS component (044-76040-038.dmg) carries one System-role volume with
+# this UUID; the board's userdata image was built from the same component, so the
+# mountroot selects it instead of the unsealed Data volume.
+root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
 
 [bootimg]
 # Measured: the ABL keeps the panel powered through cont_splash_region at 0x9c000000

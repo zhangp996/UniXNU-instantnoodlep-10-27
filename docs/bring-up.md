@@ -516,8 +516,16 @@ then panics at `bsd_init.c:1093` with "rootvp not authenticated after mounting" 
 `FSIOC_KERNEL_ROOTAUTH` fails on the unsealed Data volume that mountroot picked. The
 iOS container is on `userdata` (`ufsroot=root` has no GPT entry). The official fix is
 `[payload.adt] root_match_volume_uuid` from the OS component's APFS root volume
-(`guide/userdata.md` step 3); the payload does not set it yet, and the workflow now
-extracts the OS component and prints `diskutil apfs list`.
+(`guide/userdata.md` step 3); the workflow now extracts the OS component and prints
+`diskutil apfs list`.
+
+That list gives the OS component's System volume as
+`04769D26-2CA0-4825-B443-E2E5F88300F2`, and `[payload.adt] root_match_volume_uuid` now
+carries it (`/chosen/root-matching` is verified in the payload ADT). The panic persists
+because that volume is unsealed (`diskutil` reports `Sealed: No`), so the sealed-root
+ioctl fails. The device series adds `kona-rootauth-bypass.patch`, which reports the
+failed check and continues for bring-up; dropping it restores the stock panic. The
+proper fix is the VerifiedRoot owner policy.
 ## Firmware log export without a serial port
 
 `docs/porting/log-capture#qr-logs` documents the transport this board can actually use: the
