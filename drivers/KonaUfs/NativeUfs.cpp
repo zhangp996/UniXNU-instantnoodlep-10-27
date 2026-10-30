@@ -2196,48 +2196,6 @@ bool NativeUfs::start (IOService *provider)
   return false;
 }
 
-// docs/porting/ufs.md: read clock enables, power state, HCE/HCS, link state and request-list base
-// before changing controller ownership. inspect() panics with these values for the probe modes; a
-// live page has no panic screen, so the same read is logged when the root bring-up is refused.
-// The controller is only touched while the GCC says its domain is powered and the branches run,
-// because a gated read can stall the bus (the same rule inspect() follows).
-static void logHostState (const char *why)
-{
-  OSSharedPtr<IOMemoryMap> gccMap, memPhyMap, hcMap;
-  uintptr_t gcc = mapPhys (GCC_BASE + 0x77000, 0x1000, gccMap);
-  uintptr_t memPhy = mapPhys (GCC_BASE + 0x9e000, 0x1000, memPhyMap);
-  IOLog ("NativeUfs: root bring-up refused: %s\n", why);
-  if (!gcc) {
-    IOLog ("NativeUfs: gcc map failed\n");
-  } else {
-    uint32_t gdsc = read32 (gcc, GCC_UFS_PHY_GDSCR - 0x77000);
-    uint32_t axi = read32 (gcc, GCC_UFS_PHY_AXI_ENABLE - 0x77000);
-    uint32_t ahb = read32 (gcc, GCC_UFS_PHY_AHB_ENABLE - 0x77000);
-    uint32_t unipro = read32 (gcc, GCC_UFS_PHY_UNIPRO_CORE_ENABLE - 0x77000);
-    uint32_t aux = read32 (gcc, GCC_UFS_PHY_PHY_AUX_ENABLE - 0x77000);
-    bool powered = (gdsc & 0x80000000U) != 0;
-    bool busClocks = !(axi & 0x80000000U) && (axi & 0x1U) && (ahb & 0x1U);
-    // The page prints these from the CMD row, which a live page draws, so the refusal carries its
-    // own clock evidence even when the console section has scrolled past.
-    gRootDiagnostic.gdsc = gdsc;
-    gRootDiagnostic.gccAxi = axi;
-    gRootDiagnostic.gccAhb = ahb;
-    IOLog ("NativeUfs: gcc gdsc=%08x axi=%08x ahb=%08x unipro=%08x aux=%08x memgdsc=%08x powered=%u branches=%u\n",
-           gdsc, axi, ahb, unipro, aux, memPhy ? read32 (memPhy, 0) : 0,
-           powered ? 1U : 0U, busClocks ? 1U : 0U);
-    uintptr_t hc = gHost.hc;
-    if (!hc && powered && busClocks) hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
-    if (!hc) {
-      IOLog ("NativeUfs: hc not read (not mapped, or the domain is not powered)\n");
-    } else {
-      IOLog ("NativeUfs: hc cap=%08x ver=%08x is=%08x hcs=%08x hce=%08x utrlba=%08x/%08x db=%08x rsr=%08x\n",
-             read32 (hc, 0x00), read32 (hc, 0x08), read32 (hc, 0x20), read32 (hc, 0x30),
-             read32 (hc, 0x34), read32 (hc, 0x50), read32 (hc, 0x54), read32 (hc, 0x58),
-             read32 (hc, 0x60));
-    }
-  }
-}
-
 // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
 bool NativeUfs::startRoot (IOService *provider)
 {
@@ -2245,7 +2203,10 @@ bool NativeUfs::startRoot (IOService *provider)
   native_ufs_root_step = 1;
   if (!hostBringUp (&why)) {
     rootDiagnosticFailure (why);
-    logHostState (why);
+    // No register reads here: a gated UFS/GCC branch stalls the CPU on the first access
+    // (the page froze at monitor=1 with IRQ=0 when this path read GDSCR and the HC), so the
+    // refusal only records the reason, which the boot page prints from the CMD row.
+    IOLog ("NativeUfs: root bring-up failed: %s\n", why);
     return false;
   }
   native_ufs_root_step = 2;

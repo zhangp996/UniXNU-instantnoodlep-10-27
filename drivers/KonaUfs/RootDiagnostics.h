@@ -18,9 +18,6 @@ struct UfsRootDiagnostics {
   uint32_t smmuId2 = 0, cba2r = 0, uic[5] = {};
   uint32_t smmuId1 = 0, smmuSlot = 0xffffffff;
   uint32_t publicationPhase = 0, publicationWindow = 0xffffffff;
-  // GCC state read when the root bring-up was refused (docs/porting/ufs.md asks for the branch
-  // enables and the hardware-gating bits together).
-  uint32_t gdsc = 0, gccAxi = 0, gccAhb = 0;
 };
 
 static inline int formatUfsRootDiagnostics(char *buffer, size_t capacity,
@@ -31,7 +28,7 @@ static inline int formatUfsRootDiagnostics(char *buffer, size_t capacity,
     "%s: %s\nstage=%s result=%08x\n"
     "HC cap=%08x ver=%08x hcs=%08x hce=%08x db=%08x is=%08x\n"
     "DMA=%llx UTRL=%llx SMMU smr=%08x s2cr=%08x cbar=%08x sctlr=%08x\n"
-    "CMD why=%.26s gdsc=%08x axi=%08x ahb=%08x n=%u ocs=%02x scsi=%04x\n"
+    "CMD why=%.26s n=%u ocs=%02x scsi=%04x\n"
     "PROTOCOL reject=%u residual=%u sense=%06x SMMU slot=%u id1=%x\n"
     "QUEUE rsr=%x ahit=%x polls=%u dbSeen=%x isSeen=%x isBefore=%x contiguous=%llx\n"
     "FAULT global=%x->%x syn=%x cb=%x->%x syn=%x far=%llx id2=%x cba2r=%x\n"
@@ -41,7 +38,7 @@ static inline int formatUfsRootDiagnostics(char *buffer, size_t capacity,
     "IO reads=%llu failures=%llu pubPhase=%u window=%u\n",
     title, reason, d.stage, d.result, d.cap, d.version, d.hcs, d.hce, d.doorbell, d.interrupt,
     (unsigned long long)d.dma, (unsigned long long)d.list, d.smr, d.s2cr, d.cbar, d.sctlr,
-    reason, d.gdsc, d.gccAxi, d.gccAhb, d.command, d.ocs, d.scsi,
+    reason, d.command, d.ocs, d.scsi,
     d.protocol, d.residual, d.sense, d.smmuSlot, d.smmuId1,
     d.runStop, d.ahit, d.polls, d.dbSeen, d.isSeen, d.isBefore, (unsigned long long)d.contiguous,
     d.gfsrBefore, d.gfsr, d.gsyn, d.fsrBefore, d.fsr, d.fsyn, (unsigned long long)d.far,
