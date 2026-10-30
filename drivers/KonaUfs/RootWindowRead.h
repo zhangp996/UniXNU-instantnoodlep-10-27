@@ -6,7 +6,9 @@
 static bool ufsWindowGeometry (uint64_t absolute, uint64_t bytes)
 {
   constexpr uint64_t limit = (uint64_t (UINT32_MAX) + 1) * 4096;
-  return bytes && !(bytes & 511) && !(absolute & 4095) && absolute < limit && bytes <= limit - absolute;
+  // 512-byte alignment is what the manifest declares for a window; a window that starts inside
+  // a 4 KiB device block is handled by ufsReadWindow's bounce shift below.
+  return bytes && !(bytes & 511) && !(absolute & 511) && absolute < limit && bytes <= limit - absolute;
 }
 struct UfsWindowResult { IOReturn status; uint64_t done; };
 template <class Ops> struct UfsWindowGuard {
@@ -34,7 +36,9 @@ static UfsWindowResult ufsReadWindow (Ops &ops, uint64_t absolute, uint64_t byte
     // The window lock protects this same snapshot through verify AND copy.
     // The transport lock alone protects only the DMA-to-bounce copy.
     for (uint64_t index = 0; index < blocks; ++index) {
-      uint64_t windowBlock = lba + index - absolute / 4096;
+      // Only used by the verified-block policy, which is off here; keep the index defined for
+      // the 512-byte aligned windows by rounding the window base down to its device block.
+      uint64_t windowBlock = lba + index - (absolute & ~4095ULL) / 4096;
       uint64_t offset = windowBlock * 4096;
       if (offset >= bytes) { result.status = kIOReturnBadArgument; break; }
       uint64_t length = bytes - offset < 4096 ? bytes - offset : 4096;

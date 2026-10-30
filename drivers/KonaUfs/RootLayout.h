@@ -172,7 +172,10 @@ static bool findRootLayout (RootLayout *layout, const char **why)
         for (uint32_t index = 0; index < n && bounds; index++) {
           const uint8_t *entry = gScratch + 24 + 128 * index;
           uint64_t offset = le64 (entry + 32), size = le64 (entry + 40);
-          if ((offset & 4095) || offset < 4096 || (size & 511) || !size || offset >= imageBytes ||
+          // Windows are described with block_size 512: the OS image is a whole-disk image whose
+          // APFS partition starts at LBA 34 (byte 0x104400), 512-byte aligned but not 4 KiB
+          // aligned. The reader copes with the leftover with a bounce-buffer shift.
+          if ((offset & 511) || offset < 4096 || (size & 511) || !size || offset >= imageBytes ||
               size > imageBytes - offset || ((size + 4095) & ~4095ULL) > imageBytes - offset) {
             bounds = false;
             break;
