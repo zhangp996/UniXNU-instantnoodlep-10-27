@@ -284,5 +284,8 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: kernel-logs
-          path: ${{ runner.temp }}/*.log
+          path: |
+            ${{ runner.temp }}/*.log
+            out/*/*/*/logs/kernel-bootstrap.log
+            out/*/*/*/logs/component-*.log
           if-no-files-found: warn
