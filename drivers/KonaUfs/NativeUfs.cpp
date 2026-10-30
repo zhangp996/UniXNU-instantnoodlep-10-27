@@ -1021,6 +1021,7 @@ static bool hostBringUp (const char **why)
   if (gHost.ready) {
     return true;
   }
+  native_ufs_root_step = 41;
   gRootDiagnostic.stage = "controller map";
   gHost.hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
   if (!gHost.hc) {
@@ -1034,6 +1035,7 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.hcs = read32 (gHost.hc, 0x30);
     gRootDiagnostic.hce = read32 (gHost.hc, 0x34);
   }
+  native_ufs_root_step = 43;
   gRootDiagnostic.stage = "DMA allocation";
   gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
     kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
@@ -1050,18 +1052,24 @@ static bool hostBringUp (const char **why)
   gHost.phys = gHost.dma->getPhysicalSegment (0, &contiguous, kIOMemoryMapperNone);
   gRootDiagnostic.dma = gHost.phys;
   gRootDiagnostic.contiguous = contiguous;
+  native_ufs_root_step = 44;
   if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
       (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
     *why = "DMA address/contiguity";
   native_ufs_root_step = 104;   // why="DMA address/contiguity"
     return false;
   }
+  native_ufs_root_step = 45;
   bzero (gHost.virt, kDmaBytes);
   cacheCivac (gHost.virt, kDmaBytes);
   uint32_t report[3] = { 0, 0, 0 };
   gRootDiagnostic.stage = "SMMU and request list";
+  native_ufs_root_step = 46;
   if (!hostStopQueue (why)) return false;
+  native_ufs_root_step = 47;
+  native_ufs_root_step = 48;
   smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, kDmaBytes);
+  native_ufs_root_step = 49;
   // kona's ufshc node carries no iommus property, so the bypass above is a documented no-op and
   // leaves smmuMap empty: never dereference it. Everything below guards on a nonzero base.
   gHost.smmu = gHost.smmuMap ? static_cast<uintptr_t> (gHost.smmuMap->getVirtualAddress ()) : 0;
@@ -1199,7 +1207,9 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.smmuId2 = read32 (gHost.smmu, 0x28);
     gRootDiagnostic.cba2r = read32 (gHost.smmu, 0x1800 + 4 * (report[0] >> 16));
   }
+  native_ufs_root_step = 50;
   if (!hostStartQueue (why)) return false;
+  native_ufs_root_step = 51;
   gRootDiagnostic.stage = "NOP OUT";
   // NOP OUT proves the transport before touching the SCSI layer.
   if (hostNop () != kIOReturnSuccess) {
