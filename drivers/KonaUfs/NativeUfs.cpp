@@ -69,6 +69,7 @@ class NativeUfs : public IOService {
   void inspectSmmu (void);
   void inspectContextBanks (void);
   bool startRoot (IOService *provider);
+  static void rootBringUpEntry (void *, wait_result_t);
   static bool waitSet (uintptr_t base, unsigned offset, uint32_t mask, unsigned loops);
 public:
   IOService *probe (IOService *provider, SInt32 *score) override;
@@ -77,6 +78,11 @@ public:
 };
 
 OSDefineMetaClassAndStructors (NativeUfs, IOService)
+
+// The root bring-up runs on its own thread (see NativeUfs::start): probe()/start() run inside the
+// IOKit match on the boot thread, and the UFS work busy-waits for seconds per stage.
+static NativeUfs *gRootBringUpService;
+static IOService *gRootBringUpProvider;
 
 static uint32_t read32 (uintptr_t base, unsigned offset)
 {
@@ -2164,9 +2170,36 @@ bool NativeUfs::start (IOService *provider)
     return true;
   }
   if (rootMode && !probe) {
-    return startRoot (provider);
+    // probe()/start() run inside the IOKit match on the boot thread, and the UFS work busy-waits
+    // (IODelay) for seconds per stage. While it ran there the boot page stopped sampling after
+    // its first frame and bsd_init waited: the control boot with native-ufs-root=0 kept both
+    // alive. The bring-up therefore runs on its own thread; the windows publish when it finishes
+    // and IOFindBSDRoot is the party that waits for them.
+    provider->retain ();
+    gRootBringUpService = this;
+    gRootBringUpProvider = provider;
+    thread_t thread = nullptr;
+    if (kernel_thread_start (rootBringUpEntry, nullptr, &thread) != KERN_SUCCESS) {
+      gRootBringUpService = nullptr;
+      gRootBringUpProvider = nullptr;
+      provider->release ();
+      rootDiagnosticFailure ("root bring-up thread creation failed");
+      return false;
+    }
+    thread_deallocate (thread);
+    return true;
   }
   return false;
+}
+
+void NativeUfs::rootBringUpEntry (void *, wait_result_t)
+{
+  NativeUfs *service = gRootBringUpService;
+  IOService *provider = gRootBringUpProvider;
+  gRootBringUpService = nullptr;
+  gRootBringUpProvider = nullptr;
+  if (service && provider) service->startRoot (provider);
+  if (provider) provider->release ();
 }
 
 // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
