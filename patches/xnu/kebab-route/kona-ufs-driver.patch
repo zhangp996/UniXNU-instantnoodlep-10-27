@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,995 @@
+@@ -0,0 +1,1006 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -964,6 +964,17 @@
 +	}
 +	su.ready = true;
 +	kona_cp(2);
++	{
++		int konacp_want = 0;
++		const uint8_t *kona_b;
++		if (PE_parse_boot_argn("konacp", &konacp_want, sizeof(konacp_want)) && konacp_want == 9) {
++			error = ufs_read_blocks(su.first_block, 1);
++			kona_b = (const uint8_t *)(su.dma + DMA_BOUNCE);
++			panic("kona cp 9: err %d blk0 %02x %02x %02x %02x magic %02x %02x %02x %02x",
++			    error, kona_b[0], kona_b[1], kona_b[2], kona_b[3],
++			    kona_b[32], kona_b[33], kona_b[34], kona_b[35]);
++		}
++	}
 +	printf("KONA UFS: \"%s\" on LUN %u: first block 0x%llx, %llu MiB, read-only\n",
 +	    want, su.lun, su.first_block, su.nblocks * UFS_BLOCK >> 20);
 +	return 0;
