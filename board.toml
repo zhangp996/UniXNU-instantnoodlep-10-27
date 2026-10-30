@@ -16,7 +16,7 @@ kit = "instantnoodlep"
 # The template selection: the arm64 platform pair, the crypto path, the prelink tool
 # and the loader. Storage, display and input components are added per
 # docs/porting/drivers once their required inputs are satisfied for this board.
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "VerifiedRoot"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "VerifiedRoot", "KonaUfs"]
 # KonaUfs is the local fork under components/kona-ufs (see its README): it carries the
 # SM8550 ShengUfs sources with this board's constants and without the apps-SMMU step.
 # Select it once the component entry is merged into the catalog; the plain ShengUfs entry
@@ -53,10 +53,11 @@ archives = [
   "build-software-aes-bindings.py",
   "build-mockfs-fixture.py",
   "build-libpthread-kernel.py",
-  # KonaUfs compiles but does not link: IOBlockStorageDevice's methods and vtable are
-  # original-kext symbols that need the storage ABI bindings (scripts/audit-storage-interface.py
-  # plus build-virtio-mmio-bindings.py, from a live QEMU snapshot). Enable "component:KonaUfs"
-  # together with CONFIG_XNU_NATIVE_UFS once those bindings exist.
+  # KonaUfs publishes the root as an IOMedia. Its IOBlockStorageDevice imports bind to the
+  # original kext addresses recorded from the pinned kernelcache (scripts/data/storage-bindings.json,
+  # proved by scripts/derive-storage-bindings.py), so the archive links without an IOStorageFamily
+  # definition; CONFIG_XNU_NATIVE_UFS force-loads it.
+  "component:KonaUfs",
 ]
 
 [firmware]

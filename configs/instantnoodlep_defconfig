@@ -20,10 +20,10 @@ CONFIG_XNU_KONA_UFS=y
 # then was the whole userdata partition (vnode size 108049805312 = 26379347 x 4096) and
 # execve returned ENOEXEC on raw APFS bytes. This board roots on APFS, so drop mockfs.
 # CONFIG_XNU_SOURCE_MOCKFS is not set
-# APFS declines a bdevsw disk with ENOENT (docs/bring-up.md), so the root has to come from
-# an IOBlockStorageDevice driver. KonaUfs compiles, but its link needs the original
-# IOBlockStorageDevice methods and vtable from the storage ABI bindings, which are not
-# generated for this board yet. Enable this once they are:
-# CONFIG_XNU_NATIVE_UFS is not set
+# APFS declines a bdevsw disk with ENOENT (docs/bring-up.md), so the root comes from the
+# IOBlockStorageDevice driver instead: KonaUfs publishes the userdata IOMedia. Its imports bind
+# to the original IOStorageFamily addresses recorded for the pinned kernelcache
+# (scripts/data/storage-bindings.json), which is what lets the archive link.
+CONFIG_XNU_NATIVE_UFS=y
 # No catalog component has Adreno 650 scope yet.
 # CONFIG_XNU_NATIVE_ADRENO is not set
