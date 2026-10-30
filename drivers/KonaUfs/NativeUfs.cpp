@@ -1607,7 +1607,13 @@ extern "C" void native_ufs_progress_text (char *out, size_t size)
   sample.published = native_ufs_blocks_published;
   sample.reads = native_ufs_block_reads;
   sample.failures = native_ufs_block_failures;
-  formatUfsRootDiagnostics (out, size, sample, "cached values; not a new HW fault sample", "UFS CACHED SNAPSHOT");
+  // The boot page prints the CMD row of this text while it runs live, so the soft failure that
+  // stopped the root start rides there: rootDiagnosticFailure() already recorded it, and row 2 of
+  // the page cannot fit it after probe/match/root.
+  const char *why = native_ufs_root_failure;
+  formatUfsRootDiagnostics (out, size, sample,
+                            (why && why[0]) ? why : "cached values; not a new HW fault sample",
+                            "UFS CACHED SNAPSHOT");
 }
 
 static void rootDiagnosticFailure (const char *reason)
