@@ -995,6 +995,7 @@ static bool hostBringUp (const char **why)
 {
   if (gHost.poisoned) {
     *why = "transport quarantined";
+  native_ufs_root_step = 101;   // why="transport quarantined"
     return false;
   }
   if (gHost.ready) {
@@ -1004,6 +1005,7 @@ static bool hostBringUp (const char **why)
   gHost.hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, gHost.hcMap);
   if (!gHost.hc) {
     *why = "controller map";
+  native_ufs_root_step = 102;   // why="controller map"
     return false;
   }
   if (gRootDiagnosticEnabled) {
@@ -1020,6 +1022,7 @@ static bool hostBringUp (const char **why)
   gHost.lock = IOLockAlloc ();
   if (!gHost.dma || !gHost.lock) {
     *why = "dma buffer";
+  native_ufs_root_step = 103;   // why="dma buffer"
     return false;
   }
   gHost.virt = static_cast<uint8_t *> (gHost.dma->getBytesNoCopy ());
@@ -1030,6 +1033,7 @@ static bool hostBringUp (const char **why)
   if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
       (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
     *why = "DMA address/contiguity";
+  native_ufs_root_step = 104;   // why="DMA address/contiguity"
     return false;
   }
   bzero (gHost.virt, kDmaBytes);
@@ -1177,6 +1181,7 @@ static bool hostBringUp (const char **why)
   if (hostNop () != kIOReturnSuccess) {
     gHost.ready = false;
     *why = "NOP OUT";
+  native_ufs_root_step = 130;   // why="NOP OUT"
     return false;
   }
   uint32_t power = 0;
@@ -1184,6 +1189,7 @@ static bool hostBringUp (const char **why)
   if (hostQueryRead (0x03, 0x02, &power) != kIOReturnSuccess) {
     gHost.ready = false;
     *why = "power mode query";
+  native_ufs_root_step = 131;   // why="power mode query"
     return false;
   }
   gRootDiagnostic.power = power;
@@ -1195,6 +1201,7 @@ static bool hostBringUp (const char **why)
     if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
       gHost.ready = false;
       *why = "wake (START STOP UNIT)";
+  native_ufs_root_step = 132;   // why="wake (START STOP UNIT)"
       return false;
     }
     IOSleep (50);
@@ -1212,6 +1219,7 @@ static bool hostBringUp (const char **why)
   }
   gHost.ready = false;
   *why = "LUN 0 not ready";
+  native_ufs_root_step = 133;   // why="LUN 0 not ready"
   return false;
 }
 }

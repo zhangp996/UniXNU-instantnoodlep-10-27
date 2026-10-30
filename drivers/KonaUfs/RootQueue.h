@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Root queue takeover; shared with the host fault-injection harness.
+// native_ufs_root_step carries the refusing branch to the boot page: 111-114 and 121-122 here.
+extern volatile uint32_t native_ufs_root_step;
+
 static bool hostWaitRegister (unsigned offset, uint32_t mask, uint32_t value)
 {
   uint64_t deadline;
@@ -18,16 +21,19 @@ static bool hostStopQueue (const char **why)
   if (!(read32 (gHost.hc, 0x34) & 1) || (read32 (gHost.hc, 0x30) & 0x0f) != 0x0f) {
     recordTransport (kIOReturnNotReady, 15);
     *why = "controller not ready for takeover";
+  native_ufs_root_step = 111;   // why="controller not ready for takeover"
     return false;
   }
   if (read32 (gHost.hc, 0x58) || read32 (gHost.hc, 0x78)) {
     recordTransport (kIOReturnBusy, 15);
     *why = "firmware request outstanding";
+  native_ufs_root_step = 112;   // why="firmware request outstanding"
     return false;
   }
   if (read32 (gHost.hc, 0x20) & kUfsFatalStatus) {
     recordTransport (kIOReturnIOError, 15);
     *why = "firmware controller error";
+  native_ufs_root_step = 113;   // why="firmware controller error"
     return false;
   }
   hostWrite (0x24, 0);
@@ -35,6 +41,7 @@ static bool hostStopQueue (const char **why)
   if (!hostWaitRegister (0x60, 1, 0)) {
     recordTransport (kIOReturnTimeout, 15);
     *why = "request list stop";
+  native_ufs_root_step = 114;   // why="request list stop"
     return false;
   }
   return true;
@@ -48,6 +55,7 @@ static bool hostStartQueue (const char **why)
       read32 (gHost.hc, 0x54) != uint32_t (gHost.phys >> 32)) {
     recordTransport (kIOReturnIOError, 15);
     *why = "request list address";
+  native_ufs_root_step = 121;   // why="request list address"
     return false;
   }
   gRootDiagnostic.isBefore = read32 (gHost.hc, 0x20);
@@ -56,6 +64,7 @@ static bool hostStartQueue (const char **why)
   if (!hostWaitRegister (0x60, 1, 1) || !hostWaitRegister (0x30, 3, 3)) {
     recordTransport (kIOReturnTimeout, 15);
     *why = "request list ready";
+  native_ufs_root_step = 122;   // why="request list ready"
     return false;
   }
   return true;
