@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/bsd/dev/kona_ufs.c
-@@ -0,0 +1,1116 @@
+@@ -0,0 +1,1120 @@
 +/*
 + * KONA internal UFS root device (read-only).
 + *
@@ -790,8 +790,12 @@
 +		vm_offset_t va;
 +		kona_con.state = -1;
 +		if (v->v_baseAddr && v->v_depth == 32 && v->v_rowBytes >= 64 && v->v_height > 200) {
-+			va = ml_io_map((vm_offset_t)v->v_baseAddr,
-+			    (vm_size_t)(v->v_rowBytes * v->v_height));
++			/* PE_state.video.v_baseAddr is already the kernel's mapping of the
++			 * frame buffer (scripts/xnu-panic-screen.c draws through the same
++			 * pointer), so nothing is mapped here: ml_io_map asked
++			 * kernel_memory_allocate for round_page(1080*2376*4) = 10 MiB and
++			 * panicked with KERN_NO_SPACE inside IOFindBSDRoot. */
++			va = (vm_offset_t)v->v_baseAddr;
 +			if (va) {
 +				kona_con.base = (uint8_t *)va;
 +				kona_con.stride = (uint32_t)v->v_rowBytes;

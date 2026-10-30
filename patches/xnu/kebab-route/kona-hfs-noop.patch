@@ -1,8 +1,8 @@
 diff --git a/bsd/dev/kona_ufs.c b/bsd/dev/kona_ufs.c
-index 20cbc8f..533c90c 100644
+index 5c3b97a..e402529 100644
 --- a/bsd/dev/kona_ufs.c
 +++ b/bsd/dev/kona_ufs.c
-@@ -1087,6 +1087,15 @@ kona_ufs_init(void)
+@@ -1091,6 +1091,15 @@ kona_ufs_init(void)
  	return 0;
  }
  
