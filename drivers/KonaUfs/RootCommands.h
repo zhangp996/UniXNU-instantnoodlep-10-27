@@ -66,12 +66,15 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   for (unsigned index = 0; index < 8; index++) {
     words[index] = 0;
   }
-  words[0] = 0x10000000U | (direction << 25);
+  // DW0: UTRL 1, data direction, and the interrupt bit the working bdevsw driver also sets.
+  words[0] = 0x10000000U | (direction << 25) | 0x01000000U;
   words[2] = 0x0fU;
   words[4] = static_cast<uint32_t> (ucdPhys);
   words[5] = static_cast<uint32_t> (ucdPhys >> 32);
   words[6] = (512U >> 2) | ((kRspOffset >> 2) << 16);
-  words[7] = (dataBytes ? 1U : 0U) | ((kPrdtOffset >> 2) << 16);
+  // A non-data command must not advertise a PRDT entry: the working driver sends none, and an
+  // entry left at zero would point the controller at physical address 0.
+  words[7] = (dataBytes ? 1U : 0U) | (dataBytes ? ((kPrdtOffset >> 2) << 16) : 0U);
   if (dataBytes) {
     uint64_t dataPhys = gHost.phys + kDataOffset;
     uint32_t *prd = reinterpret_cast<uint32_t *> (gHost.virt + kUcdOffset + kPrdtOffset);
