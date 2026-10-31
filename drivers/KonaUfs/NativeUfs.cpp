@@ -1238,9 +1238,9 @@ static bool hostBringUp (const char **why)
   native_ufs_root_step = 132;   // why="wake (START STOP UNIT)"
       return false;
     }
-    native_ufs_root_step = 60;   // wake accepted: about to sleep 50 ms
-    IODelay (50000);
-    native_ufs_root_step = 61;   // the sleep returned
+    // No pause here: IOSleep stalled the thread and IODelay(50 ms) did not finish either, so
+    // the wait itself is the suspect. 61 means the code got past the wake without any pause.
+    native_ufs_root_step = 61;
   }
   gRootDiagnostic.stage = "LUN ready";
   for (unsigned attempt = 0; attempt < 20; attempt++) {
