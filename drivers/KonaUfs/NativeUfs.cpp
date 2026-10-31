@@ -2670,10 +2670,63 @@ void NativeUfs::rootBringUpEntry (void *, wait_result_t)
 }
 
 // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
+// native-ufs-rpmh=1: read-only cmd-db probe. An RPMh vote needs two things this port has never
+// confirmed: the cmd-db header layout at 0x80860000 and the resource name each UFS rail votes
+// against. Writing a TCS before that could switch a rail off, so this probe only reads: the
+// header words and the first printable name that contains "ufs".
+static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
+{
+  static char name[24];
+  name[0] = 0;
+  volatile uint8_t *cdb = (volatile uint8_t *) ml_io_map (0x80860000ULL, 0x20000);
+  if (!cdb) {
+    snprintf (reason, capacity, "cmd-db did not map");
+    *code = 64000;
+    return;
+  }
+  // The mapping is device memory, so read it through a volatile-safe little-endian helper rather
+  // than the shared le32 (), which takes a plain const pointer.
+  struct Word {
+    static uint32_t at (const volatile uint8_t *p)
+    {
+      return uint32_t (p[0]) | (uint32_t (p[1]) << 8) | (uint32_t (p[2]) << 16) | (uint32_t (p[3]) << 24);
+    }
+  };
+  const uint32_t version = Word::at (cdb);
+  const uint32_t magic = Word::at (cdb + 4);
+  const uint32_t entries = Word::at (cdb + 8);
+  // Scan for the first NUL-terminated printable run of at least four characters that contains
+  // "ufs"; that run is either the resource name or part of the string table beside it.
+  for (unsigned at = 0; at + 24 < 0x20000 && !name[0]; at++) {
+    unsigned length = 0;
+    while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
+    if (length < 4 || cdb[at + length] != 0) continue;
+    bool hasUfs = false;
+    for (unsigned i = 0; i + 3 <= length; i++) {
+      if (cdb[at + i] == 'u' && cdb[at + i + 1] == 'f' && cdb[at + i + 2] == 's') hasUfs = true;
+    }
+    if (!hasUfs) continue;
+    for (unsigned i = 0; i < length && i + 1 < sizeof name; i++) name[i] = static_cast<char> (cdb[at + i]);
+    name[length < sizeof name ? length : sizeof name - 1] = 0;
+  }
+  snprintf (reason, capacity, "v%x m%x n%u %s", version, magic, entries, name[0] ? name : "-");
+  *code = 64000U + (entries & 0xfffU);
+}
+
 bool NativeUfs::startRoot (IOService *provider)
 {
   const char *why = "";
   native_ufs_root_step = 1;
+  unsigned rpmh = 0;
+  PE_parse_boot_argn ("native-ufs-rpmh", &rpmh, sizeof (rpmh));
+  if (rpmh) {
+    static char rpmhWhy[64];
+    uint32_t code = 64000;
+    rpmhProbe (rpmhWhy, sizeof rpmhWhy, &code);
+    native_ufs_root_step = code;
+    rootDiagnosticFailure (rpmhWhy);
+    return false;
+  }
   if (!hostBringUp (&why)) {
     rootDiagnosticFailure (why);
     // No register reads here: a gated UFS/GCC branch stalls the CPU on the first access
