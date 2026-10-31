@@ -1051,20 +1051,36 @@ static void enableUfsBranches (void)
     IOLog ("NativeUfs: power: the GCC window did not map\n");
     return;
   }
-  unsigned enabled = 0, already = 0;
+  // GDSCR bit31 is PWR_ON on this SoC (see the read-only probe above and the 2026-10-30 record).
+  // Write only when the domain reports off, and only the PWR_DOWN bit: nothing else in this
+  // register is qualified on this board.
+  const uint32_t gdscBefore = read32 (gcc, GCC_UFS_PHY_GDSCR);
+  unsigned gdscWrites = 0;
+  if (!(gdscBefore & 0x80000000U)) {
+    write32 (gcc, GCC_UFS_PHY_GDSCR, gdscBefore & ~1U);
+    for (unsigned i = 0; i < 20 && !(read32 (gcc, GCC_UFS_PHY_GDSCR) & 0x80000000U); i++) {
+      IODelay (100);
+    }
+    gdscWrites = 1;
+  }
+  unsigned enabled = 0, already = 0, stillOff = 0;
   for (unsigned i = 0; i < sizeof (branches) / sizeof (branches[0]); i++) {
     const uint32_t offset = branches[i];
     const uint32_t before = read32 (gcc, offset);
     if (before & GCC_UFS_BRANCH_ENABLE_BIT) {
       already++;
-      continue;
+    } else {
+      write32 (gcc, offset, before | GCC_UFS_BRANCH_ENABLE_BIT);
+      IODelay (100);
+      enabled++;
     }
-    write32 (gcc, offset, before | GCC_UFS_BRANCH_ENABLE_BIT);
-    IODelay (100);
-    enabled++;
+    if (read32 (gcc, offset) & 0x80000000U) {
+      stillOff++;
+    }
   }
-  const uint32_t gdsc = read32 (gcc, GCC_UFS_PHY_GDSCR);
-  IOLog ("NativeUfs: power: %u enabled, %u already on, GDSCR %08x\n", enabled, already, gdsc);
+  const uint32_t gdscAfter = read32 (gcc, GCC_UFS_PHY_GDSCR);
+  IOLog ("NativeUfs: power: gdsc %08x -> %08x (%u writes), %u branches enabled, %u already on, %u still CLK_OFF\n",
+         gdscBefore, gdscAfter, gdscWrites, enabled, already, stillOff);
 }
 
 static bool hostBringUp (const char **why)
