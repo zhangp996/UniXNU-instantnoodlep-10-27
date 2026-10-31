@@ -948,6 +948,15 @@ struct UfsHost {
 };
 UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, nullptr, nullptr, 0, nullptr, false };
 
+// native-ufs-stop=<code> makes the bring-up return as soon as it reaches that number, so one
+// kernel can bisect the takeover from the boot arguments alone: the runs before the gate stay in
+// the kernel, and only the boot image changes.
+static uint32_t gStopStep;
+static bool stopAfter (uint32_t code)
+{
+  return gStopStep && gStopStep == code;
+}
+
 // One build has to localise the stall. The boot page prints native_ufs_root_step, so the trace
 // packs the command index and the stage into one number: 50000 + command * 16 + stage. Values
 // below 50000 keep their old meaning (1/2/3 bring-up phases, 101-133 refusals, 4000x high-level).
@@ -1030,6 +1039,7 @@ static bool hostBringUp (const char **why)
     return true;
   }
   native_ufs_root_step = 40001;
+  if (stopAfter (40001)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "controller map";
   gHost.hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
   if (!gHost.hc) {
@@ -1044,6 +1054,7 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.hce = read32 (gHost.hc, 0x34);
   }
   native_ufs_root_step = 40002;
+  if (stopAfter (40002)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "DMA allocation";
   gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
     kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
@@ -1061,6 +1072,7 @@ static bool hostBringUp (const char **why)
   gRootDiagnostic.dma = gHost.phys;
   gRootDiagnostic.contiguous = contiguous;
   native_ufs_root_step = 40003;
+  if (stopAfter (40003)) { *why = "stop requested"; return false; }
   if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
       (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
     *why = "DMA address/contiguity";
@@ -1068,16 +1080,21 @@ static bool hostBringUp (const char **why)
     return false;
   }
   native_ufs_root_step = 40004;
+  if (stopAfter (40004)) { *why = "stop requested"; return false; }
   bzero (gHost.virt, kDmaBytes);
   cacheCivac (gHost.virt, kDmaBytes);
   uint32_t report[3] = { 0, 0, 0 };
   gRootDiagnostic.stage = "SMMU and request list";
   native_ufs_root_step = 40005;
+  if (stopAfter (40005)) { *why = "stop requested"; return false; }
   if (!hostStopQueue (why)) return false;
   native_ufs_root_step = 40006;
+  if (stopAfter (40006)) { *why = "stop requested"; return false; }
   native_ufs_root_step = 40007;
+  if (stopAfter (40007)) { *why = "stop requested"; return false; }
   smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, kDmaBytes);
   native_ufs_root_step = 40008;
+  if (stopAfter (40008)) { *why = "stop requested"; return false; }
   // kona's ufshc node carries no iommus property, so the bypass above is a documented no-op and
   // leaves smmuMap empty: never dereference it. Everything below guards on a nonzero base.
   gHost.smmu = gHost.smmuMap ? static_cast<uintptr_t> (gHost.smmuMap->getVirtualAddress ()) : 0;
@@ -1216,8 +1233,10 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.cba2r = read32 (gHost.smmu, 0x1800 + 4 * (report[0] >> 16));
   }
   native_ufs_root_step = 40009;
+  if (stopAfter (40009)) { *why = "stop requested"; return false; }
   if (!hostStartQueue (why)) return false;
   native_ufs_root_step = 40010;
+  if (stopAfter (40010)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "NOP OUT";
   // NOP OUT proves the transport before touching the SCSI layer.
   if (hostNop () != kIOReturnSuccess) {
@@ -1227,7 +1246,8 @@ static bool hostBringUp (const char **why)
     return false;
   }
   uint32_t power = 0;
-  native_ufs_root_step = 40011;   // NOP OUT done
+  native_ufs_root_step = 40011;
+  if (stopAfter (40011)) { *why = "stop requested"; return false; }   // NOP OUT done
   gRootDiagnostic.stage = "power mode query";
   if (hostQueryRead (0x03, 0x02, &power) != kIOReturnSuccess) {
     gHost.ready = false;
@@ -1235,7 +1255,8 @@ static bool hostBringUp (const char **why)
   native_ufs_root_step = 131;   // why="power mode query"
     return false;
   }
-  native_ufs_root_step = 40012;   // power mode read
+  native_ufs_root_step = 40012;
+  if (stopAfter (40012)) { *why = "stop requested"; return false; }   // power mode read
   gRootDiagnostic.power = power;
   if ((power & 0xff) != 0x11) {
     gRootDiagnostic.stage = "device wake";
@@ -1251,6 +1272,7 @@ static bool hostBringUp (const char **why)
     // No pause here: IOSleep stalled the thread and IODelay(50 ms) did not finish either, so
     // the wait itself is the suspect. 61 means the code got past the wake without any pause.
     native_ufs_root_step = 40013;
+  if (stopAfter (40013)) { *why = "stop requested"; return false; }
   }
   gRootDiagnostic.stage = "LUN ready";
   for (unsigned attempt = 0; attempt < 20; attempt++) {

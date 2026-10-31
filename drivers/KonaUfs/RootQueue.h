@@ -39,7 +39,9 @@ static bool hostStopQueue (const char **why)
     return false;
   }
   hostWrite (0x24, 0);
+  if (stopAfter (40051)) { *why = "stop requested"; return false; }
   hostWrite (0x60, 0);
+  if (stopAfter (40052)) { *why = "stop requested"; return false; }
   if (!hostWaitRegister (0x60, 1, 0)) {
     recordTransport (kIOReturnTimeout, 15);
     *why = "request list stop";
@@ -52,7 +54,9 @@ static bool hostStopQueue (const char **why)
 static bool hostStartQueue (const char **why)
 {
   hostWrite (0x50, static_cast<uint32_t> (gHost.phys));
+  if (stopAfter (40054)) { *why = "stop requested"; return false; }
   hostWrite (0x54, static_cast<uint32_t> (gHost.phys >> 32));
+  if (stopAfter (40055)) { *why = "stop requested"; return false; }
   if (read32 (gHost.hc, 0x50) != uint32_t (gHost.phys) ||
       read32 (gHost.hc, 0x54) != uint32_t (gHost.phys >> 32)) {
     recordTransport (kIOReturnIOError, 15);
@@ -60,9 +64,11 @@ static bool hostStartQueue (const char **why)
   native_ufs_root_step = 121;   // why="request list address"
     return false;
   }
+  if (stopAfter (40056)) { *why = "stop requested"; return false; }
   gRootDiagnostic.isBefore = read32 (gHost.hc, 0x20);
   hostWrite (0x20, gRootDiagnostic.isBefore);
   hostWrite (0x60, 1);
+  if (stopAfter (40058)) { *why = "stop requested"; return false; }
   if (!hostWaitRegister (0x60, 1, 1) || !hostWaitRegister (0x30, 3, 3)) {
     recordTransport (kIOReturnTimeout, 15);
     *why = "request list ready";
