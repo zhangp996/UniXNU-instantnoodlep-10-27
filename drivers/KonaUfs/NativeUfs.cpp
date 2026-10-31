@@ -2575,9 +2575,16 @@ bool NativeUfs::startRoot (IOService *provider)
     findRootLayout (layout, &why);
   }
   if (layout->manifestStatus != 0) {
-    rootDiagnosticFailure ("root manifest rejected");
-    IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x)\n",
-           layout->manifestStatus, layout->magic0, layout->magic1);
+    // The page prints only the reason, so pack the verdict into it: status says which check
+    // failed (1 magic, 2 version/count, 3 hash, 4 bounds, 5 names, 6 overlap, 7 attributes) and
+    // the magic says whether the block is even the manifest at all.
+    static char manifestWhy[48];
+    snprintf (manifestWhy, sizeof manifestWhy, "manifest s%u m%08x%08x",
+              layout->manifestStatus, layout->magic0, layout->magic1);
+    rootDiagnosticFailure (manifestWhy);
+    IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x, first %llx windows %u)\n",
+           layout->manifestStatus, layout->magic0, layout->magic1,
+           (unsigned long long)layout->userdataFirst, layout->windows);
     IOFree (layout, sizeof (RootLayout));
     return false;
   }
