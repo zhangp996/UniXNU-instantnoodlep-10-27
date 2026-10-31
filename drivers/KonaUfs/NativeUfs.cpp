@@ -2112,6 +2112,28 @@ static void queueProbeThread (void *, wait_result_t)
   native_ufs_root_step = 60299;                      // every remaining write returned
 }
 
+// native-ufs-paint=1: after the windows are published, draw a green bar straight into the frame
+// buffer, one row every half second. The boot page freezes with the machine, so this bar answers a
+// different question: is this thread still running while the page is stopped?
+static void paintAlive (void)
+{
+  const struct vc_info *v = &PE_state.video;
+  if (!v->v_baseaddr || !v->v_rowbytes || !v->v_width || !v->v_height || v->v_depth != 32) return;
+  volatile uint32_t *base = (volatile uint32_t *)ml_io_map (v->v_baseaddr,
+                                                            (vm_size_t)v->v_rowbytes * v->v_height);
+  if (!base) return;
+  const uint64_t stride = v->v_rowbytes / 4;
+  for (unsigned i = 0; i < 80; i++) {
+    const unsigned row = 30 + i;
+    if (row >= v->v_height) break;
+    const unsigned limit = 40 + i * 12;
+    for (unsigned x = 0; x < v->v_width && x < limit; x++) {
+      base[(uint64_t)row * stride + x] = 0xFF00FF00u;
+    }
+    IOSleep (500);
+  }
+}
+
 // native-ufs-apitest=1: read the controller at fixed times and leave the trace in
 // native_ufs_root_step, 60000 + point * 10 + phase. A frozen page therefore names the point whose
 // read did not return; 60099 means every point read fine.
@@ -2380,8 +2402,16 @@ void NativeUfs::rootBringUpEntry (void *, wait_result_t)
     IOLog ("NativeUfs: holding the root bring-up for %u s\n", delay);
     IOSleep (delay * 1000);
   }
-  if (service && provider) service->startRoot (provider);
+  bool started = false;
+  if (service && provider) started = service->startRoot (provider);
   if (provider) provider->release ();
+  unsigned paint = 0;
+  PE_parse_boot_argn ("native-ufs-paint", &paint, sizeof (paint));
+  if (paint && started) {
+    IOLog ("NativeUfs: painting the live bar after publishing
+");
+    paintAlive ();
+  }
 }
 
 // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
