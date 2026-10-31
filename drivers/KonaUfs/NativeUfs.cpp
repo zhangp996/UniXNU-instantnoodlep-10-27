@@ -951,6 +951,9 @@ UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, n
 // native-ufs-stop=<code> makes the bring-up return as soon as it reaches that number, so one
 // kernel can bisect the takeover from the boot arguments alone: the runs before the gate stay in
 // the kernel, and only the boot image changes.
+// Counts the block reads that reach the driver, so the page shows whether a mounted file
+// system is really reading through this media: 70000 + calls, capped at 79999.
+static volatile uint32_t gWindowReadCalls;
 static uint32_t gStopStep;
 static bool stopAfter (uint32_t code)
 {
@@ -1896,6 +1899,8 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     void lock () { IOLockLock (mutex); }
     void unlock () { IOLockUnlock (mutex); }
     IOReturn read (uint64_t lba, uint32_t blocks, void *out) {
+      const uint32_t call = ++gWindowReadCalls;
+      native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
       uint64_t t0 = timerTicks ();
       IOReturn r = hostRead4k (0, lba, blocks, out);
       __atomic_fetch_add (&native_ufs_read_ticks, timerTicks () - t0, __ATOMIC_RELAXED);
