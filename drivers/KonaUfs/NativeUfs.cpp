@@ -1238,7 +1238,9 @@ static bool hostBringUp (const char **why)
   native_ufs_root_step = 132;   // why="wake (START STOP UNIT)"
       return false;
     }
+    native_ufs_root_step = 60;   // wake accepted: about to sleep 50 ms
     IOSleep (50);
+    native_ufs_root_step = 61;   // the sleep returned
   }
   gRootDiagnostic.stage = "LUN ready";
   for (unsigned attempt = 0; attempt < 20; attempt++) {
