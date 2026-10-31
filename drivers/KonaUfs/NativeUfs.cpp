@@ -2412,8 +2412,7 @@ void NativeUfs::rootBringUpEntry (void *, wait_result_t)
   unsigned paint = 0;
   PE_parse_boot_argn ("native-ufs-paint", &paint, sizeof (paint));
   if (paint && started) {
-    IOLog ("NativeUfs: painting the live bar after publishing
-");
+    IOLog ("NativeUfs: painting the live bar after publishing\n");
     paintAlive ();
   }
 }
