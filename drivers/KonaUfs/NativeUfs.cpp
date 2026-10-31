@@ -2188,6 +2188,14 @@ bool NativeUfs::start (IOService *provider)
     // its first frame and bsd_init waited: the control boot with native-ufs-root=0 kept both
     // alive. The bring-up therefore runs on its own thread; the windows publish when it finishes
     // and IOFindBSDRoot is the party that waits for them.
+    // native-ufs-direct=1 keeps the pre-deferral behaviour: the bring-up runs on the matching
+    // thread. That configuration ran 61 commands and published a window while the deferred
+    // thread stops after three commands, so both are selectable from one kernel.
+    unsigned direct = 0;
+    PE_parse_boot_argn ("native-ufs-direct", &direct, sizeof (direct));
+    if (direct) {
+      return startRoot (provider);
+    }
     unsigned delay = 0;
     PE_parse_boot_argn ("native-ufs-delay", &delay, sizeof (delay));
     gRootBringUpDelay = delay;
