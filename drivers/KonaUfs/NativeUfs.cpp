@@ -1036,6 +1036,37 @@ static void hostWrite (unsigned offset, uint32_t value)
 // Bring the live controller up for reading: map, SMMU pass-through for the UFS stream, take over
 // the request list, wake the device from UFS-PowerDown and wait for LUN 0 to be ready.
 // `why` receives a short reason on failure.
+// native-ufs-power=1: enable the UFS branch clocks the bootloader left to hardware gating.
+// Only the branch registers from GccUfs.h are written; GDSCR is read, not written, because its
+// semantics on this board are not qualified and the header asks for no speculative writes.
+static void enableUfsBranches (void)
+{
+  static const uint32_t branches[] = {
+    GCC_UFS_PHY_AXI_ENABLE, GCC_UFS_PHY_AHB_ENABLE, GCC_UFS_PHY_TX_SYMBOL0_ENABLE,
+    GCC_UFS_PHY_RX_SYMBOL0_ENABLE, GCC_UFS_PHY_UNIPRO_CORE_ENABLE, GCC_UFS_PHY_ICE_CORE_ENABLE,
+    GCC_UFS_PHY_PHY_AUX_ENABLE, GCC_UFS_PHY_RX_SYMBOL1_ENABLE, GCC_AGGRE_UFS_PHY_AXI_ENABLE,
+  };
+  uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
+  if (!gcc) {
+    IOLog ("NativeUfs: power: the GCC window did not map\n");
+    return;
+  }
+  unsigned enabled = 0, already = 0;
+  for (unsigned i = 0; i < sizeof (branches) / sizeof (branches[0]); i++) {
+    const uint32_t offset = branches[i];
+    const uint32_t before = read32 (gcc, offset);
+    if (before & GCC_UFS_BRANCH_ENABLE_BIT) {
+      already++;
+      continue;
+    }
+    write32 (gcc, offset, before | GCC_UFS_BRANCH_ENABLE_BIT);
+    IODelay (100);
+    enabled++;
+  }
+  const uint32_t gdsc = read32 (gcc, GCC_UFS_PHY_GDSCR);
+  IOLog ("NativeUfs: power: %u enabled, %u already on, GDSCR %08x\n", enabled, already, gdsc);
+}
+
 static bool hostBringUp (const char **why)
 {
   if (gHost.poisoned) {
@@ -1245,19 +1276,29 @@ static bool hostBringUp (const char **why)
   if (!hostStartQueue (why)) return false;
   native_ufs_root_step = 40010;
   if (stopAfter (40010)) { *why = "stop requested"; return false; }
+  unsigned power = 0;
+  PE_parse_boot_argn ("native-ufs-power", &power, sizeof (power));
+  if (power) enableUfsBranches ();
   // native-ufs-wake-first=1 follows the bdevsw driver that reads this disk: straight to START
   // STOP UNIT on the well-known LU, no NOP and no power query first.
   unsigned wakeFirst = 0;
   PE_parse_boot_argn ("native-ufs-wake-first", &wakeFirst, sizeof (wakeFirst));
   if (wakeFirst) {
-    gRootDiagnostic.stage = "device wake (first)";
-    uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
-    uint32_t scsi = 0;
-    if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
-      gHost.ready = false;
-      *why = "wake first (START STOP UNIT)";
-      native_ufs_root_step = 140;
-      return false;
+    // native-ufs-nowake=1 skips START STOP UNIT and goes straight to TUR polling. Nothing wakes
+    // the device, so the run is read-only and the device stays in its power state: if the machine
+    // then survives, the wake itself is what takes it down rather than the register reads.
+    unsigned nowake = 0;
+    PE_parse_boot_argn ("native-ufs-nowake", &nowake, sizeof (nowake));
+    if (!nowake) {
+      gRootDiagnostic.stage = "device wake (first)";
+      uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
+      uint32_t scsi = 0;
+      if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
+        gHost.ready = false;
+        *why = "wake first (START STOP UNIT)";
+        native_ufs_root_step = 140;
+        return false;
+      }
     }
     // 40014 and 40015 bracket the settle delay: 50029 leaves the SSU inside hostScsi, 40014 puts
     // the gap in IODelay, and 40015 means the TUR loop was entered.
