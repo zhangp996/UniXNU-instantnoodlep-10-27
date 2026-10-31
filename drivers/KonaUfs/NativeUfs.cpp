@@ -2117,17 +2117,21 @@ static void queueProbeThread (void *, wait_result_t)
 // different question: is this thread still running while the page is stopped?
 static void paintAlive (void)
 {
-  const struct vc_info *v = &PE_state.video;
-  if (!v->v_baseaddr || !v->v_rowbytes || !v->v_width || !v->v_height || v->v_depth != 32) return;
-  volatile uint32_t *base = (volatile uint32_t *)ml_io_map (v->v_baseaddr,
-                                                            (vm_size_t)v->v_rowbytes * v->v_height);
+  // vc_info is only forward declared in this build, so read the published layout directly:
+  // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (scripts/xnu-panic-screen.c).
+  const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
+  const uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
+  const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
+  if (!baseaddr || !rowbytes || !width || !height || depth != 32) return;
+  volatile uint32_t *base = (volatile uint32_t *)ml_io_map (baseaddr,
+                                                            (vm_size_t)rowbytes * height);
   if (!base) return;
-  const uint64_t stride = v->v_rowbytes / 4;
+  const uint64_t stride = rowbytes / 4;
   for (unsigned i = 0; i < 80; i++) {
     const unsigned row = 30 + i;
-    if (row >= v->v_height) break;
+    if (row >= height) break;
     const unsigned limit = 40 + i * 12;
-    for (unsigned x = 0; x < v->v_width && x < limit; x++) {
+    for (unsigned x = 0; x < width && x < limit; x++) {
       base[(uint64_t)row * stride + x] = 0xFF00FF00u;
     }
     IOSleep (500);
