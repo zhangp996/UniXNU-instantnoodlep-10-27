@@ -1,3 +1,8 @@
+> **Stale snapshot.** `src/` below is the July source the catalog entry was drafted from. The
+> component builds from `drivers/KonaUfs` (see `path` in `catalog-entry.toml`, and
+> `unixnu/components.toml`), and the two copies have diverged since. Nothing reads `src/`; keep
+> edits in `drivers/KonaUfs`.
+
 # kona-ufs
 
 A kona (SM8250) variant of [ShengUfs](https://github.com/UniXNU/ShengUfs), the driver the

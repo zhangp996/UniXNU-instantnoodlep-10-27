@@ -220,6 +220,7 @@ configuration = [
   "kernel_args carries rd=ufsroot0 and ufsroot=userdata, so IOKitBSDInit selects the BSD disk before root-media matching; APFS mounts the container inside the userdata GPT partition.",
   "CONFIG_XNU_NATIVE_UFS is not set and board.toml keeps component:KonaUfs out of include: the IOMedia route compiles the archive but cannot link it until the storage original bindings exist, so both switches stay off together and turn the root over to IOStorageFamily in one step.",
   "[userdata] holds the write window and names the OS and SystemOS IPSW components.",
+  "Storage takes the adoption path of porting/ufs.md step 3: the controller, PHY, clocks and rails are used exactly as the bootloader leaves them, and this port declares no cold-initialisation sequence. The GCC/GDSC writes behind native-ufs-power and the UIC link reads behind native-ufs-link are diagnostic branches recorded in limits, not policy; three upstream UFS drivers (ShengUfs, NativeUfs SM7325, NativeUfs myron) read the same GCC registers and never write them, so adopt is also the only path with running precedents.",
 ]
 procedure = [
   "Read /proc/partitions, /sys/block/sd*/size and sd*/start and the by-name links over ADB, then compute the GPT extent.",
