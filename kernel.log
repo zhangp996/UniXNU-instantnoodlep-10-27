@@ -1,0 +1,124 @@
+== submodules /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27
+== tree /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree
+== kernel: XNU
+== kernel: prepare XNU d8b80295118e
++ git clone --quiet --shared --no-checkout /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/feeds/xnu-b7545ced /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/.cache/xnu-work
+== kernel: patch apple-only-cpu-tunables.patch
+== kernel: patch architectural-timer-entry.patch
+== kernel: patch armvirt-platform-personality.patch
+== kernel: patch cxx-flag-dependencies.patch
+== kernel: patch disabled-deferred-reclaim.patch
+== kernel: patch external-archive-dependencies.patch
+== kernel: patch kernel-sdk-root.patch
+== kernel: patch local-availability.patch
+== kernel: patch mockfs-intermediate-lookup.patch
+== kernel: patch mockfs-memory-device-width.patch
+== kernel: patch mockfs-statfs.patch
+== kernel: patch mockfs-test-file.patch
+== kernel: patch mockfs-typed-allocation.patch
+== kernel: patch native-4k-bootstrap-capacity.patch
+== kernel: patch native-4k-signature-hash-cache.patch
+== kernel: patch native-4k-user-abi.patch
+== kernel: patch native-aes-personality.patch
+== kernel: patch native-arm-pan.patch
+== kernel: patch native-dt-panic-region.patch
+== kernel: patch native-lookup-trace.patch
+== kernel: patch native-priv-work-interval.patch
+== kernel: patch native-quiet-managed-page-report.patch
+== kernel: patch native-text-fixup.patch
+== kernel: patch native-trust-cache-runtime.patch
+== kernel: patch native-union-getattrlistbulk.patch
+== kernel: patch native-union-lower-directory.patch
+== kernel: patch native-work-interval-soft-fail.patch
+== kernel: patch native-work-interval-trace.patch
+== kernel: patch native-work-interval-instance.patch
+== kernel: patch non-apple-cache-monitor.patch
+== kernel: patch non-apple-iommu-bootstrap.patch
+== kernel: patch non-apple-pmap-field.patch
+== kernel: patch null-root-media.patch
+== kernel: patch offline-component-load-probes.patch
+== kernel: patch offline-legacy-start.patch
+== kernel: patch offline-native-gpu-broker.patch
+== kernel: patch offline-owner-boot-manifest.patch
+== kernel: patch offline-owner-cache-carrier.patch
+== kernel: patch offline-owner-root-binding-audit.patch
+== kernel: patch offline-owner-root-crypto-probe.patch
+== kernel: patch offline-owner-systemos-mount.patch
+== kernel: patch offline-owner-z-air-init.patch
+== kernel: patch offline-pgz-alignment-probe.patch
+== kernel: patch pgz-aligned-validation.patch
+== kernel: patch public-entitlements-header.patch
+== kernel: patch published-freezer-condition.patch
+== kernel: patch source-corecrypto14-bootstrap.patch
+== kernel: patch source-machine-layer.patch
+== kernel: patch source-pthread-bootstrap.patch
+== kernel: patch zzw-native-adreno-sandbox-grant.patch
+== kernel: patch zzwb-native-sandbox-grant-set-properties.patch
+== kernel: patch zzx-pmap-sync-64bit-pa.patch
+== kernel: patch zzy-native-gpu-addon-mount.patch
+== kernel: patch zzy-staged-system-apps.patch
+== kernel: patch zzyb-native-cryptex-os-view.patch
+== kernel: patch zzyc-owner-skip-launch-constraints.patch
+== kernel: patch zzz-boot-progress.patch
+== kernel: patch xnu-10063.141.1-security-init.patch
+== kernel: patch xnu-10063.141.1-sparse-index.patch
+== kernel: patch kona-ufs-driver.patch
+== kernel: patch kona-hfs-noop.patch
+== kernel: patch kona-ufs-integration.patch
+== kernel: patch kona-rootauth-bypass.patch
+== kernel: patch kona-mountroot-cp.patch
+== kernel: patch kona-vfs-cp.patch
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/prepare-xnu-source.py
+Restored 26 omitted public headers from Apple; blob hashes verified
+== kernel: bootstrap pass for the compile records
++ bash /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-xnu-4k-baseline.sh
+== kernel: prepare storage headers
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/prepare-storage-headers.py
+== kernel: archive-01-build-corecrypto-14
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-corecrypto-14.py
+== kernel: archive-02-build-corecrypto-14
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-corecrypto-14.py --namespace
+== kernel: component-ArmDTPlatform
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-arm-driver.py ArmDTPlatform
+== kernel: component-ArmCpu
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-arm-driver.py ArmCpu
+== kernel: component-SoftwareAES
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-arm-driver.py SoftwareAES
+== kernel: archive-06-build-software-aes-bindings
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-software-aes-bindings.py
+== kernel: archive-07-build-mockfs-fixture
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-mockfs-fixture.py
+== kernel: archive-08-build-libpthread-kernel
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-libpthread-kernel.py
+== kernel: component-KonaUfs
++ python3 /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/scripts/build-arm-driver.py KonaUfs
+ here
+ 1345 |   unsigned power = 0;
+      |            ^
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/drivers/KonaUfs/NativeUfs.cpp:2055:29: warning: increment of object of volatile-qualified type 'volatile uint32_t' (aka 'volatile unsigned int') is deprecated [-Wdeprecated-volatile]
+ 2055 |       const uint32_t call = ++gWindowReadCalls;
+      |                             ^
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/drivers/KonaUfs/NativeUfs.cpp:2178:68: warning: operand of ? changes signedness: 'int' to 'uint32_t' (aka 'unsigned int') [-Wsign-conversion]
+ 2178 |     gRootDiagnostic.result = result.phase == UfsRootPhase::Start ? kIOReturnIOError : kIOReturnTimeout;
+      |                            ~                                       ^~~~~~~~~~~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/.cache/xnu-work/iokit/IOKit/IOReturn.h:157:34: note: expanded from macro 'kIOReturnIOError'
+  157 | #define kIOReturnIOError         iokit_common_err(0x2ca) // General I/O error
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/.cache/xnu-work/iokit/IOKit/IOReturn.h:136:71: note: expanded from macro 'iokit_common_err'
+  136 | #define iokit_common_err(return )          (sys_iokit|sub_iokit_common|return)
+      |                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/drivers/KonaUfs/NativeUfs.cpp:2178:87: warning: operand of ? changes signedness: 'int' to 'uint32_t' (aka 'unsigned int') [-Wsign-conversion]
+ 2178 |     gRootDiagnostic.result = result.phase == UfsRootPhase::Start ? kIOReturnIOError : kIOReturnTimeout;
+      |                            ~                                                          ^~~~~~~~~~~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/.cache/xnu-work/iokit/IOKit/IOReturn.h:169:34: note: expanded from macro 'kIOReturnTimeout'
+  169 | #define kIOReturnTimeout         iokit_common_err(0x2d6) // I/O Timeout
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/.cache/xnu-work/iokit/IOKit/IOReturn.h:136:71: note: expanded from macro 'iokit_common_err'
+  136 | #define iokit_common_err(return )          (sys_iokit|sub_iokit_common|return)
+      |                                             ~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree/drivers/KonaUfs/NativeUfs.cpp:2441:68: warning: implicit conversion changes signedness: 'int' to 'unsigned long' [-Wsign-conversion]
+ 2441 |     used += snprintf (gMediaReport + used, sizeof (gMediaReport) - used, "%s %s size=%llx uuid=%s\n",
+      |                                                                  ~ ^~~~
+9 warnings and 1 error generated.
+
+unixnu: python3 failed (1); full log: /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/logs/component-KonaUfs.log
