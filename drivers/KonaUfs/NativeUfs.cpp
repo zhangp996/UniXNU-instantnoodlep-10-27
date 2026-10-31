@@ -1912,11 +1912,14 @@ extern "C" int native_ufs_block_authenticates (IOService *provider, const char *
 
 bool NativeUfsBlock::start (IOService *provider)
 {
+  native_ufs_root_step = 41200;   // about to call IOBlockStorageDevice::start
   if (!bounce || !windowLock || !IOBlockStorageDevice::start (provider)) {
     return false;
   }
+  native_ufs_root_step = 41201;   // nub started, registerService next
   online = true;
   registerService ();
+  native_ufs_root_step = 41202;   // media registered
   return true;
 }
 
@@ -2035,10 +2038,12 @@ static void publishThread (void *, wait_result_t)
   struct Operations {
     bool start (unsigned index) {
       NativeUfsBlock *device = gPendingDevice[index];
+      native_ufs_root_step = 41001 + index * 2;   // window start begins
       gRootDiagnostic.stage = "root window service start";
       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Start);
       gRootDiagnostic.publicationWindow = index;
       if (!device->start (gPendingProvider)) return false;
+      native_ufs_root_step = 41002 + index * 2;   // window start returned
       native_ufs_blocks_published = native_ufs_blocks_published + 1;
       IOLog ("NativeUfs: published %s\n", device->windowLabel ());
       return true;
@@ -2060,6 +2065,7 @@ static void publishThread (void *, wait_result_t)
     }
     void discard (unsigned index) { discardPendingWindow (index); }
   } operations;
+  native_ufs_root_step = 41300;   // publisher thread entered
   UfsRootPublicationResult result = ufsPublishRootWindows (operations, gPublicationPlan);
   if (result.phase != UfsRootPhase::Complete) {
     gRootDiagnostic.result = result.phase == UfsRootPhase::Start ? kIOReturnIOError : kIOReturnTimeout;
@@ -2071,7 +2077,9 @@ static void publishThread (void *, wait_result_t)
     // dereference it here. The media-failure object is deliberately retained.
     rootDiagnosticFailure (reason);
   }
+  native_ufs_root_step = 41301;   // publication loop complete
   gPendingProvider->release ();  // Balanced with successful thread dispatch.
+  native_ufs_root_step = 41302;   // publisher thread done
 }
 
 // Memory snapshot (native-ufs-probe=13): root mode as usual, then, after a delay, the kernel's own
