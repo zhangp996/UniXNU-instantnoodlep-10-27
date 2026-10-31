@@ -1240,6 +1240,37 @@ static bool hostBringUp (const char **why)
   if (!hostStartQueue (why)) return false;
   native_ufs_root_step = 40010;
   if (stopAfter (40010)) { *why = "stop requested"; return false; }
+  // native-ufs-wake-first=1 follows the bdevsw driver that reads this disk: straight to START
+  // STOP UNIT on the well-known LU, no NOP and no power query first.
+  unsigned wakeFirst = 0;
+  PE_parse_boot_argn ("native-ufs-wake-first", &wakeFirst, sizeof (wakeFirst));
+  if (wakeFirst) {
+    gRootDiagnostic.stage = "device wake (first)";
+    uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
+    uint32_t scsi = 0;
+    if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
+      gHost.ready = false;
+      *why = "wake first (START STOP UNIT)";
+      native_ufs_root_step = 140;
+      return false;
+    }
+    IODelay (50000);
+    gRootDiagnostic.stage = "LUN ready";
+    for (unsigned attempt = 0; attempt < 20; attempt++) {
+      native_ufs_root_step = 40020 + attempt;
+      uint8_t tur[6] = { 0, 0, 0, 0, 0, 0 };
+      uint32_t scsi2 = 0;
+      if (hostScsi (0, tur, 6, false, 0, 200000, &scsi2) == kIOReturnSuccess) {
+        gHost.ready = true;
+        native_ufs_root_step = 40013;
+        return true;
+      }
+      IODelay (10000);
+    }
+    *why = "LUN 0 not ready (wake first)";
+    native_ufs_root_step = 141;
+    return false;
+  }
   gRootDiagnostic.stage = "NOP OUT";
   // NOP OUT proves the transport before touching the SCSI layer.
   if (hostNop () != kIOReturnSuccess) {
