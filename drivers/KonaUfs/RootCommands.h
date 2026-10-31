@@ -11,6 +11,9 @@ struct HardwareTransferPort {
   }
   bool expired () { return mach_absolute_time () >= deadline; }
   void delay () { IODelay (2); }
+  // The poll loop cannot see the diagnostics global (TransferPoll.h is included where it is not
+  // declared), so the port reports the loop's progress: 55 means the loop really spins.
+  void progress (uint32_t polls) { if (!(polls & 0x3ffU)) native_ufs_root_step = 55; }
 };
 
 static void putBe32 (uint8_t *at, uint32_t value)

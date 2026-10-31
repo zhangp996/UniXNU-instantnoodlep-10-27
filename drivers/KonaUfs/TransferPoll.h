@@ -14,7 +14,7 @@ static UfsTransferEnd pollUfsTransfer(Port &port, UfsTransferPoll &state)
     ++state.polls;
     // 55 means the loop really spins (the MMIO reads inside it return); 54 means the first read
     // after the doorbell never returns.
-    if (!(state.polls & 0x3ffU)) native_ufs_root_step = 55;
+    port.progress (state.polls);
     uint32_t doorbell = port.doorbell();
     state.doorbellSeen |= doorbell;
     state.interruptSeen |= port.interrupt();
