@@ -67,7 +67,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     words[index] = 0;
   }
   // DW0: UTRL 1, data direction, and the interrupt bit the working bdevsw driver also sets.
-  words[0] = 0x10000000U | (direction << 25) | 0x01000000U;
+  words[0] = 0x10000000U | (direction << 25) | (gUfsNoIrq ? 0U : 0x01000000U);
   words[2] = 0x0fU;
   words[4] = static_cast<uint32_t> (ucdPhys);
   words[5] = static_cast<uint32_t> (ucdPhys >> 32);
@@ -110,6 +110,10 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   traceStep (13);
   cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
   gRootDiagnostic.response = loadBe32 (gHost.virt + kUcdOffset + kRspOffset);
+  // 14 separates a stall in the cache/response read from one after the command returned: the
+  // deferred run stopped at 13 (50029, command 1) with ocs=00 and scsi=0000, so the first
+  // command completed and the thread never reached the caller.
+  traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
 }
 

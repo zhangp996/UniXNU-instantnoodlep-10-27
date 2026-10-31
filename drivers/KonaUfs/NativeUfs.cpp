@@ -948,6 +948,11 @@ struct UfsHost {
 };
 UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, nullptr, nullptr, 0, nullptr, false };
 
+// native-ufs-noirq=1 leaves the interrupt bit out of the UTRD. Completion is polled through the
+// doorbell and OCS, so the bit is not needed to finish a command; without it the controller cannot
+// raise the completion interrupt that a polled driver never services.
+static unsigned gUfsNoIrq = 0;
+
 // native-ufs-stop=<code> makes the bring-up return as soon as it reaches that number, so one
 // kernel can bisect the takeover from the boot arguments alone: the runs before the gate stay in
 // the kernel, and only the boot image changes.
@@ -1254,7 +1259,14 @@ static bool hostBringUp (const char **why)
       native_ufs_root_step = 140;
       return false;
     }
-    IODelay (50000);
+    // 40014 and 40015 bracket the settle delay: 50029 leaves the SSU inside hostScsi, 40014 puts
+    // the gap in IODelay, and 40015 means the TUR loop was entered.
+    native_ufs_root_step = 40014;
+    unsigned settle = 50;
+    PE_parse_boot_argn ("native-ufs-settle", &settle, sizeof (settle));
+    if (settle > 5000) settle = 5000;
+    if (settle) IODelay (settle * 1000);
+    native_ufs_root_step = 40015;
     gRootDiagnostic.stage = "LUN ready";
     for (unsigned attempt = 0; attempt < 20; attempt++) {
       native_ufs_root_step = 40020 + attempt;
@@ -2169,6 +2181,67 @@ static void paintAlive (void)
   }
 }
 
+// native-ufs-heartbeat=1: write the current root step into the bottom of the frame from its own
+// thread. The direct bring-up freezes the boot page with the machine, and the page samples the
+// counters only when it draws, so a frozen page keeps the step from before the match. This strip
+// is written by the bring-up timeline and stays on the panel after everything stops: sixteen cells
+// hold native_ufs_root_step & 0xffff, most significant bit on the left, green for one.
+static volatile uint32_t *gHeartbeatBase = nullptr;
+static uint64_t gHeartbeatStride = 0;
+static unsigned gHeartbeatWidth = 0, gHeartbeatHeight = 0, gHeartbeatTries = 0;
+
+static void paintStepBits (uint32_t code)
+{
+  if (!gHeartbeatBase) {
+    if (gHeartbeatTries++ > 10) {
+      return;
+    }
+    // vc_info is only forward declared in this build, so read the published layout directly:
+    // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (paintAlive above).
+    const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
+    const uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
+    const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
+    if (!baseaddr || !rowbytes || !width || !height || depth != 32) {
+      return;
+    }
+    volatile uint32_t *base = (volatile uint32_t *) ml_io_map (baseaddr, (vm_size_t)rowbytes * height);
+    if (!base) {
+      return;
+    }
+    gHeartbeatBase = base;
+    gHeartbeatStride = rowbytes / 4;
+    gHeartbeatWidth = width;
+    gHeartbeatHeight = height;
+  }
+  if (gHeartbeatWidth < 8 + 16 * 32) {
+    return;
+  }
+  // Keep clear of the page's last rows and of the pulse strip at the very bottom.
+  const unsigned top = gHeartbeatHeight > 200 ? gHeartbeatHeight - 160 : 0;
+  const uint64_t stride = gHeartbeatStride;
+  volatile uint32_t *edge = gHeartbeatBase + (uint64_t)top * stride;
+  for (unsigned x = 8; x < 8 + 16 * 32; x++) {
+    edge[x] = 0xFFFFFFFFU;
+  }
+  for (unsigned cell = 0; cell < 16; cell++) {
+    const uint32_t colour = ((code >> (15 - cell)) & 1U) ? 0xFF00FF00U : 0xFF000000U;
+    for (unsigned y = 1; y < 33 && top + y < gHeartbeatHeight; y++) {
+      volatile uint32_t *row = gHeartbeatBase + (uint64_t)(top + y) * stride;
+      for (unsigned x = 0; x < 24; x++) {
+        row[8 + cell * 32 + x] = colour;
+      }
+    }
+  }
+}
+
+static void heartbeatEntry (void *, wait_result_t)
+{
+  for (;;) {
+    paintStepBits (native_ufs_root_step);
+    IOSleep (100);
+  }
+}
+
 // native-ufs-apitest=1: read the controller at fixed times and leave the trace in
 // native_ufs_root_step, 60000 + point * 10 + phase. A frozen page therefore names the point whose
 // read did not return; 60099 means every point read fine.
@@ -2275,6 +2348,16 @@ bool NativeUfs::start (IOService *provider)
   unsigned diagnostic = 0;
   PE_parse_boot_argn ("native-ufs-diagnostics", &diagnostic, sizeof (diagnostic));
   gRootDiagnosticEnabled = diagnostic == 1;
+  // native-ufs-heartbeat=1: keep a step strip on the panel while the page is frozen with the machine.
+  unsigned heartbeat = 0;
+  PE_parse_boot_argn ("native-ufs-heartbeat", &heartbeat, sizeof (heartbeat));
+  if (heartbeat) {
+    thread_t thread = nullptr;
+    if (kernel_thread_start (heartbeatEntry, nullptr, &thread) == KERN_SUCCESS) {
+      thread_deallocate (thread);
+    }
+  }
+  PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   unsigned apitest = 0;
   PE_parse_boot_argn ("native-ufs-apitest", &apitest, sizeof (apitest));
   if (apitest) {

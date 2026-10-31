@@ -181,6 +181,22 @@ kernel_args = [
   "boot-progress=2",
 ]
 
+# Two bring-up profiles, applied on top of the list above with --kernel-arg so the
+# committed list stays the shipping set:
+#
+#   direct, observable (reproduces the freeze; the heartbeat strip names the step):
+#     --kernel-arg native-ufs-direct=1 --kernel-arg native-ufs-wake-first=1
+#     --kernel-arg native-ufs-paint=1 --kernel-arg native-ufs-heartbeat=1
+#
+#   deferred control (the page stays live, so probe/match/root can be read off it):
+#     --kernel-arg native-ufs-delay=10 --kernel-arg native-ufs-wake-first=1
+#     --kernel-arg native-ufs-paint=1
+#
+# 2026-10-31: the direct run froze the page at its first frame (monitor=1, IRQ=0), so
+# every counter it showed was a pre-match snapshot. The heartbeat strip (16 cells above
+# the bottom edge, green = 1, white edge row on top) writes native_ufs_root_step from
+# its own thread and is the only reading that survives a frozen machine.
+
 # The trust cache the payload embeds is the static one from the 17.7.11 (21H461)
 # restore image: Firmware/044-76040-038.dmg.trustcache, 59519 bytes, taken from
 # out/ipsw/21H461. The OS profile allowlist covers other images, so this board states
