@@ -85,6 +85,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   native_ufs_root_step = 54;   // doorbell written, polling for completion
   UfsTransferPoll state;
   UfsTransferEnd end = pollUfsTransfer (port, state);
+  native_ufs_root_step = 56;   // the poll returned (Completed, Fatal or Timeout)
   gRootDiagnostic.polls = state.polls;
   gRootDiagnostic.dbSeen = state.doorbellSeen;
   gRootDiagnostic.isSeen = state.interruptSeen;
