@@ -1083,6 +1083,32 @@ static void enableUfsBranches (void)
          gdscBefore, gdscAfter, gdscWrites, enabled, already, stillOff);
 }
 
+// native-ufs-link=1: read the controller's clock and link state before anything is submitted.
+// The UIC doorbell is register 0x90, the arguments live at 0x94/0x98/0x9c and completion is IS
+// bit 0x400; DME_GET returns its value in argument3 (0x9c). MIB attributes are the UFS ones:
+// 0x2b PA_LINKSTATE, 0x2e connected TX lanes, 0x2f connected RX lanes.
+static bool uicGet (uint32_t mib, uint32_t *value)
+{
+  *value = 0xffffffffU;
+  const uint32_t is = read32 (gHost.hc, 0x20);
+  if (is & 0x400U) {
+    write32 (gHost.hc, 0x20, 0x400U);
+  }
+  write32 (gHost.hc, 0x94, mib);
+  write32 (gHost.hc, 0x98, 0);
+  write32 (gHost.hc, 0x9c, 0);
+  write32 (gHost.hc, 0x90, 0x01U);   // DME_GET
+  for (unsigned i = 0; i < 200; i++) {
+    if (read32 (gHost.hc, 0x20) & 0x400U) {
+      write32 (gHost.hc, 0x20, 0x400U);
+      *value = read32 (gHost.hc, 0x9c);
+      return true;
+    }
+    IODelay (100);
+  }
+  return false;
+}
+
 static bool hostBringUp (const char **why)
 {
   if (gHost.poisoned) {
@@ -1292,6 +1318,30 @@ static bool hostBringUp (const char **why)
   if (!hostStartQueue (why)) return false;
   native_ufs_root_step = 40010;
   if (stopAfter (40010)) { *why = "stop requested"; return false; }
+  // native-ufs-link=1 stops here with the clock and link state in the reason row, which the page
+  // prints: GDSC power, the AXI and AHB branch enables, HCS/HCE, and the three UIC attributes
+  // that say whether the link trained and how many lanes it brought up.
+  unsigned linkProbe = 0;
+  PE_parse_boot_argn ("native-ufs-link", &linkProbe, sizeof (linkProbe));
+  if (linkProbe) {
+    static char linkWhy[64];
+    uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
+    const uint32_t gdsc = gcc ? (read32 (gcc, GCC_UFS_PHY_GDSCR) >> 31) : 0xff;
+    const uint32_t axi = gcc ? (read32 (gcc, GCC_UFS_PHY_AXI_ENABLE) & 1U) : 0xff;
+    const uint32_t ahb = gcc ? (read32 (gcc, GCC_UFS_PHY_AHB_ENABLE) & 1U) : 0xff;
+    const uint32_t hcs = (read32 (gHost.hc, 0x30) & 0xfU);
+    const uint32_t hce = (read32 (gHost.hc, 0x34) & 1U);
+    uint32_t link = 0, tx = 0, rx = 0;
+    uicGet (0x2b, &link);
+    uicGet (0x2e, &tx);
+    uicGet (0x2f, &rx);
+    snprintf (linkWhy, sizeof linkWhy, "gd%u ax%u ah%u hcs%x hce%u ls%x tx%x rx%x",
+              gdsc & 0xfU, axi & 0xfU, ahb & 0xfU, hcs, hce & 0xfU,
+              link & 0xfU, tx & 0xfU, rx & 0xfU);
+    native_ufs_root_step = 63000U + ((link & 0xfU) * 1000U) + ((tx & 0xfU) * 100U) + (rx & 0xfU);
+    *why = linkWhy;
+    return false;
+  }
   unsigned power = 0;
   PE_parse_boot_argn ("native-ufs-power", &power, sizeof (power));
   if (power) enableUfsBranches ();
