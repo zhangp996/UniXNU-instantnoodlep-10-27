@@ -13,7 +13,7 @@ struct HardwareTransferPort {
   void delay () { IODelay (2); }
   // The poll loop cannot see the diagnostics global (TransferPoll.h is included where it is not
   // declared), so the port reports the loop's progress: 55 means the loop really spins.
-  void progress (uint32_t polls) { if (!(polls & 0x3ffU)) native_ufs_root_step = 55; }
+  void progress (uint32_t polls) { if (!(polls & 0x3ffU)) traceStep (15); }
 };
 
 static void putBe32 (uint8_t *at, uint32_t value)
@@ -36,8 +36,10 @@ static uint32_t loadBe32 (const uint8_t *at)
 static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t timeoutUs, uint32_t *ocs)
 {
   *ocs = 15;
+  traceStep (5);
   if (!timeoutUs || dataBytes > kDataMax || (dataBytes & 3) ||
       (dataBytes ? (direction != 1 && direction != 2) : direction != 0)) return kIOReturnBadArgument;
+  traceStep (6);
   if (gHost.poisoned) return kIOReturnNotReady;
   if (read32 (gHost.hc, 0x58) != 0) {
     gHost.poisoned = true;
@@ -78,17 +80,19 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     prd[2] = 0;
     prd[3] = dataBytes - 1;
   }
-  native_ufs_root_step = 52;   // before the descriptor flush and the doorbell
+  traceStep (7);   // UTRD and PRDT built
+  traceStep (8);
   cacheCivac (gHost.virt, kDataOffset + dataBytes);
   hostWrite (0x20, 1);  // Acknowledge completion only; preserve error evidence.
+  traceStep (9);
   HardwareTransferPort port;
   clock_interval_to_deadline (timeoutUs, kMicrosecondScale, &port.deadline);
-  native_ufs_root_step = 53;   // about to write the doorbell
+  traceStep (10);   // about to write the doorbell
   hostWrite (0x58, 1);
-  native_ufs_root_step = 54;   // doorbell written, polling for completion
+  traceStep (11);   // doorbell written
   UfsTransferPoll state;
   UfsTransferEnd end = pollUfsTransfer (port, state);
-  native_ufs_root_step = 56;   // the poll returned (Completed, Fatal or Timeout)
+  traceStep (12);   // the poll returned (Completed, Fatal or Timeout)
   gRootDiagnostic.polls = state.polls;
   gRootDiagnostic.dbSeen = state.doorbellSeen;
   gRootDiagnostic.isSeen = state.interruptSeen;
@@ -100,6 +104,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     gHost.ready = false;
     return recordTransport (end == UfsTransferEnd::Timeout ? kIOReturnTimeout : kIOReturnIOError, *ocs);
   }
+  traceStep (13);
   cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
   gRootDiagnostic.response = loadBe32 (gHost.virt + kUcdOffset + kRspOffset);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
@@ -107,16 +112,18 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
 
 static bool hostClearUcd (void)
 {
-  native_ufs_root_step = 57;   // a new command: the doorbell read comes first
+  traceStep (1);
   if (gHost.poisoned) return false;
   // Check before touching the command/response area, not just before ringing.
-  if (read32 (gHost.hc, 0x58) != 0) {
+  const uint32_t doorbellNow = read32 (gHost.hc, 0x58);
+  traceStep (2);
+  if (doorbellNow != 0) {
     gHost.poisoned = true;
     gHost.ready = false;
     recordTransport (kIOReturnBusy, 15);
     return false;
   }
-  native_ufs_root_step = 58;   // doorbell and interrupt status both readable
+  traceStep (3);
   if (read32 (gHost.hc, 0x20) & kUfsFatalStatus) {
     gHost.poisoned = true;
     gHost.ready = false;
@@ -127,7 +134,7 @@ static bool hostClearUcd (void)
   for (unsigned index = 0; index < (kPrdtOffset + 16) / 4; index++) {
     words[index] = 0;
   }
-  native_ufs_root_step = 59;   // UCD cleared: the step about to submit
+  traceStep (4);
   return true;
 }
 
