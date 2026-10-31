@@ -107,6 +107,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
 
 static bool hostClearUcd (void)
 {
+  native_ufs_root_step = 57;   // a new command: the doorbell read comes first
   if (gHost.poisoned) return false;
   // Check before touching the command/response area, not just before ringing.
   if (read32 (gHost.hc, 0x58) != 0) {
@@ -115,6 +116,7 @@ static bool hostClearUcd (void)
     recordTransport (kIOReturnBusy, 15);
     return false;
   }
+  native_ufs_root_step = 58;   // doorbell and interrupt status both readable
   if (read32 (gHost.hc, 0x20) & kUfsFatalStatus) {
     gHost.poisoned = true;
     gHost.ready = false;
@@ -125,6 +127,7 @@ static bool hostClearUcd (void)
   for (unsigned index = 0; index < (kPrdtOffset + 16) / 4; index++) {
     words[index] = 0;
   }
+  native_ufs_root_step = 59;   // UCD cleared: the step about to submit
   return true;
 }
 
