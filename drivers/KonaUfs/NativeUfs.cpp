@@ -2014,6 +2014,32 @@ extern unsigned int memorystatus_available_pages;
 extern int nprocs;
 }
 
+// native-ufs-apitest=1: read the controller at fixed times and leave the trace in
+// native_ufs_root_step, 60000 + point * 10 + phase. A frozen page therefore names the point whose
+// read did not return; 60099 means every point read fine.
+static void accessProbeThread (void *, wait_result_t)
+{
+  static const unsigned points[5] = { 2, 5, 10, 20, 40 };
+  uintptr_t hc = 0;
+  unsigned previous = 0;
+  for (unsigned i = 0; i < 5; i++) {
+    IOSleep ((points[i] - previous) * 1000);
+    previous = points[i];
+    native_ufs_root_step = 60000 + i * 10;
+    if (!hc) {
+      hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+    }
+    native_ufs_root_step = 60000 + i * 10 + 1;
+    if (!hc) {
+      continue;
+    }
+    native_ufs_cap = read32 (hc, 0x00);
+    native_ufs_hcs = read32 (hc, 0x30);
+    native_ufs_root_step = 60000 + i * 10 + 2;
+  }
+  native_ufs_root_step = 60099;
+}
+
 static void statsThread (void *argument, wait_result_t)
 {
   unsigned delay = static_cast<unsigned> (reinterpret_cast<uintptr_t> (argument));
@@ -2094,6 +2120,15 @@ bool NativeUfs::start (IOService *provider)
   unsigned diagnostic = 0;
   PE_parse_boot_argn ("native-ufs-diagnostics", &diagnostic, sizeof (diagnostic));
   gRootDiagnosticEnabled = diagnostic == 1;
+  unsigned apitest = 0;
+  PE_parse_boot_argn ("native-ufs-apitest", &apitest, sizeof (apitest));
+  if (apitest) {
+    thread_t thread = nullptr;
+    if (kernel_thread_start (accessProbeThread, nullptr, &thread) == KERN_SUCCESS) {
+      thread_deallocate (thread);
+    }
+    return true;
+  }
   if (probe == 2) {
     inspect ();
   }
