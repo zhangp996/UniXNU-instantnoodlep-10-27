@@ -2579,8 +2579,12 @@ bool NativeUfs::startRoot (IOService *provider)
     // failed (1 magic, 2 version/count, 3 hash, 4 bounds, 5 names, 6 overlap, 7 attributes) and
     // the magic says whether the block is even the manifest at all.
     static char manifestWhy[48];
-    snprintf (manifestWhy, sizeof manifestWhy, "manifest s%u m%08x%08x",
-              layout->manifestStatus, layout->magic0, layout->magic1);
+    // The page keeps 40 characters, so print what separates a wrong LBA from changed content:
+    // the userdata first LBA, the four bytes at offset 32 ("NXSB" would mean an APFS block) and
+    // the magic actually read.
+    snprintf (manifestWhy, sizeof manifestWhy, "s%u l%llx b%08x m%08x",
+              layout->manifestStatus, (unsigned long long)layout->userdataFirst,
+              le32 (gScratch + 32), layout->magic0);
     rootDiagnosticFailure (manifestWhy);
     IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x, first %llx windows %u)\n",
            layout->manifestStatus, layout->magic0, layout->magic1,
