@@ -75,11 +75,14 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     prd[2] = 0;
     prd[3] = dataBytes - 1;
   }
+  native_ufs_root_step = 52;   // before the descriptor flush and the doorbell
   cacheCivac (gHost.virt, kDataOffset + dataBytes);
   hostWrite (0x20, 1);  // Acknowledge completion only; preserve error evidence.
   HardwareTransferPort port;
   clock_interval_to_deadline (timeoutUs, kMicrosecondScale, &port.deadline);
+  native_ufs_root_step = 53;   // about to write the doorbell
   hostWrite (0x58, 1);
+  native_ufs_root_step = 54;   // doorbell written, polling for completion
   UfsTransferPoll state;
   UfsTransferEnd end = pollUfsTransfer (port, state);
   gRootDiagnostic.polls = state.polls;
