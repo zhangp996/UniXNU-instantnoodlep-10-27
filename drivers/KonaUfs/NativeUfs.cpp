@@ -2014,6 +2014,44 @@ extern unsigned int memorystatus_available_pages;
 extern int nprocs;
 }
 
+// native-ufs-apitest=2: the reads are known to be safe at every time point, so this thread does
+// the host writes of the takeover one at a time, two seconds apart, and leaves the number of the
+// last write that returned in native_ufs_root_step (601xx). A frozen page then names the write
+// that wedged the interconnect.
+static void writeProbeThread (void *, wait_result_t)
+{
+  IOSleep (30 * 1000);
+  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+  native_ufs_root_step = 60100;
+  if (!hc) {
+    native_ufs_root_step = 60198;
+    return;
+  }
+  uint32_t hce = read32 (hc, 0x34);
+  native_ufs_root_step = 60101;                      // HCE read
+  write32 (hc, 0x34, hce | 1u);
+  native_ufs_root_step = 60102;                      // HCE written
+  IOSleep (2000);
+
+  uint32_t rsr = read32 (hc, 0x60);
+  native_ufs_root_step = 60103;                      // UTRLRSR read
+  write32 (hc, 0x60, rsr & ~1u);
+  native_ufs_root_step = 60104;                      // queue stopped
+  IOSleep (2000);
+
+  write32 (hc, 0x60, read32 (hc, 0x60) | 1u);
+  native_ufs_root_step = 60105;                      // queue started
+  IOSleep (2000);
+
+  write32 (hc, 0x58, 1);
+  native_ufs_root_step = 60106;                      // doorbell written
+  IOSleep (2000);
+
+  (void) read32 (hc, 0x58);
+  (void) read32 (hc, 0x20);
+  native_ufs_root_step = 60199;                      // every write returned
+}
+
 // native-ufs-apitest=1: read the controller at fixed times and leave the trace in
 // native_ufs_root_step, 60000 + point * 10 + phase. A frozen page therefore names the point whose
 // read did not return; 60099 means every point read fine.
@@ -2124,7 +2162,8 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-apitest", &apitest, sizeof (apitest));
   if (apitest) {
     thread_t thread = nullptr;
-    if (kernel_thread_start (accessProbeThread, nullptr, &thread) == KERN_SUCCESS) {
+    if (kernel_thread_start (apitest == 2 ? writeProbeThread : accessProbeThread, nullptr,
+                             &thread) == KERN_SUCCESS) {
       thread_deallocate (thread);
     }
     return true;
