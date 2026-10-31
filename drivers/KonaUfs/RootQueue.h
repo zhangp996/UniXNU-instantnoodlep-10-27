@@ -38,11 +38,18 @@ static bool hostStopQueue (const char **why)
   native_ufs_root_step = 113;   // why="firmware controller error"
     return false;
   }
+  // The bdevsw driver that reads this disk clears the interrupt enable and the interrupt
+  // aggregation, acknowledges the interrupt status, and stops both request lists before it takes
+  // the transfer list; without the aggregation clear the host can keep completions aggregated.
   hostWrite (0x24, 0);
   if (stopAfter (40051)) { *why = "stop requested"; return false; }
+  hostWrite (0x4c, 0);
+  hostWrite (0x20, read32 (gHost.hc, 0x20));
   hostWrite (0x60, 0);
   if (stopAfter (40052)) { *why = "stop requested"; return false; }
-  if (!hostWaitRegister (0x60, 1, 0)) {
+  hostWrite (0x80, 0);
+  if (!hostWaitRegister (0x60, 1, 0) || !hostWaitRegister (0x80, 1, 0) ||
+      read32 (gHost.hc, 0x58) || read32 (gHost.hc, 0x78)) {
     recordTransport (kIOReturnTimeout, 15);
     *why = "request list stop";
   native_ufs_root_step = 114;   // why="request list stop"
@@ -53,6 +60,8 @@ static bool hostStopQueue (const char **why)
 
 static bool hostStartQueue (const char **why)
 {
+  // All 32 possible slots start empty, and the host must see the flush before the base lands.
+  cacheCivac (gHost.virt, 1024);
   hostWrite (0x50, static_cast<uint32_t> (gHost.phys));
   if (stopAfter (40054)) { *why = "stop requested"; return false; }
   hostWrite (0x54, static_cast<uint32_t> (gHost.phys >> 32));
@@ -65,8 +74,6 @@ static bool hostStartQueue (const char **why)
     return false;
   }
   if (stopAfter (40056)) { *why = "stop requested"; return false; }
-  gRootDiagnostic.isBefore = read32 (gHost.hc, 0x20);
-  hostWrite (0x20, gRootDiagnostic.isBefore);
   hostWrite (0x60, 1);
   if (stopAfter (40058)) { *why = "stop requested"; return false; }
   if (!hostWaitRegister (0x60, 1, 1) || !hostWaitRegister (0x30, 3, 3)) {
