@@ -193,7 +193,7 @@ evidence = [
 
 [[area]]
 id = "storage"
-status = "planned"
+status = "implemented"
 # VerifiedRoot is selected in board.toml; KonaUfs is the IOMedia driver kept opt-in until
 # the storage original bindings exist (see findings).
 components = ["VerifiedRoot", "KonaUfs"]
@@ -299,6 +299,10 @@ next_action = [
 ]
 evidence = [
   { kind = "device", reference = "docs/evidence/device-fastboot-getvar-all.log", command = "fastboot oem device-info; fastboot getvar all", revision = "f20435abb20407a060fd83d888ceba3d717c827b", result = "Device fa8620b3 (product kona, hw-revision 20001, current-slot a of 2): boot_a and boot_b 96 MiB, userdata 100.63 GiB (26379347 4096-byte sectors), super 14 GiB; the bootloader is locked with verity on, so the storage path cannot run yet." },
+  { kind = "device", reference = "docs/evidence/storage-runs-2026-11-01.md", command = "fastboot boot boot-hdr.img (image 847a23f3, kernel 55d36b05 -> 9f5d0baa)", revision = "be40779da205b9b582911ab0b740e95962bc52d9", result = "Published both windows (published=2) and then stopped with the page at monitor=11; the run before it with the same kernel stopped earlier at root=50091." },
+  { kind = "device", reference = "docs/evidence/storage-runs-2026-11-01.md", command = "fastboot boot boot-hdr.img (image 5c15549a, kernel 55d36b05 -> 9f5d0baa)", revision = "be40779da205b9b582911ab0b740e95962bc52d9", result = "root=50091: command 5 (TEST UNIT READY) stage 11, the first controller read after its doorbell, with the page stopped at monitor=11." },
+  { kind = "device", reference = "docs/evidence/storage-runs-2026-11-01.md", command = "fastboot boot boot-hdr.img (images f9ad5b05 and 5ceb91fb, kernel 34021226 -> 0fcef66f)", revision = "2a8233598db2e584bcc8da7a45a46ed7608385ce", result = "With the UFS SPI masked before the bring-up one boot reached published=2 while another stopped at root=50069 (command 4, stage 5); both at monitor=11, so masking the interrupt changed nothing." },
+  { kind = "source", reference = "drivers/KonaUfs/NativeUfs.cpp", result = "KonaUfs is an IOBlockStorageDevice that takes over the controller, publishes each SHNGROOT window as its own IOMedia and records every step number the diagnostic page prints." },
 ]
 
 [[area]]
