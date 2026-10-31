@@ -2368,6 +2368,27 @@ bool NativeUfs::start (IOService *provider)
     }
   }
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
+  // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
+  // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
+  // XNU would have to service is INTID 32 + 265 = 297 (bank 9, bit 9). This driver polls and has
+  // no handler, and the machine dies 50-150 ms after the SSU whatever the driver is doing, so an
+  // unhandled level interrupt is the cheapest thing to rule out.
+  unsigned gicMask = 0;
+  PE_parse_boot_argn ("native-ufs-gic-mask", &gicMask, sizeof (gicMask));
+  if (gicMask) {
+    volatile uint32_t *gicd = (volatile uint32_t *) ml_io_map (0x17a00000ULL, 0x2000);
+    if (gicd) {
+      const unsigned intid = 297;
+      const unsigned bank = intid / 32;
+      const uint32_t bit = 1U << (intid % 32);
+      const uint32_t enabled = gicd[0x100 / 4 + bank];
+      const uint32_t pending = gicd[0x200 / 4 + bank];
+      gicd[0x180 / 4 + bank] = bit;   // GICD_ICENABLER
+      gicd[0x280 / 4 + bank] = bit;   // GICD_ICPENDR
+      IOLog ("NativeUfs: GIC SPI 265 (INTID %u) masked: enable=%08x pending=%08x\n",
+             intid, enabled, pending);
+    }
+  }
   unsigned apitest = 0;
   PE_parse_boot_argn ("native-ufs-apitest", &apitest, sizeof (apitest));
   if (apitest) {
