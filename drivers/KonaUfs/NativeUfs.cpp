@@ -2201,9 +2201,9 @@ static unsigned gHeartbeatWidth = 0, gHeartbeatHeight = 0, gHeartbeatTries = 0;
 static void paintStepBits (uint32_t code)
 {
   if (!gHeartbeatBase) {
-    if (gHeartbeatTries++ > 10) {
-      return;
-    }
+    // The framebuffer is published later than the driver match, so keep trying: a ten-try window
+    // (one second) is what kept the strip off the panel on 2026-10-31.
+    gHeartbeatTries++;
     // vc_info is only forward declared in this build, so read the published layout directly:
     // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (paintAlive above).
     const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
@@ -2220,6 +2220,7 @@ static void paintStepBits (uint32_t code)
     gHeartbeatStride = rowbytes / 4;
     gHeartbeatWidth = width;
     gHeartbeatHeight = height;
+    IOLog ("NativeUfs: heartbeat mapped %ux%u after %u tries\n", width, height, gHeartbeatTries);
   }
   if (gHeartbeatWidth < 8 + 16 * 32) {
     return;
@@ -2244,6 +2245,7 @@ static void paintStepBits (uint32_t code)
 
 static void heartbeatEntry (void *, wait_result_t)
 {
+  IOLog ("NativeUfs: heartbeat thread running\n");
   for (;;) {
     paintStepBits (native_ufs_root_step);
     IOSleep (100);
@@ -2554,13 +2556,24 @@ bool NativeUfs::startRoot (IOService *provider)
   }
   native_ufs_root_step = 2;
   RootLayout *layout = static_cast<RootLayout *> (IOMalloc (sizeof (RootLayout)));
-  if (!layout || !findRootLayout (layout, &why)) {
+  // Reads go through the same controller that wedges elsewhere, so a missing manifest is retried
+  // before it is treated as a board fact: run 5 rejected a manifest that run 4 had accepted.
+  bool read = false;
+  for (unsigned attempt = 0; layout && attempt < 3 && !read; attempt++) {
+    if (attempt) IODelay (20000);
+    read = findRootLayout (layout, &why);
+  }
+  if (!layout || !read) {
     rootDiagnosticFailure (layout ? why : "root layout allocation failed");
     IOLog ("NativeUfs: root layout failed: %s\n", why);
     if (layout) IOFree (layout, sizeof (RootLayout));
     return false;
   }
   native_ufs_root_step = 3;
+  for (unsigned attempt = 0; attempt < 2 && layout->manifestStatus != 0; attempt++) {
+    IODelay (20000);
+    findRootLayout (layout, &why);
+  }
   if (layout->manifestStatus != 0) {
     rootDiagnosticFailure ("root manifest rejected");
     IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x)\n",
