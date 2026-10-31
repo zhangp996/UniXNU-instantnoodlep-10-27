@@ -263,14 +263,25 @@ static IOReturn hostRead4k (uint8_t lun, uint64_t lba, uint32_t blocks, void *ds
   if (!gHost.ready || !dst || !blocks || blocks > kDataMax / 4096 || lba > 0xffffffffULL - (blocks - 1)) {
     return kIOReturnBadArgument;
   }
+  // Data commands occasionally wedge the interconnect while every command without a payload
+  // returns, so the transfer is issued in small pieces: the DMA burst is 8 KiB at most and the
+  // command that stalls (if any) is small enough to be harmless.
   IOLockLock (gHost.lock);
-  gRootDiagnostic.lba = lba;
-  uint8_t cdb[10] = { 0x28, 0, uint8_t (lba >> 24), uint8_t (lba >> 16), uint8_t (lba >> 8), uint8_t (lba),
-                      0, uint8_t (blocks >> 8), uint8_t (blocks), 0 };
-  uint32_t scsi = 0;
-  IOReturn status = hostScsi (lun, cdb, 10, true, blocks * 4096U, 1000000, &scsi);
-  if (status == kIOReturnSuccess) {
-    memcpy (dst, gHost.virt + kDataOffset, blocks * 4096U);
+  IOReturn status = kIOReturnSuccess;
+  uint8_t *out = static_cast<uint8_t *> (dst);
+  const uint32_t kChunkBlocks = 2;
+  for (uint32_t done = 0; done < blocks && status == kIOReturnSuccess; done += kChunkBlocks) {
+    const uint32_t piece = (blocks - done < kChunkBlocks) ? blocks - done : kChunkBlocks;
+    const uint64_t pieceLba = lba + done;
+    gRootDiagnostic.lba = pieceLba;
+    uint8_t cdb[10] = { 0x28, 0, uint8_t (pieceLba >> 24), uint8_t (pieceLba >> 16),
+                        uint8_t (pieceLba >> 8), uint8_t (pieceLba),
+                        0, uint8_t (piece >> 8), uint8_t (piece), 0 };
+    uint32_t scsi = 0;
+    status = hostScsi (lun, cdb, 10, true, piece * 4096U, 1000000, &scsi);
+    if (status == kIOReturnSuccess) {
+      memcpy (out + done * 4096U, gHost.virt + kDataOffset, piece * 4096U);
+    }
   }
   IOLockUnlock (gHost.lock);
   return status;
