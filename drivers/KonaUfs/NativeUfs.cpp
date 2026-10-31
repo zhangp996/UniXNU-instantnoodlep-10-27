@@ -1239,7 +1239,7 @@ static bool hostBringUp (const char **why)
       return false;
     }
     native_ufs_root_step = 60;   // wake accepted: about to sleep 50 ms
-    IOSleep (50);
+    IODelay (50000);
     native_ufs_root_step = 61;   // the sleep returned
   }
   gRootDiagnostic.stage = "LUN ready";
@@ -1251,7 +1251,7 @@ static bool hostBringUp (const char **why)
       return true;
     }
     if (gHost.poisoned) break;
-    IOSleep (10);
+    IODelay (10000);
   }
   gHost.ready = false;
   *why = "LUN 0 not ready";
