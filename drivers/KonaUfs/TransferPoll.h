@@ -5,11 +5,10 @@ enum class UfsTransferEnd { Completed, Fatal, Timeout };
 struct UfsTransferPoll {
   uint32_t polls = 0, doorbellSeen = 0, interruptSeen = 0, ocs = 15;
 };
-// 0x71880 covers UFS HCI bits 7, 11, 12, 16, 17 and 18. Bit 24 (0x1000000) is not in the HCI
-// list: run U read is=1000000 after a completed command and the very next command never completed,
-// so it is treated as fatal from now on - the point is to stop before submitting rather than to
-// name the bit.
-static constexpr uint32_t kUfsFatalStatus = 0x71880U | 0x1000000U;
+// 0x71880 covers UFS HCI bits 7, 11, 12, 16, 17 and 18. A reading of bit 24 on 2026-11-01 was a
+// misread photograph: the authoritative capture of that run is is=00000000, so the mask is left
+// exactly as it was. Unknown vendor bits must not be made fatal on the strength of one image.
+static constexpr uint32_t kUfsFatalStatus = 0x71880U;
 
 template <class Port>
 static UfsTransferEnd pollUfsTransfer(Port &port, UfsTransferPoll &state)
