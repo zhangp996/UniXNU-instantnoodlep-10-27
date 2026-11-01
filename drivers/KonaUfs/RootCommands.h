@@ -144,14 +144,11 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   // Every eighth command also samples the UFS link itself: PA_LINKSTATE 0x2b is 1 while the link is
   // up and 0 once it dropped, which is the difference between a device that went to sleep under the
   // traffic and a controller that stopped answering on a healthy link.
-  static uint32_t gLastLink = 0xffffffffU;
-  if (!(gRootDiagnostic.command & 7U)) {
-    uint32_t link = 0xffffffffU;
-    uicGet (0x2b, &link);
-    gLastLink = link;
-  }
-  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x g=%x l=%x",
-            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), (agg & 1U) | ((agg >> 30) & 2U), gLastLink & 0xfU);
+  // The block being read matters more than the link now: twice with pacing the machine stopped on
+  // command 268 and 270 at weights of 100 and 200 ms, so the stop follows the position in the
+  // stream rather than the clock, and the last LBA says whether it is a particular block.
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x lba=%x",
+            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), static_cast<uint32_t> (gRootDiagnostic.lba & 0xffffffffU));
   native_ufs_root_failure = gLastControllerStatus;
   traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
