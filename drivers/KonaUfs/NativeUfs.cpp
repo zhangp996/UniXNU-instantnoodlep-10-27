@@ -2805,9 +2805,13 @@ static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
     unsigned length = 0;
     while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
     if (length < 4 || length > 12 || cdb[at + length] != 0) continue;
-    const char *s = reinterpret_cast<const char *> (cdb + at);
-    if (strncmp (s, "ldoa", 4) && strncmp (s, "smpa", 4) && strncmp (s, "ldoc", 4)) continue;
-    for (unsigned i = 0; i < length; i++) name[i] = s[i];
+    // Compare the prefix byte by byte: the mapping is volatile, and a cast to const char * would
+    // be casting that qualifier away.
+    const bool ldoa = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a';
+    const bool smpa = cdb[at] == 's' && cdb[at + 1] == 'm' && cdb[at + 2] == 'p' && cdb[at + 3] == 'a';
+    const bool ldoc = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'c';
+    if (!ldoa && !smpa && !ldoc) continue;
+    for (unsigned i = 0; i < length; i++) name[i] = static_cast<char> (cdb[at + i]);
     name[length] = 0;
     follow0 = Word::at (cdb + at + 16);
     follow1 = Word::at (cdb + at + 20);
