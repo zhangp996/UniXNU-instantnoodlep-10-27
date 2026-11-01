@@ -2796,8 +2796,30 @@ static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
     }
     at += length;
   }
-  snprintf (reason, capacity, "v%x m%x n%u c%u %s", version, magic, entries, runs & 0x3ffU,
-            name[0] ? name : "-");
+  // The region holds names, so look for one of the five UFS rails and print the two words that
+  // follow it: whichever of them reads as a small resource address is the entry layout this
+  // firmware uses, and that is the last unknown before a vote can be written.
+  uint32_t follow0 = 0, follow1 = 0;
+  bool matched = false;
+  for (unsigned at = 0; at + 40 < 0x20000 && !matched; at++) {
+    unsigned length = 0;
+    while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
+    if (length < 4 || length > 12 || cdb[at + length] != 0) continue;
+    const char *s = reinterpret_cast<const char *> (cdb + at);
+    if (strncmp (s, "ldoa", 4) && strncmp (s, "smpa", 4) && strncmp (s, "ldoc", 4)) continue;
+    for (unsigned i = 0; i < length; i++) name[i] = s[i];
+    name[length] = 0;
+    follow0 = Word::at (cdb + at + 16);
+    follow1 = Word::at (cdb + at + 20);
+    matched = true;
+  }
+  if (matched) {
+    // Only the name and the two words fit the row: the header is already known.
+    snprintf (reason, capacity, "%s a=%x b=%x", name, follow0, follow1);
+  } else {
+    snprintf (reason, capacity, "v%x m%x n%u c%u %s", version, magic, entries, runs & 0x3ffU,
+              name[0] ? name : "-");
+  }
   *code = 64000U + (entries & 0xfffU);
 }
 
