@@ -2799,27 +2799,33 @@ static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
   // The region holds names, so look for one of the five UFS rails and print the two words that
   // follow it: whichever of them reads as a small resource address is the entry layout this
   // firmware uses, and that is the last unknown before a vote can be written.
-  uint32_t follow0 = 0, follow1 = 0;
+  uint32_t follow0 = 0, follow1 = 0, follow2 = 0;
   bool matched = false;
-  for (unsigned at = 0; at + 40 < 0x20000 && !matched; at++) {
-    unsigned length = 0;
-    while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
-    if (length < 4 || length > 12 || cdb[at + length] != 0) continue;
-    // Compare the prefix byte by byte: the mapping is volatile, and a cast to const char * would
-    // be casting that qualifier away.
-    const bool ldoa = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a';
-    const bool smpa = cdb[at] == 's' && cdb[at + 1] == 'm' && cdb[at + 2] == 'p' && cdb[at + 3] == 'a';
-    const bool ldoc = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'c';
-    if (!ldoa && !smpa && !ldoc) continue;
-    for (unsigned i = 0; i < length; i++) name[i] = static_cast<char> (cdb[at + i]);
-    name[length] = 0;
-    follow0 = Word::at (cdb + at + 16);
-    follow1 = Word::at (cdb + at + 20);
-    matched = true;
+  // Look for the rail this port needs first, then fall back to any rail name: the first run that
+  // matched found smpa4, which tells us the entries are there but not what the word order means.
+  for (unsigned pass = 0; pass < 2 && !matched; pass++) {
+    for (unsigned at = 0; at + 40 < 0x20000 && !matched; at++) {
+      unsigned length = 0;
+      while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
+      if (length < 4 || length > 12 || cdb[at + length] != 0) continue;
+      // Compare byte by byte: the mapping is volatile and a cast to const char * would drop that.
+      const bool ldoa18 = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a'
+        && cdb[at + 4] == '1' && cdb[at + 5] == '8';
+      const bool ldoa = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a';
+      const bool smpa = cdb[at] == 's' && cdb[at + 1] == 'm' && cdb[at + 2] == 'p' && cdb[at + 3] == 'a';
+      const bool ldoc = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'c';
+      if (pass == 0 ? !ldoa18 : !(ldoa || smpa || ldoc)) continue;
+      for (unsigned i = 0; i < length; i++) name[i] = static_cast<char> (cdb[at + i]);
+      name[length] = 0;
+      follow0 = Word::at (cdb + at + 16);
+      follow1 = Word::at (cdb + at + 20);
+      follow2 = Word::at (cdb + at + 24);
+      matched = true;
+    }
   }
   if (matched) {
-    // Only the name and the two words fit the row: the header is already known.
-    snprintf (reason, capacity, "%s a=%x b=%x", name, follow0, follow1);
+    // Only the name and three words fit the row: the header is already known.
+    snprintf (reason, capacity, "%s a=%x b=%x c=%x", name, follow0, follow1, follow2);
   } else {
     snprintf (reason, capacity, "v%x m%x n%u c%u %s", version, magic, entries, runs & 0x3ffU,
               name[0] ? name : "-");
