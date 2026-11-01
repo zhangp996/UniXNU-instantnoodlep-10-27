@@ -43,6 +43,12 @@ static uint32_t gPostDelay;
 // list, which is the interface's own recovery, and UTRLRDY (HCS bit 2) reports both edges.
 static bool gRetried;
 
+// native-ufs-reset-every=<n>: stop and restart the request list every n commands. The block at the
+// address a 200 ms run stopped on reads fine on its own, so what accumulates over about 260 commands
+// is controller or request-list state, and a periodic UTRLRSR cycle is the cheapest way to tell.
+static uint32_t gResetEvery;
+static uint32_t gTagRotate;
+
 static bool hostResetTransport (void)
 {
   write32 (gHost.hc, 0x60, 0);
@@ -85,6 +91,10 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     return recordTransport (kIOReturnIOError, *ocs);
   }
   gRootDiagnostic.command++;
+  if (gTagRotate) {
+    // The command tag is byte 3 of the UPIU header and every command so far used zero.
+    gHost.virt[kUcdOffset + 3] = static_cast<uint8_t> (gRootDiagnostic.command & 0x1fU);
+  }
   gRootDiagnostic.type = gHost.virt[kUcdOffset];
   gRootDiagnostic.lun = gHost.virt[kUcdOffset + 2];
   gRootDiagnostic.opcode = gHost.virt[kUcdOffset + (gRootDiagnostic.type == 1 ? 16 : 12)];
@@ -147,6 +157,11 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     return recordTransport (end == UfsTransferEnd::Timeout ? kIOReturnTimeout : kIOReturnIOError, *ocs);
   }
   gRetried = false;
+  if (gResetEvery && !(gRootDiagnostic.command % gResetEvery)) {
+    // A periodic stop/start of the request list. The block a 200 ms run died on reads fine on its
+    // own, so what accumulates over about 260 commands is controller or request-list state.
+    hostResetTransport ();
+  }
   traceStep (13);
   // 15 separates the cache maintenance from the response read: a run that stops at 13 died inside
   // cacheInvalidate, one that stops at 15 died reading the response out of the same buffer. Both are
