@@ -1043,6 +1043,132 @@ static void hostWrite (unsigned offset, uint32_t value)
 
 #include "RootQueue.h"
 
+// ---- RPMh rail votes -------------------------------------------------------------------------
+// The five UFS supplies are PMIC rails that nothing votes for while this driver runs. The entry
+// layout, the TCS register sequence and the three-register vote are the ones the sheng packages
+// use (package/QcomRpmh.c and WifiProbe.cpp): a 24-byte command-database entry with the resource
+// address at +16, and an active TCS request triggered through the control register.
+struct RpmhLayout {
+  uint32_t stride, cmdStride, irqStatus, irqClear, waitForCmpl, control, status, cmdEnable, msgId, cmdAddr, cmdData;
+};
+
+static RpmhLayout rpmhLayout (uint32_t drvId)
+{
+  if (((drvId >> 16) & 0xffU) >= 3) {
+    return { 672, 24, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c, 0x34, 0x38, 0x3c };
+  }
+  return { 672, 20, 0x04, 0x08, 0x10, 0x14, 0x18, 0x1c, 0x30, 0x34, 0x38 };
+}
+
+static uint16_t rpmhLe16 (const volatile uint8_t *p)
+{
+  return static_cast<uint16_t> (p[0]) | (static_cast<uint16_t> (p[1]) << 8);
+}
+static uint32_t rpmhLe32 (const volatile uint8_t *p)
+{
+  return uint32_t (rpmhLe16 (p)) | (uint32_t (rpmhLe16 (p + 2)) << 16);
+}
+
+// Walk the database for the 8-byte id. The slave-record header is not used: the magic on this
+// firmware does not match the reference constant, and the entries themselves are laid out exactly
+// as the reference describes (name at +0, address at +16, aux length and offset at +20 and +22).
+static bool rpmhFindRail (const volatile uint8_t *db, size_t bytes, const char *name, uint32_t *address)
+{
+  unsigned length = 0;
+  while (name[length] && length < 8) length++;
+  if (!length) return false;
+  for (size_t at = 0; at + 24 <= bytes; at++) {
+    if (db[at] != static_cast<uint8_t> (name[0])) continue;
+    bool same = true;
+    for (unsigned i = 0; i < 8 && same; i++) {
+      const uint8_t want = i < length ? static_cast<uint8_t> (name[i]) : 0;
+      same = db[at + i] == want;
+    }
+    if (!same) continue;
+    const uint32_t addr = rpmhLe32 (db + at + 16);
+    if (!addr) continue;
+    *address = addr;
+    return true;
+  }
+  return false;
+}
+
+struct RpmhWrite { uint32_t offset, value; };
+
+static unsigned rpmhActiveRequest (const RpmhLayout &l, unsigned tcs, const uint32_t *addresses,
+                                   const uint32_t *values, unsigned count, RpmhWrite *w)
+{
+  if (!count || count > 4) return 0;
+  const uint32_t base = l.stride * tcs;
+  unsigned n = 0;
+  w[n++] = { base + l.control, 0 };
+  w[n++] = { l.irqClear, 1U << tcs };
+  for (unsigned c = 0; c < count; c++) {
+    const uint32_t cmd = base + l.cmdStride * c;
+    w[n++] = { cmd + l.msgId, 8U | (1U << 8) | (1U << 16) };
+    w[n++] = { cmd + l.cmdAddr, addresses[c] };
+    w[n++] = { cmd + l.cmdData, values[c] };
+  }
+  const uint32_t mask = (1U << count) - 1U;
+  w[n++] = { base + l.waitForCmpl, mask };
+  w[n++] = { base + l.cmdEnable, mask };
+  w[n++] = { base + l.control, 1U << 16 };
+  w[n++] = { base + l.control, (1U << 16) | (1U << 24) };
+  return n;
+}
+
+static unsigned rpmhFinish (const RpmhLayout &l, unsigned tcs, RpmhWrite *w)
+{
+  const uint32_t base = l.stride * tcs;
+  w[0] = { l.irqClear, 1U << tcs };
+  w[1] = { base + l.control, 0 };
+  w[2] = { base + l.cmdEnable, 0 };
+  return 3;
+}
+
+static void rpmhSend (uintptr_t rsc, const RpmhLayout &l, unsigned tcs, uint32_t address, uint32_t value)
+{
+  RpmhWrite w[16];
+  const unsigned n = rpmhActiveRequest (l, tcs, &address, &value, 1, w);
+  for (unsigned i = 0; i < n; i++) write32 (rsc, 0xd00 + w[i].offset, w[i].value);
+  __asm__ volatile ("dsb sy" ::: "memory");
+  IOSleep (2);
+  const unsigned m = rpmhFinish (l, tcs, w);
+  for (unsigned i = 0; i < m; i++) write32 (rsc, 0xd00 + w[i].offset, w[i].value);
+}
+
+// The five PMIC rails behind ufshc, with the initial voltages the board DTS gives them. The GDSC
+// that vdd-hba names is a GCC register, not an RPMh resource, so it is not in this list.
+struct UfsRail { const char *name; uint32_t millivolts; };
+
+static char gVoteReport[40];
+
+static uint32_t voteUfsRails (void)
+{
+  static const UfsRail rails[] = {
+    { "ldoa18", 2498 }, { "ldoa7", 1200 }, { "smpa5", 1800 }, { "ldoc1", 1200 }, { "ldoa10", 1200 },
+  };
+  volatile uint8_t *db = reinterpret_cast<volatile uint8_t *> (ml_io_map (0x80860000ULL, 0x20000));
+  uintptr_t rsc = mapRegisters (0x18220000ULL, 0x10000);
+  if (!db || !rsc) return 0;
+  const RpmhLayout layout = rpmhLayout (read32 (rsc, 0));
+  // Done interrupts of the two active TCSs, the way the sheng packages leave them.
+  write32 (rsc, 0xd00, 0x3);
+  __asm__ volatile ("dsb sy" ::: "memory");
+  uint32_t voted = 0;
+  for (unsigned i = 0; i < sizeof rails / sizeof rails[0]; i++) {
+    uint32_t address = 0;
+    if (!rpmhFindRail (db, 0x20000, rails[i].name, &address)) {
+      continue;
+    }
+    rpmhSend (rsc, layout, 0, address + 8, 4);            // mode: HPM (the DTS allows <2 4>)
+    rpmhSend (rsc, layout, 0, address, rails[i].millivolts);
+    rpmhSend (rsc, layout, 0, address + 4, 1);            // enable
+    voted |= 1U << i;
+  }
+  return voted;
+}
+
 // native-ufs-link=1 reads the link this way, and the command status line samples it every eighth
 // command, so the helper has to be defined before RootCommands.h: both live in this anonymous
 // namespace, and a forward declaration at file scope would only declare a different function.
@@ -2837,6 +2963,20 @@ bool NativeUfs::startRoot (IOService *provider)
 {
   const char *why = "";
   native_ufs_root_step = 1;
+  // native-ufs-rpmh-vote=1 votes the five UFS rails and stops with the bitmap of what was found
+  // and written; =2 votes and then runs the normal bring-up, which is the run that says whether
+  // the rails were the missing piece.
+  unsigned rpmhVote = 0;
+  PE_parse_boot_argn ("native-ufs-rpmh-vote", &rpmhVote, sizeof (rpmhVote));
+  if (rpmhVote) {
+    const uint32_t voted = voteUfsRails ();
+    snprintf (gVoteReport, sizeof gVoteReport, "voted %x of 1f", voted);
+    native_ufs_root_step = 66000U + (voted & 0x1fU);
+    if (rpmhVote == 1) {
+      rootDiagnosticFailure (gVoteReport);
+      return false;
+    }
+  }
   unsigned rpmh = 0;
   PE_parse_boot_argn ("native-ufs-rpmh", &rpmh, sizeof (rpmh));
   if (rpmh) {
