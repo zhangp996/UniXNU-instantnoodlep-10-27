@@ -37,6 +37,35 @@ static uint32_t loadBe32 (const uint8_t *at)
 // the buffer. Zero means no wait, which is what every run so far did.
 static uint32_t gPostDelay;
 
+// One transport reset per command. porting/drivers.md asks the transport boundary to define
+// "timeout, retry and disconnect handling", and this driver had none: a command that did not
+// complete marked the controller poisoned forever. UTRLRSR (0x60) stops and restarts the request
+// list, which is the interface's own recovery, and UTRLRDY (HCS bit 2) reports both edges.
+static bool gRetried;
+
+static bool hostResetTransport (void)
+{
+  write32 (gHost.hc, 0x60, 0);
+  __asm__ volatile ("dsb sy" ::: "memory");
+  for (unsigned i = 0; i < 2000; i++) {
+    if (!(read32 (gHost.hc, 0x30) & 0x4U)) {
+      break;
+    }
+    IODelay (10);
+  }
+  write32 (gHost.hc, 0x20, 0xffffffffU);
+  write32 (gHost.hc, 0x58, 0);
+  write32 (gHost.hc, 0x60, 1);
+  __asm__ volatile ("dsb sy" ::: "memory");
+  for (unsigned i = 0; i < 2000; i++) {
+    if (read32 (gHost.hc, 0x30) & 0x4U) {
+      return true;
+    }
+    IODelay (10);
+  }
+  return false;
+}
+
 static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t timeoutUs, uint32_t *ocs)
 {
   *ocs = 15;
@@ -105,12 +134,19 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   gRootDiagnostic.isSeen = state.interruptSeen;
   *ocs = state.ocs;
   if (end != UfsTransferEnd::Completed) {
-    // No cancel/reset/retry: the controller may still own the buffer, even
-    // with DB=0. Keep it allocated and prohibit all subsequent CPU writes.
+    // A timeout gets one transport reset and one resubmission: the interface's own stop/start
+    // cycle, which is what porting/drivers.md means by retry handling. A fatal status or a second
+    // failure still quarantines the allocation, because the controller may own the buffer.
+    if (end == UfsTransferEnd::Timeout && !gRetried && hostResetTransport ()) {
+      gRetried = true;
+      return hostSubmit (direction, dataBytes, timeoutUs, ocs);
+    }
+    gRetried = false;
     gHost.poisoned = true;
     gHost.ready = false;
     return recordTransport (end == UfsTransferEnd::Timeout ? kIOReturnTimeout : kIOReturnIOError, *ocs);
   }
+  gRetried = false;
   traceStep (13);
   // 15 separates the cache maintenance from the response read: a run that stops at 13 died inside
   // cacheInvalidate, one that stops at 15 died reading the response out of the same buffer. Both are
