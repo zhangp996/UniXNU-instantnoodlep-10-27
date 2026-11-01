@@ -2786,21 +2786,23 @@ static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
   const uint32_t version = Word::at (cdb);
   const uint32_t magic = Word::at (cdb + 4);
   const uint32_t entries = Word::at (cdb + 8);
-  // Scan for the first NUL-terminated printable run of at least four characters that contains
-  // "ufs"; that run is either the resource name or part of the string table beside it.
-  for (unsigned at = 0; at + 24 < 0x20000 && !name[0]; at++) {
+  // Count the NUL-terminated printable runs of at least four characters and keep the first one.
+  // The earlier probe only looked for "ufs" and found nothing, which cannot tell an empty region
+  // from a region whose names are laid out differently; the count and one sample name can.
+  unsigned runs = 0;
+  for (unsigned at = 0; at + 24 < 0x20000; at++) {
     unsigned length = 0;
     while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
     if (length < 4 || cdb[at + length] != 0) continue;
-    bool hasUfs = false;
-    for (unsigned i = 0; i + 3 <= length; i++) {
-      if (cdb[at + i] == 'u' && cdb[at + i + 1] == 'f' && cdb[at + i + 2] == 's') hasUfs = true;
+    runs++;
+    if (!name[0]) {
+      for (unsigned i = 0; i < length && i + 1 < sizeof name; i++) name[i] = static_cast<char> (cdb[at + i]);
+      name[length < sizeof name ? length : sizeof name - 1] = 0;
     }
-    if (!hasUfs) continue;
-    for (unsigned i = 0; i < length && i + 1 < sizeof name; i++) name[i] = static_cast<char> (cdb[at + i]);
-    name[length < sizeof name ? length : sizeof name - 1] = 0;
+    at += length;
   }
-  snprintf (reason, capacity, "v%x m%x n%u %s", version, magic, entries, name[0] ? name : "-");
+  snprintf (reason, capacity, "v%x m%x n%u c%u %s", version, magic, entries, runs & 0x3ffU,
+            name[0] ? name : "-");
   *code = 64000U + (entries & 0xfffU);
 }
 
