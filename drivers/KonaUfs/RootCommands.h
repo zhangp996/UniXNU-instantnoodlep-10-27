@@ -141,8 +141,17 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   }
   const uint32_t axi = gStatusGcc ? read32 (gStatusGcc, GCC_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
   const uint32_t agg = gStatusGcc ? read32 (gStatusGcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
-  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x g=%x",
-            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), (agg & 1U) | ((agg >> 30) & 2U));
+  // Every eighth command also samples the UFS link itself: PA_LINKSTATE 0x2b is 1 while the link is
+  // up and 0 once it dropped, which is the difference between a device that went to sleep under the
+  // traffic and a controller that stopped answering on a healthy link.
+  static uint32_t gLastLink = 0xffffffffU;
+  if (!(gRootDiagnostic.command & 7U)) {
+    uint32_t link = 0xffffffffU;
+    uicGet (0x2b, &link);
+    gLastLink = link;
+  }
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x g=%x l=%x",
+            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), (agg & 1U) | ((agg >> 30) & 2U), gLastLink & 0xfU);
   native_ufs_root_failure = gLastControllerStatus;
   traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);

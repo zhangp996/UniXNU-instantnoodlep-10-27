@@ -191,6 +191,10 @@ static uintptr_t mapRegisters (uint64_t phys, uint64_t length)
   return static_cast<uintptr_t> (ml_io_map (phys, length));
 }
 
+// Defined with the other UIC helpers below; the command status line samples the link state through
+// it, and that header is included before the definition.
+static bool uicGet (uint32_t mib, uint32_t *value);
+
 void NativeUfs::inspect (void)
 {
   OSSharedPtr<IOMemoryMap> gccMap, memPhyMap;
