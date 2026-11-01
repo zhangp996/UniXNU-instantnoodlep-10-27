@@ -191,10 +191,6 @@ static uintptr_t mapRegisters (uint64_t phys, uint64_t length)
   return static_cast<uintptr_t> (ml_io_map (phys, length));
 }
 
-// Defined with the other UIC helpers below; the command status line samples the link state through
-// it, and that header is included before the definition.
-static bool uicGet (uint32_t mib, uint32_t *value);
-
 void NativeUfs::inspect (void)
 {
   OSSharedPtr<IOMemoryMap> gccMap, memPhyMap;
@@ -1047,6 +1043,31 @@ static void hostWrite (unsigned offset, uint32_t value)
 
 #include "RootQueue.h"
 
+// native-ufs-link=1 reads the link this way, and the command status line samples it every eighth
+// command, so the helper has to be defined before RootCommands.h: both live in this anonymous
+// namespace, and a forward declaration at file scope would only declare a different function.
+static bool uicGet (uint32_t mib, uint32_t *value)
+{
+  *value = 0xffffffffU;
+  const uint32_t is = read32 (gHost.hc, 0x20);
+  if (is & 0x400U) {
+    write32 (gHost.hc, 0x20, 0x400U);
+  }
+  write32 (gHost.hc, 0x94, mib);
+  write32 (gHost.hc, 0x98, 0);
+  write32 (gHost.hc, 0x9c, 0);
+  write32 (gHost.hc, 0x90, 0x01U);   // DME_GET
+  for (unsigned i = 0; i < 200; i++) {
+    if (read32 (gHost.hc, 0x20) & 0x400U) {
+      write32 (gHost.hc, 0x20, 0x400U);
+      *value = read32 (gHost.hc, 0x9c);
+      return true;
+    }
+    IODelay (100);
+  }
+  return false;
+}
+
 #include "RootCommands.h"
 
 // Bring the live controller up for reading: map, SMMU pass-through for the UFS stream, take over
@@ -1097,32 +1118,6 @@ static void enableUfsBranches (void)
   const uint32_t gdscAfter = read32 (gcc, GCC_UFS_PHY_GDSCR);
   IOLog ("NativeUfs: power: gdsc %08x -> %08x (%u writes), %u branches enabled, %u already on, %u still CLK_OFF\n",
          gdscBefore, gdscAfter, gdscWrites, enabled, already, stillOff);
-}
-
-// native-ufs-link=1: read the controller's clock and link state before anything is submitted.
-// The UIC doorbell is register 0x90, the arguments live at 0x94/0x98/0x9c and completion is IS
-// bit 0x400; DME_GET returns its value in argument3 (0x9c). MIB attributes are the UFS ones:
-// 0x2b PA_LINKSTATE, 0x2e connected TX lanes, 0x2f connected RX lanes.
-static bool uicGet (uint32_t mib, uint32_t *value)
-{
-  *value = 0xffffffffU;
-  const uint32_t is = read32 (gHost.hc, 0x20);
-  if (is & 0x400U) {
-    write32 (gHost.hc, 0x20, 0x400U);
-  }
-  write32 (gHost.hc, 0x94, mib);
-  write32 (gHost.hc, 0x98, 0);
-  write32 (gHost.hc, 0x9c, 0);
-  write32 (gHost.hc, 0x90, 0x01U);   // DME_GET
-  for (unsigned i = 0; i < 200; i++) {
-    if (read32 (gHost.hc, 0x20) & 0x400U) {
-      write32 (gHost.hc, 0x20, 0x400U);
-      *value = read32 (gHost.hc, 0x9c);
-      return true;
-    }
-    IODelay (100);
-  }
-  return false;
 }
 
 static bool hostBringUp (const char **why)
