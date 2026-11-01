@@ -33,6 +33,10 @@ static uint32_t loadBe32 (const uint8_t *at)
 // the UTRD data direction (0 none, 1 from host, 2 to host). Direction 1 is reachable only through hostWrite4k, which
 // confines it to the persistent store window. Returns the overall command status
 // (0 = completed) in *ocs. Timeout/fatal status quarantines the allocation.
+// native-ufs-post-delay=<us> waits that long after the doorbell clears and before the CPU touches
+// the buffer. Zero means no wait, which is what every run so far did.
+static uint32_t gPostDelay;
+
 static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t timeoutUs, uint32_t *ocs)
 {
   *ocs = 15;
@@ -108,7 +112,14 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     return recordTransport (end == UfsTransferEnd::Timeout ? kIOReturnTimeout : kIOReturnIOError, *ocs);
   }
   traceStep (13);
+  // 15 separates the cache maintenance from the response read: a run that stops at 13 died inside
+  // cacheInvalidate, one that stops at 15 died reading the response out of the same buffer. Both are
+  // CPU touches of memory the controller may still be writing.
+  if (gPostDelay) {
+    IODelay (gPostDelay);
+  }
   cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
+  traceStep (15);
   gRootDiagnostic.response = loadBe32 (gHost.virt + kUcdOffset + kRspOffset);
   // 14 separates a stall in the cache/response read from one after the command returned: the
   // deferred run stopped at 13 (50029, command 1) with ocs=00 and scsi=0000, so the first
