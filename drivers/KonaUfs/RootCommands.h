@@ -114,6 +114,13 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   // deferred run stopped at 13 (50029, command 1) with ocs=00 and scsi=0000, so the first
   // command completed and the thread never reached the caller.
   traceStep (14);
+  // The command that wedges never returns, so the page keeps the state the controller left after
+  // the previous one: IS and HCS at the last moment it answered. Both reads are safe here because
+  // this point is only reached once a command has completed.
+  static char gLastControllerStatus[40];
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%08x hcs=%08x",
+            read32 (gHost.hc, 0x20), read32 (gHost.hc, 0x30));
+  native_ufs_root_failure = gLastControllerStatus;
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
 }
 
