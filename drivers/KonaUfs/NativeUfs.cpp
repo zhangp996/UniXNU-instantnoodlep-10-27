@@ -1342,9 +1342,11 @@ static bool hostBringUp (const char **why)
     *why = linkWhy;
     return false;
   }
-  unsigned power = 0;
-  PE_parse_boot_argn ("native-ufs-power", &power, sizeof (power));
-  if (power) enableUfsBranches ();
+  // Named powerInit, not power: hostBringUp already has a uint32_t power for the bCurrentPowerMode
+  // query result, and the shadow made the CI build fail under -Werror.
+  unsigned powerInit = 0;
+  PE_parse_boot_argn ("native-ufs-power", &powerInit, sizeof (powerInit));
+  if (powerInit) enableUfsBranches ();
   // native-ufs-wake-first=1 follows the bdevsw driver that reads this disk: straight to START
   // STOP UNIT on the well-known LU, no NOP and no power query first.
   unsigned wakeFirst = 0;
