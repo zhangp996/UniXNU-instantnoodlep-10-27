@@ -1095,11 +1095,14 @@ static bool rpmhFindRail (const volatile uint8_t *db, size_t bytes, const char *
 
 struct RpmhWrite { uint32_t offset, value; };
 
+// Offsets are absolute DRV offsets: the interrupt status and clear registers sit at the DRV base,
+// while the control, enable and command registers sit inside the TCS block. Mixing the two wrote
+// the interrupt clear into the TCS area and took the SoC into 900E on 2026-11-02.
 static unsigned rpmhActiveRequest (const RpmhLayout &l, unsigned tcs, const uint32_t *addresses,
                                    const uint32_t *values, unsigned count, RpmhWrite *w)
 {
   if (!count || count > 4) return 0;
-  const uint32_t base = l.stride * tcs;
+  const uint32_t base = 0xd00U + l.stride * tcs;
   unsigned n = 0;
   w[n++] = { base + l.control, 0 };
   w[n++] = { l.irqClear, 1U << tcs };
@@ -1119,7 +1122,7 @@ static unsigned rpmhActiveRequest (const RpmhLayout &l, unsigned tcs, const uint
 
 static unsigned rpmhFinish (const RpmhLayout &l, unsigned tcs, RpmhWrite *w)
 {
-  const uint32_t base = l.stride * tcs;
+  const uint32_t base = 0xd00U + l.stride * tcs;
   w[0] = { l.irqClear, 1U << tcs };
   w[1] = { base + l.control, 0 };
   w[2] = { base + l.cmdEnable, 0 };
@@ -1130,11 +1133,11 @@ static void rpmhSend (uintptr_t rsc, const RpmhLayout &l, unsigned tcs, uint32_t
 {
   RpmhWrite w[16];
   const unsigned n = rpmhActiveRequest (l, tcs, &address, &value, 1, w);
-  for (unsigned i = 0; i < n; i++) write32 (rsc, 0xd00 + w[i].offset, w[i].value);
+  for (unsigned i = 0; i < n; i++) write32 (rsc, w[i].offset, w[i].value);
   __asm__ volatile ("dsb sy" ::: "memory");
   IOSleep (2);
   const unsigned m = rpmhFinish (l, tcs, w);
-  for (unsigned i = 0; i < m; i++) write32 (rsc, 0xd00 + w[i].offset, w[i].value);
+  for (unsigned i = 0; i < m; i++) write32 (rsc, w[i].offset, w[i].value);
 }
 
 // The five PMIC rails behind ufshc, with the initial voltages the board DTS gives them. The GDSC
@@ -1192,9 +1195,8 @@ static uint32_t voteUfsRails (unsigned stage, char *report, size_t capacity)
               read32 (rsc, 0xd00 + cmd + layout.msgId), read32 (rsc, 0xd00 + cmd + layout.cmdData));
     return 0x50U;
   }
-  // Done interrupts of the two active TCSs, the way the sheng packages leave them.
-  write32 (rsc, 0xd00, 0x3);
-  __asm__ volatile ("dsb sy" ::: "memory");
+  // The interrupt-enable write the sheng packages do at 0xd00 is left out: this driver polls the
+  // TCS and sleeps, and that write is the other candidate for the 900E crash.
   for (unsigned i = 0; i < sizeof rails / sizeof rails[0]; i++) {
     uint32_t address = 0;
     if (!rpmhFindRail (db, 0x20000, rails[i].name, &address)) {
