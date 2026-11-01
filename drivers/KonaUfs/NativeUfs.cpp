@@ -42,6 +42,10 @@ extern "C" {
 // Optional passive observer; absent in ordinary builds. It may run while a
 // window lock is held, so its contract forbids blocking or transport access.
 void boot_progress_poll (void) __attribute__((weak));
+// The page publishes its own view of the framebuffer (width, height, stride, frame at 20..23).
+// Reading it is more reliable than PE_state.video: the page is what actually draws, and the
+// heartbeat strip stayed off the panel while it only looked at PE_state.
+extern "C" volatile uint64_t boot_progress_observation[24] __attribute__((weak));
 volatile uint32_t native_ufs_probe_calls = 0;
 volatile uint32_t native_ufs_matched = 0;
 volatile uint32_t native_ufs_probe_requested = 0;
@@ -2073,8 +2077,14 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     IOReturn read (uint64_t lba, uint32_t blocks, void *out) {
       const uint32_t call = ++gWindowReadCalls;
       if (gStopReads && call > gStopReads) {
+        // Record where the budget stopped the media: the first refused LBA and its length are what
+        // a later run needs to reproduce the access, and the page's reason row carries them.
+        static char budgetWhy[40];
+        snprintf (budgetWhy, sizeof budgetWhy, "budget %llx+%u",
+                  (unsigned long long) lba, (unsigned) blocks);
         gRootDiagnostic.stage = "read budget reached";
         native_ufs_root_step = 71000U + (gStopReads < 999U ? gStopReads : 999U);
+        native_ufs_root_failure = budgetWhy;
         return kIOReturnTimeout;
       }
       native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
@@ -2338,8 +2348,16 @@ static void paintStepBits (uint32_t code)
     // vc_info is only forward declared in this build, so read the published layout directly:
     // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (paintAlive above).
     const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
-    const uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
-    const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
+    uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
+    uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
+    if ((!baseaddr || !rowbytes || !width || !height || depth != 32) && &boot_progress_observation[0]) {
+      // Fall back to the layout the page itself samples every frame.
+      width = static_cast<uint32_t> (boot_progress_observation[20]);
+      height = static_cast<uint32_t> (boot_progress_observation[21]);
+      rowbytes = static_cast<uint32_t> (boot_progress_observation[22]);
+      baseaddr = boot_progress_observation[23];
+      depth = 32;
+    }
     if (!baseaddr || !rowbytes || !width || !height || depth != 32) {
       return;
     }
@@ -2377,8 +2395,27 @@ static void paintStepBits (uint32_t code)
 static void heartbeatEntry (void *, wait_result_t)
 {
   IOLog ("NativeUfs: heartbeat thread running\n");
+  unsigned tick = 0;
   for (;;) {
     paintStepBits (native_ufs_root_step);
+    // A second, moving row: when the boot page freezes the step strip alone cannot say whether the
+    // machine died or only the page stopped, because the step stops changing either way. This cell
+    // advances once a second from the driver's own thread, so a frozen page over a live machine
+    // still shows movement.
+    if (gHeartbeatBase && gHeartbeatWidth > 8 + 16 * 32 && gHeartbeatHeight > 200) {
+      const unsigned top = gHeartbeatHeight > 160 ? gHeartbeatHeight - 160 : 0;
+      const unsigned liveRow = top > 40 ? top - 40 : 0;
+      for (unsigned cell = 0; cell < 16; cell++) {
+        const uint32_t colour = ((tick / 10) % 16 == cell) ? 0xFF00FFFFU : 0xFF000000U;
+        for (unsigned y = 0; y < 24 && liveRow + y < gHeartbeatHeight; y++) {
+          volatile uint32_t *row = gHeartbeatBase + (uint64_t) (liveRow + y) * gHeartbeatStride;
+          for (unsigned x = 0; x < 24; x++) {
+            row[8 + cell * 32 + x] = colour;
+          }
+        }
+      }
+    }
+    tick++;
     IOSleep (100);
   }
 }
