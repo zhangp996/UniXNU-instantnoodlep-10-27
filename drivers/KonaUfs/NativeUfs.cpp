@@ -3028,6 +3028,34 @@ bool NativeUfs::startRoot (IOService *provider)
     rootDiagnosticFailure (rpmhWhy);
     return false;
   }
+  // native-ufs-probe-lba=<hex> with native-ufs-probe-count=<n>: once the bring-up has succeeded,
+  // read that one block n times and stop. It answers whether the stop is attached to a block - the
+  // 200 ms runs stopped on LBA 0x40c461 - or to the stream that led there.
+  unsigned probeLba = 0, probeCount = 0;
+  if (PE_parse_boot_argn ("native-ufs-probe-lba", &probeLba, sizeof (probeLba)) && probeLba) {
+    PE_parse_boot_argn ("native-ufs-probe-count", &probeCount, sizeof (probeCount));
+    if (!probeCount) {
+      probeCount = 8;
+    }
+    if (!hostBringUp (&why)) {
+      rootDiagnosticFailure (why);
+      return false;
+    }
+    static uint8_t probeBuffer[4096];
+    unsigned ok = 0;
+    for (unsigned i = 0; i < probeCount; i++) {
+      native_ufs_root_step = 67000U + (i & 0xffU);
+      if (hostRead4k (0, probeLba, 1, probeBuffer) == kIOReturnSuccess) {
+        ok++;
+      }
+      IOSleep (200);
+    }
+    static char probeWhy[40];
+    snprintf (probeWhy, sizeof probeWhy, "block %x ok %u of %u", probeLba, ok, probeCount);
+    native_ufs_root_step = 67100U + (ok & 0x3fU);
+    rootDiagnosticFailure (probeWhy);
+    return false;
+  }
   if (!hostBringUp (&why)) {
     rootDiagnosticFailure (why);
     // No register reads here: a gated UFS/GCC branch stalls the CPU on the first access
