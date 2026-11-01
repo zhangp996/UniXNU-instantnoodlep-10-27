@@ -276,6 +276,13 @@ static void draw(unsigned now) {
     size_t n=strlen(b);const char *why=native_ufs_root_failure;
     snprintf(b+n,sizeof(b)-n," | probe=%u match=%u root=%u %.40s",native_ufs_probe_calls,native_ufs_matched,
       native_ufs_root_step,why?why:"-");
+  } else if(&native_ufs_root_step && native_ufs_blocks_published) {
+    // A published media still needs its step on screen: once the windows are out the interesting
+    // number is the block-read counter (70000 + calls), which is what separates a stop during
+    // bring-up from one during the system's own I/O. The probe/match pair is dropped so the line
+    // still fits the panel.
+    size_t n=strlen(b);const char *why=native_ufs_root_failure;
+    snprintf(b+n,sizeof(b)-n," | root=%u %.28s",native_ufs_root_step,why?why:"-");
   }
   line(2,b,0xffffffff);
   snprintf(b,sizeof(b),"TCR=%llx TTBR0=%llx TTBR1=%llx SCTLR=%llx",tcr,ttbr0,ttbr1,sctlr); line(3,b,0xffffffff);

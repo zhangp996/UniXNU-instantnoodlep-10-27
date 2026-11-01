@@ -24,6 +24,8 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | F | a4339879 -> c9b2a72b | 3b2e0ef9 | native-ufs-settle=5000 | monitor=16, published=2, requests=139 |
 | G | 232a0417 -> f6879305 | cc935760 | settle=0, stop=40013 | root=50075 (command 4, stage 11), monitor=11 |
 | G2 | 232a0417 -> f6879305 | a51d3d1c | settle=5000, stop=40013 (gate missing on the wake path) | monitor=16, published=2, requests=139 |
+| H | 735ec92d -> 6c0b5efd-kernel | 6c0b5efd | settle=5000, stop=40013 | root=40013 "stop after TEST UNIT READY", monitor=60 |
+| I | 735ec92d | bbc22c35 | settle=5000, stop=41200 | root=41302 "root window service start failed", published=0, monitor=60 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
