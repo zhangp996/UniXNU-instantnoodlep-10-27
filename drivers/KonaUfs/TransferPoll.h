@@ -5,7 +5,11 @@ enum class UfsTransferEnd { Completed, Fatal, Timeout };
 struct UfsTransferPoll {
   uint32_t polls = 0, doorbellSeen = 0, interruptSeen = 0, ocs = 15;
 };
-static constexpr uint32_t kUfsFatalStatus = 0x71880U;
+// 0x71880 covers UFS HCI bits 7, 11, 12, 16, 17 and 18. Bit 24 (0x1000000) is not in the HCI
+// list: run U read is=1000000 after a completed command and the very next command never completed,
+// so it is treated as fatal from now on - the point is to stop before submitting rather than to
+// name the bit.
+static constexpr uint32_t kUfsFatalStatus = 0x71880U | 0x1000000U;
 
 template <class Port>
 static UfsTransferEnd pollUfsTransfer(Port &port, UfsTransferPoll &state)
