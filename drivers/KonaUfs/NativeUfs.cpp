@@ -1143,19 +1143,58 @@ struct UfsRail { const char *name; uint32_t millivolts; };
 
 static char gVoteReport[40];
 
-static uint32_t voteUfsRails (void)
+// Stages, because writing the RSC at 900E-crashed the SoC twice: 3 reads only, 4 writes
+// control and the interrupt clear but nothing else, 5 arms one command without the trigger, 1
+// votes and stops, 2 votes and continues. Every stage reports what it read so a crash can be
+// placed between two of them.
+static uint32_t voteUfsRails (unsigned stage, char *report, size_t capacity)
 {
   static const UfsRail rails[] = {
     { "ldoa18", 2498 }, { "ldoa7", 1200 }, { "smpa5", 1800 }, { "ldoc1", 1200 }, { "ldoa10", 1200 },
   };
   volatile uint8_t *db = reinterpret_cast<volatile uint8_t *> (ml_io_map (0x80860000ULL, 0x20000));
   uintptr_t rsc = mapRegisters (0x18220000ULL, 0x10000);
-  if (!db || !rsc) return 0;
-  const RpmhLayout layout = rpmhLayout (read32 (rsc, 0));
+  if (!db || !rsc) {
+    snprintf (report, capacity, "no map db=%d rsc=%d", db != nullptr, rsc != 0);
+    return 0xf0U;
+  }
+  const uint32_t id = read32 (rsc, 0);
+  const RpmhLayout layout = rpmhLayout (id);
+  const uint32_t cfg = read32 (rsc, 0x0c);
+  const uint32_t irq = read32 (rsc, 0xd00);
+  const uint32_t status = read32 (rsc, 0xd00 + layout.status);
+  if (stage == 3) {
+    snprintf (report, capacity, "id %x cfg %x irq %x st %x", id, cfg, irq, status);
+    return 0x30U;
+  }
+  if (stage == 4) {
+    write32 (rsc, 0xd00 + layout.control, 0);
+    write32 (rsc, layout.irqClear, 1U);
+    __asm__ volatile ("dsb sy" ::: "memory");
+    snprintf (report, capacity, "w4 id %x ctl %x irq %x", id, read32 (rsc, 0xd00 + layout.control),
+              read32 (rsc, layout.irqClear));
+    return 0x40U;
+  }
+  uint32_t voted = 0;
+  if (stage == 5) {
+    uint32_t address = 0;
+    if (!rpmhFindRail (db, 0x20000, "ldoa18", &address)) {
+      snprintf (report, capacity, "ldoa18 missing");
+      return 0x50U;
+    }
+    const uint32_t base = 0;
+    const uint32_t cmd = base + layout.cmdStride * 0;
+    write32 (rsc, 0xd00 + cmd + layout.msgId, 8U | (1U << 8) | (1U << 16));
+    write32 (rsc, 0xd00 + cmd + layout.cmdAddr, address + 8);
+    write32 (rsc, 0xd00 + cmd + layout.cmdData, 4);
+    __asm__ volatile ("dsb sy" ::: "memory");
+    snprintf (report, capacity, "w5 a %x m %x d %x", read32 (rsc, 0xd00 + cmd + layout.cmdAddr),
+              read32 (rsc, 0xd00 + cmd + layout.msgId), read32 (rsc, 0xd00 + cmd + layout.cmdData));
+    return 0x50U;
+  }
   // Done interrupts of the two active TCSs, the way the sheng packages leave them.
   write32 (rsc, 0xd00, 0x3);
   __asm__ volatile ("dsb sy" ::: "memory");
-  uint32_t voted = 0;
   for (unsigned i = 0; i < sizeof rails / sizeof rails[0]; i++) {
     uint32_t address = 0;
     if (!rpmhFindRail (db, 0x20000, rails[i].name, &address)) {
@@ -1166,6 +1205,7 @@ static uint32_t voteUfsRails (void)
     rpmhSend (rsc, layout, 0, address + 4, 1);            // enable
     voted |= 1U << i;
   }
+  snprintf (report, capacity, "voted %x of 1f", voted);
   return voted;
 }
 
@@ -2969,10 +3009,9 @@ bool NativeUfs::startRoot (IOService *provider)
   unsigned rpmhVote = 0;
   PE_parse_boot_argn ("native-ufs-rpmh-vote", &rpmhVote, sizeof (rpmhVote));
   if (rpmhVote) {
-    const uint32_t voted = voteUfsRails ();
-    snprintf (gVoteReport, sizeof gVoteReport, "voted %x of 1f", voted);
-    native_ufs_root_step = 66000U + (voted & 0x1fU);
-    if (rpmhVote == 1) {
+    const uint32_t voted = voteUfsRails (rpmhVote, gVoteReport, sizeof gVoteReport);
+    native_ufs_root_step = 66000U + (voted & 0xffU);
+    if (rpmhVote == 1 || rpmhVote == 3 || rpmhVote == 4 || rpmhVote == 5) {
       rootDiagnosticFailure (gVoteReport);
       return false;
     }
