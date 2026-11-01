@@ -48,6 +48,10 @@ static bool gRetried;
 // is controller or request-list state, and a periodic UTRLRSR cycle is the cheapest way to tell.
 static uint32_t gResetEvery;
 static uint32_t gTagRotate;
+// native-ufs-noinval=1 skips the cache invalidate that runs once a command has completed. Every
+// deterministic stop so far sits at stage 13, which is that call: the poll has returned, the
+// controller is healthy, and the CPU touches the DMA buffer next.
+static unsigned gNoInvalidate;
 
 static bool hostResetTransport (void)
 {
@@ -169,7 +173,11 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   if (gPostDelay) {
     IODelay (gPostDelay);
   }
-  cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
+  if (gNoInvalidate) {
+    __asm__ volatile ("dsb sy" ::: "memory");
+  } else {
+    cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
+  }
   traceStep (15);
   gRootDiagnostic.response = loadBe32 (gHost.virt + kUcdOffset + kRspOffset);
   // 14 separates a stall in the cache/response read from one after the command returned: the
