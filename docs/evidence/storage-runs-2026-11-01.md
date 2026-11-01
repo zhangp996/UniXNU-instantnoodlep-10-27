@@ -35,6 +35,7 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | P | dbab6e33 -> bcc244c5 | 877fa656 | settle=5000, heartbeat, stop-reads=96 | published=2, root=71096, failures=7, monitor=60 |
 | Q | bcc244c5 | 0e70e30e | settle=5000, heartbeat, no budget | root=52251 (command 140, stage 11), monitor=16, cyan cell frozen too |
 | R | bcc244c5 | 4043306d | settle=5000, heartbeat, stop-reads=128 | root=71128, failures=56, monitor=50, cyan cell frozen too |
+| S | c9129a11 | e5c7ed15 | settle=5000, heartbeat, stop-reads=128 budget-soft=1 | published=2, requests=184, failures=0, root=71128 "budget 3f5280+2", monitor=60 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
