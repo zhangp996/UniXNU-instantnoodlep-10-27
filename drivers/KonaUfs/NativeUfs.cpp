@@ -1371,11 +1371,15 @@ static bool hostBringUp (const char **why)
     // 40014 and 40015 bracket the settle delay: 50029 leaves the SSU inside hostScsi, 40014 puts
     // the gap in IODelay, and 40015 means the TUR loop was entered.
     native_ufs_root_step = 40014;
+    // 40014 is the step right after START STOP UNIT returns, so stopping here isolates the wake:
+    // the command was accepted and nothing else has been submitted.
+    if (stopAfter (40014)) { *why = "stop after wake"; return false; }
     unsigned settle = 50;
     PE_parse_boot_argn ("native-ufs-settle", &settle, sizeof (settle));
     if (settle > 5000) settle = 5000;
     if (settle) IODelay (settle * 1000);
     native_ufs_root_step = 40015;
+    if (stopAfter (40015)) { *why = "stop before TEST UNIT READY"; return false; }
     gRootDiagnostic.stage = "LUN ready";
     for (unsigned attempt = 0; attempt < 20; attempt++) {
       native_ufs_root_step = 40020 + attempt;
@@ -2476,6 +2480,7 @@ bool NativeUfs::start (IOService *provider)
       thread_deallocate (thread);
     }
   }
+  PE_parse_boot_argn ("native-ufs-stop", &gStopStep, sizeof (gStopStep));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt

@@ -19,6 +19,7 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | 9 | 34021226 -> 0fcef66f | f9ad5b05 | settle=0 noirq=1 gic-mask=1 | published=2 on one boot, root=50091 on another |
 | 10 | 34021226 -> 0fcef66f | 5ceb91fb | + heartbeat=1 | root=50069, monitor=11 |
 | C | 34021226 -> 0fcef66f | 2c40caef | no wake-first (NOP, power query, SSU) | root=50091 |
+| D | a4339879 -> c9b2a72b | e5f6f446 | native-ufs-link=1 | gd1 ax1 ah1 hcsf hce1 ls0, root=63000, monitor=60 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
