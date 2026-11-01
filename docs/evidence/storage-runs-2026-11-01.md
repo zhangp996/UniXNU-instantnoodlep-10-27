@@ -27,6 +27,11 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | H | 735ec92d -> 6c0b5efd-kernel | 6c0b5efd | settle=5000, stop=40013 | root=40013 "stop after TEST UNIT READY", monitor=60 |
 | I | 735ec92d | bbc22c35 | settle=5000, stop=41200 | root=41302 "root window service start failed", published=0, monitor=60 |
 | J | 735ec92d | 2a56ae96 | settle=5000, no stop, page fix not yet in this kernel | monitor=16, published=2, requests=139 (same as F and G2) |
+| K | 60867d76 | 98afc0f5 | settle=5000, page shows the step after publication | published=2, root=52310 (command 144, stage 6), monitor=16 |
+| L | 60867d76 | 5dbee5a7 | native-ufs-rpmh=1 | root=64003 v1 mcc0330db n3, no "ufs" name, monitor=60 |
+| M | 9bb27bf5 | 2d8e8885 | settle=5000, stop-reads=8 | published=2, root=71008, monitor=60 |
+| N | 9bb27bf5 | 888ce242 | settle=5000, stop-reads=64 | published=2, root=71064, monitor=60 |
+| O | 9bb27bf5 | 897d0ab1 | settle=5000, stop-reads=128 | published=2, root=71128, failures=56, monitor=37 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
