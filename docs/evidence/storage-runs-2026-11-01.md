@@ -26,6 +26,7 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | G2 | 232a0417 -> f6879305 | a51d3d1c | settle=5000, stop=40013 (gate missing on the wake path) | monitor=16, published=2, requests=139 |
 | H | 735ec92d -> 6c0b5efd-kernel | 6c0b5efd | settle=5000, stop=40013 | root=40013 "stop after TEST UNIT READY", monitor=60 |
 | I | 735ec92d | bbc22c35 | settle=5000, stop=41200 | root=41302 "root window service start failed", published=0, monitor=60 |
+| J | 735ec92d | 2a56ae96 | settle=5000, no stop, page fix not yet in this kernel | monitor=16, published=2, requests=139 (same as F and G2) |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
