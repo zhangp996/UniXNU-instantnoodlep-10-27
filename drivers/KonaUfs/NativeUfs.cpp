@@ -960,6 +960,10 @@ static unsigned gUfsNoIrq = 0;
 // system is really reading through this media: 70000 + calls, capped at 79999.
 static volatile uint32_t gWindowReadCalls;
 static uint32_t gStopStep;
+// native-ufs-stop-reads=<n> caps the block reads the media may serve: the n-th read returns a
+// timeout and every later one does too, so a run can measure how much traffic the controller
+// survives without changing anything else. 71000 + n is left on the page as the stop mark.
+static uint32_t gStopReads;
 static bool stopAfter (uint32_t code)
 {
   return gStopStep && gStopStep == code;
@@ -2068,6 +2072,11 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     void unlock () { IOLockUnlock (mutex); }
     IOReturn read (uint64_t lba, uint32_t blocks, void *out) {
       const uint32_t call = ++gWindowReadCalls;
+      if (gStopReads && call > gStopReads) {
+        gRootDiagnostic.stage = "read budget reached";
+        native_ufs_root_step = 71000U + (gStopReads < 999U ? gStopReads : 999U);
+        return kIOReturnTimeout;
+      }
       native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
       uint64_t t0 = timerTicks ();
       IOReturn r = hostRead4k (0, lba, blocks, out);
@@ -2490,6 +2499,7 @@ bool NativeUfs::start (IOService *provider)
     }
   }
   PE_parse_boot_argn ("native-ufs-stop", &gStopStep, sizeof (gStopStep));
+  PE_parse_boot_argn ("native-ufs-stop-reads", &gStopReads, sizeof (gStopReads));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
