@@ -125,13 +125,26 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   // deferred run stopped at 13 (50029, command 1) with ocs=00 and scsi=0000, so the first
   // command completed and the thread never reached the caller.
   traceStep (14);
-  // The command that wedges never returns, so the page keeps the state the controller left after
-  // the previous one: IS and HCS at the last moment it answered. Both reads are safe here because
-  // this point is only reached once a command has completed.
+  // The command that wedges never returns, so the page keeps the state left after the previous
+  // one. It carries three facts that a photograph has to separate: the controller's own status
+  // (is/hcs), and whether the two clock branches the controller sits behind still read as enabled
+  // and running - a = bit0 is the AXI branch enable, bit1 its CLK_OFF, g = the same for the
+  // aggregate AXI branch. Stage 4 brackets the GCC reads: a run that stops at 4 stalled on the
+  // clock controller rather than on the UFS registers.
+  static uintptr_t gStatusGcc;
   static char gLastControllerStatus[40];
-  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%08x hcs=%08x",
-            read32 (gHost.hc, 0x20), read32 (gHost.hc, 0x30));
+  const uint32_t is = read32 (gHost.hc, 0x20);
+  const uint32_t hcs = read32 (gHost.hc, 0x30);
+  traceStep (4);
+  if (!gStatusGcc) {
+    gStatusGcc = mapRegisters (GCC_BASE, 0x1f0000);
+  }
+  const uint32_t axi = gStatusGcc ? read32 (gStatusGcc, GCC_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
+  const uint32_t agg = gStatusGcc ? read32 (gStatusGcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x g=%x",
+            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), (agg & 1U) | ((agg >> 30) & 2U));
   native_ufs_root_failure = gLastControllerStatus;
+  traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
 }
 
