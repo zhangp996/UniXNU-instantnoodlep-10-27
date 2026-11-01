@@ -20,11 +20,27 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | 10 | 34021226 -> 0fcef66f | 5ceb91fb | + heartbeat=1 | root=50069, monitor=11 |
 | C | 34021226 -> 0fcef66f | 2c40caef | no wake-first (NOP, power query, SSU) | root=50091 |
 | D | a4339879 -> c9b2a72b | e5f6f446 | native-ufs-link=1 | gd1 ax1 ah1 hcsf hce1 ls0, root=63000, monitor=60 |
+| E | a4339879 -> c9b2a72b | ecb58b5e | native-ufs-nowake=1 | root=141 (LUN 0 not ready), monitor=60 |
+| F | a4339879 -> c9b2a72b | 3b2e0ef9 | native-ufs-settle=5000 | monitor=16, published=2, requests=139 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached
 monitor=60, so an active bring-up is what stops the machine, about one second after
 the thread starts.
+
+Run D is the first sample of the handoff row: it stops right after the queue starts and reads
+GDSCR powered, both branch enables set, HCS 0xf, HCE set, PA_LINKSTATE 0 with zero connected
+TX/RX lanes, and the page reaches monitor=60.
+
+Run E skips START STOP UNIT and polls twenty TEST UNIT READYs while the link is still down; every
+one fails, the step settles at 141 and the page reaches monitor=60. Writing a UTRD and ringing the
+doorbell is therefore safe on this board.
+
+Run F separates the wake from the traffic. `native-ufs-settle=5000` sends the SSU at about
+10.05 s and then idles for five seconds, and the page survives through monitor=16. During the
+second after the first TEST UNIT READY the driver issues 139 requests, reads the manifest, reads
+both windows and publishes them (published=2) before the machine stops. The death follows the
+traffic rather than the clock.
 
 Runs 5 to 8 reported `manifest s1` because a boot into Android recovery had rewritten
 offset 0 of userdata. `fastboot flash userdata userdata-root.img`
