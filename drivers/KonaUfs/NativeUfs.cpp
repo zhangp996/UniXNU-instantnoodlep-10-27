@@ -968,6 +968,10 @@ static uint32_t gStopStep;
 // timeout and every later one does too, so a run can measure how much traffic the controller
 // survives without changing anything else. 71000 + n is left on the page as the stop mark.
 static uint32_t gStopReads;
+// native-ufs-budget-soft=1 makes the refused reads succeed with zeroes instead of returning a
+// timeout. A budget run that still dies then blames something other than the error path; one that
+// survives names the error path itself.
+static unsigned gBudgetSoft;
 static bool stopAfter (uint32_t code)
 {
   return gStopStep && gStopStep == code;
@@ -2085,6 +2089,10 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
         gRootDiagnostic.stage = "read budget reached";
         native_ufs_root_step = 71000U + (gStopReads < 999U ? gStopReads : 999U);
         native_ufs_root_failure = budgetWhy;
+        if (gBudgetSoft) {
+          memset (out, 0, (size_t) blocks * 4096U);
+          return kIOReturnSuccess;
+        }
         return kIOReturnTimeout;
       }
       native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
@@ -2551,6 +2559,7 @@ bool NativeUfs::start (IOService *provider)
   }
   PE_parse_boot_argn ("native-ufs-stop", &gStopStep, sizeof (gStopStep));
   PE_parse_boot_argn ("native-ufs-stop-reads", &gStopReads, sizeof (gStopReads));
+  PE_parse_boot_argn ("native-ufs-budget-soft", &gBudgetSoft, sizeof (gBudgetSoft));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
