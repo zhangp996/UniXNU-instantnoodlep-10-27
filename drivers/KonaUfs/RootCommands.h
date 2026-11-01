@@ -52,6 +52,7 @@ static uint32_t gTagRotate;
 // deterministic stop so far sits at stage 13, which is that call: the poll has returned, the
 // controller is healthy, and the CPU touches the DMA buffer next.
 static unsigned gNoInvalidate;
+static unsigned gChunkBlocks;
 
 static bool hostResetTransport (void)
 {
@@ -200,14 +201,21 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   }
   const uint32_t axi = gStatusGcc ? read32 (gStatusGcc, GCC_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
   const uint32_t agg = gStatusGcc ? read32 (gStatusGcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE) : 0xffffffffU;
+  // The reads stay because stage 4 still brackets them - a run that stops at 4 stalled on the clock
+  // controller - but the page no longer has room to print them: both have read 1 on every run.
+  (void)axi;
+  (void)agg;
   // Every eighth command also samples the UFS link itself: PA_LINKSTATE 0x2b is 1 while the link is
   // up and 0 once it dropped, which is the difference between a device that went to sleep under the
   // traffic and a controller that stopped answering on a healthy link.
   // The block being read matters more than the link now: twice with pacing the machine stopped on
   // command 268 and 270 at weights of 100 and 200 ms, so the stop follows the position in the
   // stream rather than the clock, and the last LBA says whether it is a particular block.
-  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "is=%x hcs=%x a=%x lba=%x",
-            is, hcs, (axi & 1U) | ((axi >> 30) & 2U), static_cast<uint32_t> (gRootDiagnostic.lba & 0xffffffffU));
+  // Single-letter labels keep four fields inside the page's 28-byte strip. n is the transfer size the
+  // driver just issued: the stop is fixed at one command, so a size that changes there - a larger
+  // read than the buffer was sized for - would explain a controller DMA that runs past its buffer.
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "i=%x h=%x b=%x n=%x",
+            is, hcs, static_cast<uint32_t> (gRootDiagnostic.lba & 0xffffffffU), dataBytes);
   native_ufs_root_failure = gLastControllerStatus;
   traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
@@ -369,9 +377,12 @@ static IOReturn hostRead4k (uint8_t lun, uint64_t lba, uint32_t blocks, void *ds
   IOLockLock (gHost.lock);
   IOReturn status = kIOReturnSuccess;
   uint8_t *out = static_cast<uint8_t *> (dst);
-  const uint32_t kChunkBlocks = 2;
-  for (uint32_t done = 0; done < blocks && status == kIOReturnSuccess; done += kChunkBlocks) {
-    const uint32_t piece = (blocks - done < kChunkBlocks) ? blocks - done : kChunkBlocks;
+  // native-ufs-chunk-blocks sets how many blocks one command carries. The default two is what every
+  // run so far used; one makes each command half the size, which is the second way to ask whether the
+  // stop depends on the transfer size rather than on the position in the stream.
+  const uint32_t chunkBlocks = gChunkBlocks ? gChunkBlocks : 2U;
+  for (uint32_t done = 0; done < blocks && status == kIOReturnSuccess; done += chunkBlocks) {
+    const uint32_t piece = (blocks - done < chunkBlocks) ? blocks - done : chunkBlocks;
     const uint64_t pieceLba = lba + done;
     gRootDiagnostic.lba = pieceLba;
     uint8_t cdb[10] = { 0x28, 0, uint8_t (pieceLba >> 24), uint8_t (pieceLba >> 16),
