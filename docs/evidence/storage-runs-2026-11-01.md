@@ -22,6 +22,8 @@ Kernel hashes are the CI artifact followed by the kernel the payload embedded af
 | D | a4339879 -> c9b2a72b | e5f6f446 | native-ufs-link=1 | gd1 ax1 ah1 hcsf hce1 ls0, root=63000, monitor=60 |
 | E | a4339879 -> c9b2a72b | ecb58b5e | native-ufs-nowake=1 | root=141 (LUN 0 not ready), monitor=60 |
 | F | a4339879 -> c9b2a72b | 3b2e0ef9 | native-ufs-settle=5000 | monitor=16, published=2, requests=139 |
+| G | 232a0417 -> f6879305 | cc935760 | settle=0, stop=40013 | root=50075 (command 4, stage 11), monitor=11 |
+| G2 | 232a0417 -> f6879305 | a51d3d1c | settle=5000, stop=40013 (gate missing on the wake path) | monitor=16, published=2, requests=139 |
 
 `monitor=11` means the page stopped at its eleventh tick: level 2 runs
 continuously, and the runs whose bring-up failed early (a rejected manifest) reached

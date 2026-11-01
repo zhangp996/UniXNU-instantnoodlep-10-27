@@ -1388,6 +1388,9 @@ static bool hostBringUp (const char **why)
       if (hostScsi (0, tur, 6, false, 0, 200000, &scsi2) == kIOReturnSuccess) {
         gHost.ready = true;
         native_ufs_root_step = 40013;
+        // The wake path used to leave this success without a gate, so a stop-40013 run still went
+        // on to read the manifest and publish. Gate it: one accepted command and nothing else.
+        if (stopAfter (40013)) { *why = "stop after TEST UNIT READY"; return false; }
         return true;
       }
       IODelay (10000);
@@ -2026,6 +2029,12 @@ extern "C" int native_ufs_block_authenticates (IOService *provider, const char *
 bool NativeUfsBlock::start (IOService *provider)
 {
   native_ufs_root_step = 41200;   // about to call IOBlockStorageDevice::start
+  // The manifest has been read and the windows enumerated by the time a block is asked to start,
+  // so a stop here leaves the run at "reads done, no media": the difference between the traffic
+  // that already works and the publication the machine dies in.
+  if (stopAfter (41200)) {
+    return false;
+  }
   if (!bounce || !windowLock || !IOBlockStorageDevice::start (provider)) {
     return false;
   }
