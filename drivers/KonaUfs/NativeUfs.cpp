@@ -2345,25 +2345,39 @@ static void paintStepBits (uint32_t code)
     // The framebuffer is published later than the driver match, so keep trying: a ten-try window
     // (one second) is what kept the strip off the panel on 2026-10-31.
     gHeartbeatTries++;
-    // vc_info is only forward declared in this build, so read the published layout directly:
-    // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (paintAlive above).
-    const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
-    uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
-    uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
-    if ((!baseaddr || !rowbytes || !width || !height || depth != 32) && &boot_progress_observation[0]) {
-      // Fall back to the layout the page itself samples every frame.
+    // Prefer the layout the page draws with. display.frame is already a kernel virtual address -
+    // boot_progress_bind rejects anything below 0xffff000000000000 - and the page writes through it
+    // directly, so it must never be passed to ml_io_map: mapping a virtual address as physical
+    // wrote through to unrelated memory and froze the machine at monitor=1 on 2026-11-01.
+    uint32_t width = 0, height = 0, rowbytes = 0;
+    uint64_t frame = 0;
+    if (&boot_progress_observation[0]) {
       width = static_cast<uint32_t> (boot_progress_observation[20]);
       height = static_cast<uint32_t> (boot_progress_observation[21]);
       rowbytes = static_cast<uint32_t> (boot_progress_observation[22]);
-      baseaddr = boot_progress_observation[23];
-      depth = 32;
+      frame = boot_progress_observation[23];
     }
-    if (!baseaddr || !rowbytes || !width || !height || depth != 32) {
-      return;
+    volatile uint32_t *base = nullptr;
+    if (frame >= 0xffff000000000000ULL && width && height && rowbytes && frame <= (~(uintptr_t) 0) - (uint64_t) height * rowbytes) {
+      base = reinterpret_cast<volatile uint32_t *> (frame);
     }
-    volatile uint32_t *base = (volatile uint32_t *) ml_io_map (baseaddr, (vm_size_t)rowbytes * height);
     if (!base) {
-      return;
+      // Fall back to the platform expert's video state, which is a physical address and therefore
+      // needs the mapping. vc_info is only forward declared in this build, so read the published
+      // layout directly: v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64.
+      const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
+      const uint32_t vheight = v[0], vwidth = v[1], vdepth = v[2], vrowbytes = v[3];
+      const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
+      if (!baseaddr || !vrowbytes || !vwidth || !vheight || vdepth != 32) {
+        return;
+      }
+      base = (volatile uint32_t *) ml_io_map (baseaddr, (vm_size_t)vrowbytes * vheight);
+      if (!base) {
+        return;
+      }
+      width = vwidth;
+      height = vheight;
+      rowbytes = vrowbytes;
     }
     gHeartbeatBase = base;
     gHeartbeatStride = rowbytes / 4;
