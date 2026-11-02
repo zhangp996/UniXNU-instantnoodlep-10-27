@@ -1671,6 +1671,30 @@ static bool hostBringUp (const char **why)
     *why = linkWhy;
     return false;
   }
+  // native-ufs-noc=1: read-only look at the interconnect vote behind the UFS master. The live device
+  // tree puts mas-xm-ufs-mem on aggre1_noc (base 0x016e0000, phandle 0xb6) with qport 3, and that
+  // fabric's QoS blocks sit above base-offset 0x2000 with a 0x1000 stride, so port 3 lands at
+  // 0x5000. Nothing is written: the run stops and leaves the four words in the reason row, which
+  // is the page field a frozen frame keeps. The UFS branch registers are read beside them because
+  // "clk-aggre-ufs-phy-axi-no-rate" is the clock this master's QoS rides on.
+  unsigned nocProbe = 0;
+  PE_parse_boot_argn ("native-ufs-noc", &nocProbe, sizeof (nocProbe));
+  if (nocProbe) {
+    static char nocWhy[96];
+    uintptr_t noc = mapRegisters (0x016e0000ULL, 0x1f180);
+    uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
+    if (!noc || !gcc) {
+      *why = "noc: map";
+      return false;
+    }
+    const unsigned at = 0x2000U + 3U * 0x1000U;
+    snprintf (nocWhy, sizeof nocWhy, "noc %x %x %x %x ax %x ag %x",
+              read32 (noc, at), read32 (noc, at + 4), read32 (noc, at + 8), read32 (noc, at + 0xc),
+              read32 (gcc, GCC_UFS_PHY_AXI_ENABLE), read32 (gcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE));
+    native_ufs_root_step = 65000;
+    *why = nocWhy;
+    return false;
+  }
   // Named powerInit, not power: hostBringUp already has a uint32_t power for the bCurrentPowerMode
   // query result, and the shadow made the CI build fail under -Werror.
   unsigned powerInit = 0;
