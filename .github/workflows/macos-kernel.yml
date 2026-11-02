@@ -177,6 +177,25 @@ jobs:
             hdiutil detach "$MP" || true
           } 2>&1 | tee "$RUNNER_TEMP/inspect-osimage.log"
 
+      - name: Prepare the Data seed
+        # docs/zh/guide/userdata.md: the writable Data volume comes from the payload's Data
+        # ramdisk seed, and scripts/prepare-owner-data-fixture.py refuses anything that is not
+        # a real APFS container (NXSB at offset 0x20). It needs hdiutil, diskutil and the
+        # supplied OS image's initial /private/var, none of which exist off macOS, so the
+        # runner builds the seed here and publishes it beside the kernel.
+        if: inputs.fetch_ipsw
+        continue-on-error: true
+        run: |
+          set +e
+          OSDMG=$(ls -S out/ipsw/*/*.dmg 2>/dev/null | head -1)
+          echo "OSDMG=$OSDMG"
+          MP="$PWD/.cache/firmware/target-volumes/os-mount"
+          mkdir -p "$MP"
+          hdiutil attach "$OSDMG" -nobrowse -owners off -mountpoint "$MP" 2>&1 | tee "$RUNNER_TEMP/data-seed-attach.log"
+          python3 scripts/prepare-owner-data-fixture.py 2>&1 | tee "$RUNNER_TEMP/data-seed.log"
+          hdiutil detach "$MP" 2>&1 || true
+          ls -l build/owner-data-fixture/ 2>&1 | tee -a "$RUNNER_TEMP/data-seed.log"
+
       - name: Build the kernel
         run: |
           set -o pipefail
@@ -239,6 +258,8 @@ jobs:
           path: |
             out/**/kernel.macho
             out/**/payload/**
+            build/owner-data-fixture/*.cdr
+            build/owner-data-fixture/seed.json
           if-no-files-found: warn
 
       - name: Report the failure
