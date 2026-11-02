@@ -2296,6 +2296,12 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
       return kIOReturnSuccess;
     }
     uint64_t copy (uint64_t offset, const void *data, uint64_t length) {
+      if (gNoCopy) {
+        // Pretend the bytes landed: the caller sees a full request, the page shows how far the
+        // stream got, and the machine either survives or stops in the same place as before.
+        __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
+        return length;
+      }
       uint64_t copied = buffer->writeBytes (offset, data, length);
       if (copied == length) __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
       return copied;
@@ -2743,6 +2749,7 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-chunk-blocks", &gChunkBlocks, sizeof (gChunkBlocks));
   PE_parse_boot_argn ("native-ufs-ssu-every", &gSsuEvery, sizeof (gSsuEvery));
   PE_parse_boot_argn ("native-ufs-read-blocks", &gReadBlocks, sizeof (gReadBlocks));
+  PE_parse_boot_argn ("native-ufs-nocopy", &gNoCopy, sizeof (gNoCopy));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt

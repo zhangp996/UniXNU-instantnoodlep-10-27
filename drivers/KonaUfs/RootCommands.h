@@ -61,6 +61,10 @@ static unsigned gSsuEvery;
 // the rest as a new request, so the same bytes arrive as more requests - which separates a stop that
 // counts requests from one that counts bytes, the two readings that still fit the evidence.
 static unsigned gReadBlocks;
+// native-ufs-nocopy: complete each request without copying into the caller's memory descriptor. The
+// only thing the driver still touches per request is that copy, and the stop survives every reset,
+// poke and size change, so this is the one remaining kernel-side step to isolate.
+static unsigned gNoCopy;
 
 static bool hostResetTransport (void)
 {
