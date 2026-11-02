@@ -53,6 +53,10 @@ static uint32_t gTagRotate;
 // controller is healthy, and the CPU touches the DMA buffer next.
 static unsigned gNoInvalidate;
 static unsigned gChunkBlocks;
+// native-ufs-ssu-every: send START STOP UNIT to the device well-known LU every n media reads. The
+// stop survived a request-list reset every 32 commands, so if a counter exists it is inside the
+// device or the kernel rather than in the host controller, and this poke is the device-side test.
+static unsigned gSsuEvery;
 
 static bool hostResetTransport (void)
 {

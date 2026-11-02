@@ -2263,6 +2263,11 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
         return kIOReturnTimeout;
       }
       native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
+      if (gSsuEvery && !(call % gSsuEvery)) {
+        static const uint8_t pokeSsu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
+        uint32_t pokeOcs = 0;
+        hostScsi (0xd0, pokeSsu, 6, false, 0, 500000, &pokeOcs);
+      }
       uint64_t t0 = timerTicks ();
       IOReturn r = hostRead4k (0, lba, blocks, out);
       __atomic_fetch_add (&native_ufs_read_ticks, timerTicks () - t0, __ATOMIC_RELAXED);
@@ -2732,6 +2737,7 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-tag-rotate", &gTagRotate, sizeof (gTagRotate));
   PE_parse_boot_argn ("native-ufs-noinval", &gNoInvalidate, sizeof (gNoInvalidate));
   PE_parse_boot_argn ("native-ufs-chunk-blocks", &gChunkBlocks, sizeof (gChunkBlocks));
+  PE_parse_boot_argn ("native-ufs-ssu-every", &gSsuEvery, sizeof (gSsuEvery));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
