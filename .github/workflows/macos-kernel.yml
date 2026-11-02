@@ -187,6 +187,11 @@ jobs:
         continue-on-error: true
         run: |
           set +e
+          ./unixnu ipsw fetch -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/data-seed-ipsw.log"
+          # The OS member is a separate fetch: the plain ipsw step does not unpack the
+          # 044-76040-038.dmg the fixture builder walks, which is why the first attempt
+          # mounted nothing and produced no seed.
+          ./unixnu ipsw fetch OS -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/data-seed-os.log"
           OSDMG=$(ls -S out/ipsw/*/*.dmg 2>/dev/null | head -1)
           echo "OSDMG=$OSDMG"
           MP="$PWD/.cache/firmware/target-volumes/os-mount"
@@ -260,6 +265,7 @@ jobs:
             out/**/payload/**
             build/owner-data-fixture/*.cdr
             build/owner-data-fixture/seed.json
+            ${{ runner.temp }}/data-seed*.log
           if-no-files-found: warn
 
       - name: Report the failure
