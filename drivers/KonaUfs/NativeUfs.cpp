@@ -1438,10 +1438,23 @@ static bool hostBringUp (const char **why)
   native_ufs_root_step = 40002;
   if (stopAfter (40002)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "DMA allocation";
-  gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
-    kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
-    static_cast<IOOptionBits> (kIOMemoryMapperNone),
-    kDmaBytes, 4096);
+  // native-ufs-dma-low=1 asks for a transfer page below 4 GiB. Every run so far took whatever
+  // address the allocator returned, and the controller's writes into that page are the one thing
+  // the traffic never varies: the wall has survived every change to how the page is used, so the
+  // next question is whether it depends on where the page is.
+  unsigned dmaLow = 0;
+  PE_parse_boot_argn ("native-ufs-dma-low", &dmaLow, sizeof (dmaLow));
+  if (dmaLow) {
+    gHost.dma = IOBufferMemoryDescriptor::inTaskWithPhysicalMask (
+      kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
+      static_cast<IOOptionBits> (kIOMemoryMapperNone),
+      kDmaBytes, 0xffffffffULL);
+  } else {
+    gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
+      kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
+      static_cast<IOOptionBits> (kIOMemoryMapperNone),
+      kDmaBytes, 4096);
+  }
   gHost.lock = IOLockAlloc ();
   if (!gHost.dma || !gHost.lock) {
     *why = "dma buffer";
