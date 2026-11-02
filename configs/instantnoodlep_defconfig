@@ -25,6 +25,11 @@ CONFIG_XNU_KONA_UFS=y
 # to the original IOStorageFamily addresses recorded for the pinned kernelcache
 # (scripts/data/storage-bindings.json), which is what lets the archive link.
 CONFIG_XNU_NATIVE_UFS=y
+# RamBlock publishes the payload ramdisk as an IOMedia, so a RAM root can mount without UFS:
+# docs/devices/caihong.md records that path (the restore RAM disk mounts as md0 and launchd
+# runs), and the IPSW's RestoreRamDisk is a 176 MiB raw APFS container that a boot image
+# streamed by fastboot can carry even though boot_a is 96 MiB.
+CONFIG_XNU_NATIVE_RAM_BLOCK=y
 # docs/guide/debugging.md: on a board with no UART the kernel has to report through the
 # panel. The boot progress layer renders the diagnostic page that boot-progress=1|2 selects,
 # reading the storage counters the KonaUfs component exports.
