@@ -18,6 +18,13 @@
 #define UFS_HC_SIZE                   0x3000ULL
 
 #define GCC_UFS_PHY_GDSCR             0x77004
+// Block reset the device tree names core_reset (GCC_UFS_PHY_BCR). qcom_reset_set writes 0 to
+// assert and 1 to release, so the cold-initialisation sequence has to end on 1.
+#define GCC_UFS_PHY_BCR               0x77000
+
+// QMP UFS PHY: ufsphy_mem@1d87000, 0xe00 bytes. The tables live beside this header.
+#define UFS_PHY_BASE                  0x01d87000ULL
+#define UFS_PHY_SIZE                  0x00000e00ULL
 #define GCC_UFS_MEM_PHY_GDSCR         0x9e000
 
 #define GCC_UFS_PHY_AXI_ENABLE        0x77010

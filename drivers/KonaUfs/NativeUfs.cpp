@@ -30,6 +30,7 @@ extern const uint8_t verified_root_key[];
 #include <pexpert/pexpert.h>
 #include <kern/debug.h>
 #include "GccUfs.h"
+#include "UfsPhyTables.h"
 #include "RootDiagnostics.h"
 #include "TransferPoll.h"
 #include "SmmuTakeover.h"
@@ -1288,6 +1289,107 @@ static void enableUfsBranches (void)
          gdscBefore, gdscAfter, gdscWrites, enabled, already, stillOff);
 }
 
+// One QMP PHY table, as the UEFI probe wrote it: an offset inside the block and a byte value.
+static void writePhyTable (uintptr_t base, const UFS_PHY_TBL *table, unsigned count)
+{
+  for (unsigned index = 0; index < count; index++) {
+    write32 (base, table[index].offset, table[index].value);
+  }
+}
+
+// UIC commands go through the register interface, the one uicGet already uses: opcode in 0x90,
+// arguments in 0x94/0x98/0x9c, completion in IS bit 10, and the result code back in 0x98.
+static bool uicCommand (uint32_t opcode, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t *result)
+{
+  if (read32 (gHost.hc, 0x20) & 0x400U) {
+    write32 (gHost.hc, 0x20, 0x400U);
+  }
+  write32 (gHost.hc, 0x94, arg1);
+  write32 (gHost.hc, 0x98, arg2);
+  write32 (gHost.hc, 0x9c, arg3);
+  write32 (gHost.hc, 0x90, opcode);
+  for (unsigned index = 0; index < 200; index++) {
+    if (read32 (gHost.hc, 0x20) & 0x400U) {
+      write32 (gHost.hc, 0x20, 0x400U);
+      if (result) {
+        *result = read32 (gHost.hc, 0x98);
+      }
+      return true;
+    }
+    IODelay (100);
+  }
+  return false;
+}
+
+// native-ufs-coldinit=1: own the UFS clock, power and PHY state instead of adopting the
+// bootloader's. The order is the one the UEFI probe ran and Linux's qmp-ufs driver uses: power
+// domain on, branch clocks on, PHY block reset, QMP tables, link start. Every run so far
+// inherited a trained link and a PHY it never touched, so the new variables are the reset pulse
+// and the LINKSTARTUP that follows it - this driver has never started this link itself.
+static bool coldInit (const char **why)
+{
+  // hostBringUp runs for the probe and again for the root start; the link is started once.
+  static bool done = false;
+  if (done) {
+    return true;
+  }
+  native_ufs_root_step = 68001;   // cold init: GCC map
+  uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
+  if (!gcc) {
+    *why = "coldinit: GCC map";
+    return false;
+  }
+  enableUfsBranches ();
+  native_ufs_root_step = 68002;   // cold init: power domain
+  const uint32_t gdscBefore = read32 (gcc, GCC_UFS_PHY_GDSCR);
+  if (!(gdscBefore & 0x80000000U)) {
+    write32 (gcc, GCC_UFS_PHY_GDSCR, gdscBefore & ~1U);
+    for (unsigned index = 0; index < 100 && !(read32 (gcc, GCC_UFS_PHY_GDSCR) & 0x80000000U); index++) {
+      IODelay (100);
+    }
+  }
+  native_ufs_root_step = 68003;   // cold init: PHY map
+  uintptr_t phy = mapRegisters (UFS_PHY_BASE, UFS_PHY_SIZE);
+  if (!phy) {
+    *why = "coldinit: PHY map";
+    return false;
+  }
+  // qcom_reset_set writes 0 to assert and 1 to release, so a run that leaves 0 behind holds the
+  // PHY in reset: that is what the probe's single write of 0 did.
+  write32 (gcc, GCC_UFS_PHY_BCR, 0);
+  IODelay (200);
+  write32 (gcc, GCC_UFS_PHY_BCR, 1);
+  IODelay (1000);
+  native_ufs_root_step = 68004;   // cold init: QMP tables
+  writePhyTable (phy, SM8150_UFSPHY_SERDES, sizeof (SM8150_UFSPHY_SERDES) / sizeof (UFS_PHY_TBL));
+  writePhyTable (phy + 0x400, SM8150_UFSPHY_TX, sizeof (SM8150_UFSPHY_TX) / sizeof (UFS_PHY_TBL));
+  writePhyTable (phy + 0x800, SM8150_UFSPHY_RX, sizeof (SM8150_UFSPHY_RX) / sizeof (UFS_PHY_TBL));
+  writePhyTable (phy + 0xc00, SM8150_UFSPHY_PCS, sizeof (SM8150_UFSPHY_PCS) / sizeof (UFS_PHY_TBL));
+  IODelay (1000);
+  native_ufs_root_step = 68005;   // cold init: link start
+  uint32_t result = 0;
+  if (!uicCommand (0x16, 0, 0, 0, &result)) {
+    *why = "coldinit: LINKSTARTUP timeout";
+    return false;
+  }
+  if (result & 0x7fU) {
+    *why = "coldinit: LINKSTARTUP error";
+    return false;
+  }
+  for (unsigned index = 0; index < 100; index++) {
+    uint32_t link = 0;
+    if (uicGet (0x2b, &link) && (link & 1U)) {
+      native_ufs_root_step = 68007;   // cold init: link up
+      done = true;
+      return true;
+    }
+    IODelay (100);
+  }
+  native_ufs_root_step = 68006;   // cold init: link did not train
+  *why = "coldinit: link did not train";
+  return false;
+}
+
 static bool hostBringUp (const char **why)
 {
   if (gHost.poisoned) {
@@ -1344,6 +1446,11 @@ static bool hostBringUp (const char **why)
   bzero (gHost.virt, kDmaBytes);
   cacheCivac (gHost.virt, kDmaBytes);
   uint32_t report[3] = { 0, 0, 0 };
+  unsigned cold = 0;
+  PE_parse_boot_argn ("native-ufs-coldinit", &cold, sizeof (cold));
+  if (cold && !coldInit (why)) {
+    return false;
+  }
   gRootDiagnostic.stage = "SMMU and request list";
   native_ufs_root_step = 40005;
   if (stopAfter (40005)) { *why = "stop requested"; return false; }
