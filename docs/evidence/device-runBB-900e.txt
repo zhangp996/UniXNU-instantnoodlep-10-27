@@ -1,0 +1,15 @@
+Run BB: RAM root, 2026-11-02 18:39
+
+Image:  boot-runBB-ramroot.img, 266,891,264 bytes (254 MiB), sha256
+        155308dbf5222568a08e456777d7c6284ce93bcb6d164da1680d37cd783d2f97
+Kernel: CI E5BCC49D78BAD7D52091815AD48A8629614B26507E0FE729AD000784E8D48426 (RamBlock linked)
+Payload: 240 MiB, data ramdisk = restore-root.img (176 MiB raw APFS, unwrapped from the
+         IPSW IM4P of type rdsk: 0x30 0x84 header, 'IM4P', 'rdsk', OCTET STRING whose
+         payload starts with an APFS object header and NXSB at offset 32)
+ADT:   root_match_volume_uuid removed, so mountroot may consider the RamBlock media
+
+Transfer: fastboot accepted 260,636 KB in 14.2 s (max-download-size 805,306,368).
+Result: Qualcomm 900E before the diagnostic page; the unit never drew.
+
+Reading: two variables changed together (image 99 -> 254 MiB, ramdisk 4 -> 176 MiB).
+         The next image keeps 254 MiB and puts the 4 MiB seed back.
