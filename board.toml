@@ -16,7 +16,7 @@ kit = "instantnoodlep"
 # The template selection: the arm64 platform pair, the crypto path, the prelink tool
 # and the loader. Storage, display and input components are added per
 # docs/porting/drivers once their required inputs are satisfied for this board.
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "VerifiedRoot", "KonaUfs"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "VerifiedRoot", "KonaUfs", "RamBlock"]
 # KonaUfs is the local fork under components/kona-ufs: the ShengUfs sources with this board's
 # constants. The shared ShengUfs A/B needed six CI rounds of build integration and never reached
 # the device, so the difference worth testing is taken over here instead, one variable at a time.
@@ -56,9 +56,11 @@ archives = [
   # original kext addresses recorded from the pinned kernelcache; CONFIG_XNU_NATIVE_UFS
   # force-loads the archive (build/kona-ufs/libKonaUfs.a).
   "component:KonaUfs",
-  # RamBlock stays out while the UFS root is the path under test: with the RAM media published,
-  # IOFindBSDRoot waits for the IOBSD resource on it (run BH) and the boot never reaches the VFS
-  # mount, which is a different stall from the storage one.
+  # RamBlock publishes the payload's packed Data seed as an IOMedia. The dense path needs a
+  # 176 MiB seed, which pushes the payload past the boot image ceiling measured on this board
+  # (225 MiB of files needs size_mib 250 and that image no longer boots), while the packed seed
+  # is 131 MiB and fits beside the kernel.
+  "component:RamBlock",
 ]
 
 [firmware]
@@ -143,7 +145,7 @@ panic_screen = false
 # the boot shim, the firmware volume and the appended device tree all live in one of
 # them, and the image keeps 8 MiB of the partition free, so the volume is bounded here
 # at 80 MiB. Re-measure once the shim and firmware volume sizes are known.
-size_mib = 80
+size_mib = 200
 loader = "firmware"
 title = "Boot"
 # The ADT generator requires one contiguous DRAM range and checks this value against
