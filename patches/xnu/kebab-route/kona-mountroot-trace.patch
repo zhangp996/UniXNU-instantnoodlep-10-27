@@ -1,0 +1,39 @@
+diff --git a/bsd/vfs/vfs_subr.c b/bsd/vfs/vfs_subr.c
+index c8e77ab..8c968e5 100755
+--- a/bsd/vfs/vfs_subr.c
++++ b/bsd/vfs/vfs_subr.c
+@@ -1245,6 +1245,10 @@ vfs_mountroot(void)
+ 	vfs_unmountall_started = vfs_unmountall_finished = 0;
+ 	OSMemoryBarrier();
+ 
++	{
++		extern void boot_progress_stage(const char *);
++		boot_progress_stage("mr enter");
++	}
+ 	KDBG_RELEASE(DBG_MOUNTROOT | DBG_FUNC_START);
+ 	if (mountroot != NULL) {
+ 		/*
+@@ -1276,11 +1280,23 @@ vfs_mountroot(void)
+ 		mp = vfs_rootmountalloc_internal(vfsp, "root_device");
+ 		mp->mnt_devvp = rootvp;
+ 
++		{
++			extern void boot_progress_stage(const char *);
++			char konatrace[64];
++			snprintf(konatrace, sizeof(konatrace), "mr try %s", vfsp->vfc_name);
++			boot_progress_stage(konatrace);
++		}
+ 		if (vfsp->vfc_mountroot) {
+ 			error = (*vfsp->vfc_mountroot)(mp, rootvp, ctx);
+ 		} else {
+ 			error = VFS_MOUNT(mp, rootvp, 0, ctx);
+ 		}
++		{
++			extern void boot_progress_stage(const char *);
++			char konatrace[64];
++			snprintf(konatrace, sizeof(konatrace), "mr %s ret=%d", vfsp->vfc_name, error);
++			boot_progress_stage(konatrace);
++		}
+ 
+ 		if (!error) {
+ 			if (bdevvp_rootvp != rootvp) {

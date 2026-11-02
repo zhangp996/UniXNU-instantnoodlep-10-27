@@ -13,3 +13,7 @@ kebab-route/kona-rootauth-bypass.patch
 kebab-route/kona-mountroot-cp.patch
 # konacp 10: list the filesystems that carry a mountroot routine.
 kebab-route/kona-vfs-cp.patch
+# Stage trace for every mountroot attempt: "mr try <fs>" before the call and "mr <fs> ret=<err>"
+# after it, so the boot page says which file system was tried and what it returned when another
+# mountroot path stops asking for blocks (the RAM-root run ended after 29 reads with UFS out).
+kebab-route/kona-mountroot-trace.patch
