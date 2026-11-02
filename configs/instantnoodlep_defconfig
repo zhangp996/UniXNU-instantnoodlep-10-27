@@ -10,11 +10,10 @@ CONFIG_XNU_NATIVE_PAN=y
 # docs/guide/debugging.md: read the embedded panic region from the device tree instead
 # of the board header constant the arch profile otherwise compiles in.
 CONFIG_XNU_DT_PANIC_REGION=y
-# Storage: the board uses the kebab bdevsw route, not the IOStorageFamily archive.
-# CONFIG_XNU_KONA_UFS adds -DKONA to the kernel build and patches/xnu/series applies
-# kebab-route/kona-ufs-driver.patch + kona-ufs-integration.patch, so bsd/dev/kona_ufs.c
-# publishes ufsroot0 and IOKitBSDInit's rd=ufsroot0 hook selects it.
-CONFIG_XNU_KONA_UFS=y
+# Storage: only the IOStorageFamily route remains. The old kebab bdevsw driver
+# (bsd/dev/kona_ufs.c, CONFIG_XNU_KONA_UFS) is gone: it published a BSD disk with no IOMedia,
+# which docs/porting/ufs.md records as a root that APFS declines before issuing a request, and
+# its ufsroot0 device was a second root candidate in IOFindBSDRoot for nothing.
 # The OS profile compiles mockfs for the offline fixture, and mockfs_mountroot accepts
 # any device: vfs_mountroot tried it before APFS and mounted it as the root. /sbin/launchd
 # then was the whole userdata partition (vnode size 108049805312 = 26379347 x 4096) and

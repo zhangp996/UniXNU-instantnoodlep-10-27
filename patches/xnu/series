@@ -1,19 +1,20 @@
 # Board patch paths, one per line in application order.
 #
-# Kebab bdevsw route (docs/kebab-path-analysis.md): a BSD-level UFS disk publishes ufsroot0
-# without IOStorageFamily, and IOKitBSDInit's rd=ufsroot0 hook selects it. The HFS patches in
-# kebab-route/ stay unapplied: iPadOS roots on APFS, which is already in the prelinked kernel.
-kebab-route/kona-ufs-driver.patch
-# kona_early_putc now lives in the driver patch: it draws through the kernel frame
-# buffer mapping, so the separate no-op stub (kona-ufs-early-putc.patch) is gone.
-kebab-route/kona-hfs-noop.patch
-kebab-route/kona-ufs-integration.patch
+# The board keeps one storage route: KonaUfs publishes each root window as an IOMedia and
+# IOStorageFamily answers the match (docs/porting/ufs.md: a root volume needs an IOKit media,
+# not a BSD disk). The kebab bdevsw driver and its stubs are gone - kona-ufs-driver.patch,
+# kona-hfs-noop.patch and kona-ufs-integration.patch - because a bdevsw disk publishes no
+# IOMedia, APFS declines it before any block request, and its ufsroot0 device only added a
+# second root candidate to IOFindBSDRoot.
+#
+# Root authentication: the 17.7.11 image is an unsealed owner root, so the check is reported
+# and the boot continues until VerifiedRoot carries the policy.
 kebab-route/kona-rootauth-bypass.patch
 # konacp 5-8: bsd_init checkpoints around net_init_run/inittodr/vfs_mountroot.
 kebab-route/kona-mountroot-cp.patch
 # konacp 10: list the filesystems that carry a mountroot routine.
 kebab-route/kona-vfs-cp.patch
 # Stage trace for every mountroot attempt: "mr try <fs>" before the call and "mr <fs> ret=<err>"
-# after it, so the boot page says which file system was tried and what it returned when another
-# mountroot path stops asking for blocks (the RAM-root run ended after 29 reads with UFS out).
+# after it, so the boot page says which file system was tried and what it returned when a
+# mountroot path stops asking for blocks.
 kebab-route/kona-mountroot-trace.patch
