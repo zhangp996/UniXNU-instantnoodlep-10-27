@@ -131,6 +131,7 @@ extern unsigned int vm_page_active_count,vm_page_inactive_count,vm_page_wire_cou
 extern uint64_t max_mem;
 extern volatile uint32_t native_ram_block_sparse __attribute__((weak_import));
 extern volatile uint64_t native_ram_block_bytes,native_ram_block_resident_bytes __attribute__((weak_import));
+extern volatile uint64_t native_ram_block_reads,native_ram_block_failures __attribute__((weak_import));
 extern unsigned int vm_page_free_min,vm_page_free_reserved,vm_page_free_target;
 extern void boot_progress_exit_fault(int,unsigned,char *,unsigned long) __attribute__((weak_import));
 extern void boot_progress_exit_reason(int,unsigned,char *,unsigned long) __attribute__((weak_import));
@@ -498,8 +499,11 @@ static void draw(unsigned now) {
     max_mem>>20,vm_page_free_count,vm_page_active_count,vm_page_inactive_count,
     vm_page_wire_count,vm_page_speculative_count);line(35,b,0xffffff00);
   if(&native_ram_block_sparse){
-    snprintf(b,sizeof(b),"RAMDISK sparse=%u capacityMiB=%llu residentKiB=%llu; free min/reserved/target=%u/%u/%u",
-      native_ram_block_sparse,native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
+    // reads/failures first: they say whether the file system in RAM is being served at all, which
+    // is the only question a frozen page has to answer for a RAM-root boot.
+    snprintf(b,sizeof(b),"RAMDISK sparse=%u reads=%llu fails=%llu capMiB=%llu resKiB=%llu; free=%u/%u/%u",
+      native_ram_block_sparse,native_ram_block_reads,native_ram_block_failures,
+      native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target);line(36,b,0xffffff00);
   }
   if (visible->frozen) {

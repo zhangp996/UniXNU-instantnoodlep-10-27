@@ -34,6 +34,8 @@ volatile uint64_t native_virtio_verified_blocks __attribute__((weak)) = 0;
 volatile uint32_t native_ram_block_sparse __attribute__((weak)) = 0;
 volatile uint64_t native_ram_block_bytes __attribute__((weak)) = 0;
 volatile uint64_t native_ram_block_resident_bytes __attribute__((weak)) = 0;
+volatile uint64_t native_ram_block_reads __attribute__((weak)) = 0;
+volatile uint64_t native_ram_block_failures __attribute__((weak)) = 0;
 __attribute__((weak)) void boot_progress_exit_fault(int boot_progress_exit_fault0, unsigned boot_progress_exit_fault1, char *boot_progress_exit_fault2, unsigned long boot_progress_exit_fault3) { (void)boot_progress_exit_fault0; (void)boot_progress_exit_fault1; (void)boot_progress_exit_fault2; (void)boot_progress_exit_fault3; }
 __attribute__((weak)) void boot_progress_exit_reason(int boot_progress_exit_reason0, unsigned boot_progress_exit_reason1, char *boot_progress_exit_reason2, unsigned long boot_progress_exit_reason3) { (void)boot_progress_exit_reason0; (void)boot_progress_exit_reason1; (void)boot_progress_exit_reason2; (void)boot_progress_exit_reason3; }
 char boot_progress_throw_text[330] __attribute__((weak));
