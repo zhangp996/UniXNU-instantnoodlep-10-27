@@ -65,6 +65,13 @@ static unsigned gReadBlocks;
 // only thing the driver still touches per request is that copy, and the stop survives every reset,
 // poke and size change, so this is the one remaining kernel-side step to isolate.
 static unsigned gNoCopy;
+// native-ufs-directcpy: copy the caller's slice straight out of the DMA page instead of running the
+// data through the bounce buffer first. The command pattern is unchanged (two 4 KiB blocks per
+// READ(10), same LBAs), but the CPU moves half as many bytes per request, which is the one variable
+// every run so far held fixed while the stop stayed at 259-262 reads. A true zero-copy cannot exist
+// on this window: its base 0x104400 is 1024 bytes into a device block, so every 4 KiB DMA block
+// straddles the caller's buffer and the shift has to be applied by the CPU somewhere.
+static unsigned gDirectCopy;
 
 static bool hostResetTransport (void)
 {
@@ -406,6 +413,24 @@ static IOReturn hostRead4k (uint8_t lun, uint64_t lba, uint32_t blocks, void *ds
       memcpy (out + done * 4096U, gHost.virt + kDataOffset, piece * 4096U);
     }
   }
+  IOLockUnlock (gHost.lock);
+  return status;
+}
+
+// One READ(10) of at most two 4096-byte blocks that leaves the data in the DMA page instead of
+// copying it out. native-ufs-directcpy copies the slice it owns straight from there, so the bounce
+// round-trip disappears while the command pattern stays exactly as hostRead4k issues it.
+static IOReturn hostReadPiece (uint8_t lun, uint64_t lba, uint32_t blocks)
+{
+  if (!gHost.ready || !blocks || blocks > 2 || lba > 0xffffffffULL - (blocks - 1)) {
+    return kIOReturnBadArgument;
+  }
+  uint8_t cdb[10] = { 0x28, 0, uint8_t (lba >> 24), uint8_t (lba >> 16), uint8_t (lba >> 8),
+                      uint8_t (lba), 0, uint8_t (blocks >> 8), uint8_t (blocks), 0 };
+  uint32_t scsi = 0;
+  IOLockLock (gHost.lock);
+  gRootDiagnostic.lba = lba;
+  IOReturn status = hostScsi (lun, cdb, 10, true, blocks * 4096U, 1000000, &scsi);
   IOLockUnlock (gHost.lock);
   return status;
 }

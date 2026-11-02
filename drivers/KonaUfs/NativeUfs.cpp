@@ -2205,6 +2205,51 @@ extern "C" int native_ufs_block_authenticates (IOService *provider, const char *
 }
 #endif
 
+// native-ufs-directcpy's reader: the same chunking and LBA sequence as ufsReadWindow, but the bytes
+// go from the DMA page straight into the caller's memory descriptor, so the bounce buffer is never
+// written and the CPU moves half the data it used to. The window's 1024-byte offset is applied here
+// the same way: the piece's data starts at `skip` inside the DMA page.
+static UfsWindowResult ufsReadWindowDirectCopy (IOMemoryDescriptor *buffer, uint64_t absolute, uint64_t bytes,
+                                                uint64_t block, uint64_t count)
+{
+  UfsWindowResult result = { kIOReturnBadArgument, 0 };
+  if (!buffer || !ufsWindowGeometry (absolute, bytes) || !count || block >= bytes / 512 ||
+      count > bytes / 512 - block) {
+    return result;
+  }
+  result.status = kIOReturnSuccess;
+  const uint64_t start = absolute + block * 512;
+  uint64_t remaining = count * 512;
+  while (remaining && result.status == kIOReturnSuccess) {
+    const uint64_t lba = (start + result.done) / 4096;
+    const uint64_t skip = (start + result.done) % 4096;
+    uint64_t blocks = (skip + remaining + 4095) / 4096;
+    if (blocks > 2) {
+      blocks = 2;
+    }
+    result.status = hostReadPiece (0, lba, static_cast<uint32_t> (blocks));
+    if (result.status != kIOReturnSuccess) {
+      break;
+    }
+    uint64_t usable = blocks * 4096 - skip;
+    if (usable > remaining) {
+      usable = remaining;
+    }
+    if (buffer->writeBytes (result.done, gHost.virt + kDataOffset + skip, usable) != usable) {
+      result.status = kIOReturnIOError;
+      break;
+    }
+    result.done += usable;
+    remaining -= usable;
+  }
+  // The page's request counter counts requests, not commands: the bounce path increments once per
+  // ufsReadWindow chunk, so this does the same and the 259-262 reads stay comparable.
+  if (result.status == kIOReturnSuccess) {
+    __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
+  }
+  return result;
+}
+
 bool NativeUfsBlock::start (IOService *provider)
 {
   native_ufs_root_step = 41200;   // about to call IOBlockStorageDevice::start
@@ -2311,7 +2356,14 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     , &verified
 #endif
   };
-  UfsWindowResult outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
+  UfsWindowResult outcome;
+  if (gDirectCopy && windowLock) {
+    IOLockLock (windowLock);
+    outcome = ufsReadWindowDirectCopy (buffer, absolute, bytes, block, count);
+    IOLockUnlock (windowLock);
+  } else {
+    outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
+  }
   IOReturn result = outcome.status;
   uint64_t done = outcome.done;
   if (result != kIOReturnSuccess) {
@@ -2750,6 +2802,7 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-ssu-every", &gSsuEvery, sizeof (gSsuEvery));
   PE_parse_boot_argn ("native-ufs-read-blocks", &gReadBlocks, sizeof (gReadBlocks));
   PE_parse_boot_argn ("native-ufs-nocopy", &gNoCopy, sizeof (gNoCopy));
+  PE_parse_boot_argn ("native-ufs-directcpy", &gDirectCopy, sizeof (gDirectCopy));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
