@@ -402,20 +402,27 @@ static void smmuBypassStream (uint16_t stream, OSSharedPtr<IOMemoryMap> &keep, u
                               uint64_t dma, uint64_t bytes)
 {
   //
-  // kona: the ufshc node carries no iommus property, so this controller is not behind the
-  // apps SMMU and the DMA addresses are already physical. The SM8550 takeover is skipped
-  // rather than ported; report the stream as not taken so the diagnostics stay honest.
+  // kona: the ufshc node carries no iommus property and the 2026-10-17 hardware read found no
+  // stream-match entry for ID 0x60 with unmatched streams faulting, so this controller is not
+  // behind the apps SMMU and its DMA addresses are already physical. The shared ShengUfs takes
+  // the stream over anyway, which is the one part of that driver this port left out, so
+  // native-ufs-smmu=1 runs the same takeover here. With the switch off the function reports the
+  // stream as not taken, which is what every earlier run recorded.
   //
-  (void)stream;
-  (void)keep;
-  (void)dma;
-  (void)bytes;
-  if (report) {
-    report[0] = 0;
-    report[1] = 0;
-    report[2] = 0;
+  unsigned takeover = 0;
+  PE_parse_boot_argn ("native-ufs-smmu", &takeover, sizeof (takeover));
+  if (!takeover) {
+    (void)stream;
+    (void)keep;
+    (void)dma;
+    (void)bytes;
+    if (report) {
+      report[0] = 0;
+      report[1] = 0;
+      report[2] = 0;
+    }
+    return;
   }
-  return;
 
   uintptr_t smmu = mapPhys (0x15000000ULL, 0xd0000, keep);
   if (!smmu) {
