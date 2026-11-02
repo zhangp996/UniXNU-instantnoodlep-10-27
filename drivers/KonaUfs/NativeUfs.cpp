@@ -2231,6 +2231,10 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
       count > bytes / 512 - block || buffer->getLength () < count * 512) {
     return kIOReturnBadArgument;
   }
+  if (gReadBlocks && count > gReadBlocks) {
+    // A short read is legal: the caller retries from block + done.
+    count = gReadBlocks;
+  }
   if (buffer->getDirection () != kIODirectionIn) {
     return kIOReturnNotWritable;
   }
@@ -2738,6 +2742,7 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-noinval", &gNoInvalidate, sizeof (gNoInvalidate));
   PE_parse_boot_argn ("native-ufs-chunk-blocks", &gChunkBlocks, sizeof (gChunkBlocks));
   PE_parse_boot_argn ("native-ufs-ssu-every", &gSsuEvery, sizeof (gSsuEvery));
+  PE_parse_boot_argn ("native-ufs-read-blocks", &gReadBlocks, sizeof (gReadBlocks));
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt

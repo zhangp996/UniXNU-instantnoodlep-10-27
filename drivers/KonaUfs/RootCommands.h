@@ -57,6 +57,10 @@ static unsigned gChunkBlocks;
 // stop survived a request-list reset every 32 commands, so if a counter exists it is inside the
 // device or the kernel rather than in the host controller, and this poke is the device-side test.
 static unsigned gSsuEvery;
+// native-ufs-read-blocks: clamp every media request to n 512-byte blocks. The block layer resubmits
+// the rest as a new request, so the same bytes arrive as more requests - which separates a stop that
+// counts requests from one that counts bytes, the two readings that still fit the evidence.
+static unsigned gReadBlocks;
 
 static bool hostResetTransport (void)
 {
