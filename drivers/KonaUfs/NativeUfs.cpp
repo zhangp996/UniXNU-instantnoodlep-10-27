@@ -2930,6 +2930,9 @@ bool NativeUfs::start (IOService *provider)
   PE_parse_boot_argn ("native-ufs-read-blocks", &gReadBlocks, sizeof (gReadBlocks));
   PE_parse_boot_argn ("native-ufs-nocopy", &gNoCopy, sizeof (gNoCopy));
   PE_parse_boot_argn ("native-ufs-directcpy", &gDirectCopy, sizeof (gDirectCopy));
+  unsigned slots = 0;
+  PE_parse_boot_argn ("native-ufs-slots", &slots, sizeof (slots));
+  gSlotAlternate = slots >= 2 ? 1U : 0U;
   PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
   // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
   // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt

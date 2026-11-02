@@ -1,13 +1,36 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
 // Shared production command path. Included inside the root transport namespace.
 // The host harness replaces only MMIO, DMA synchronization, clock and lock primitives.
+// native-ufs-slots=2: consecutive commands use different request slots. The request list has 32
+// entries and the page carries one 4 KiB command block per slot, so the CPU writes slot 1 while the
+// controller may still own slot 0. Reusing one slot, one UTRD and one DMA page is what every dying
+// run shares, and a post-delay only shrinks that window instead of closing it.
+static unsigned gSlotAlternate;
+static unsigned gSlot;
+static unsigned gSlotSequence;
+
+static uint8_t *utrdBase (void)
+{
+  return gHost.virt + (gSlotAlternate ? gSlot * 32U : 0U);
+}
+
+static uint8_t *ucdBase (void)
+{
+  return gHost.virt + kUcdOffset + (gSlotAlternate ? gSlot * kUcdStride : 0U);
+}
+
+static uint64_t ucdPhysBase (void)
+{
+  return gHost.phys + kUcdOffset + (gSlotAlternate ? gSlot * kUcdStride : 0U);
+}
+
 struct HardwareTransferPort {
   uint64_t deadline;
   uint32_t doorbell () { return read32 (gHost.hc, 0x58); }
   uint32_t interrupt () { return read32 (gHost.hc, 0x20); }
   uint32_t completedOcs () {
-    cacheInvalidate (gHost.virt, 64);
-    return *reinterpret_cast<volatile uint32_t *> (gHost.virt + 8) & 0xff;
+    cacheInvalidate (utrdBase (), 64);
+    return *reinterpret_cast<volatile uint32_t *> (utrdBase () + 8) & 0xff;
   }
   bool expired () { return mach_absolute_time () >= deadline; }
   void delay () { IODelay (2); }
@@ -115,20 +138,21 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     return recordTransport (kIOReturnIOError, *ocs);
   }
   gRootDiagnostic.command++;
+  uint8_t *ucd = ucdBase ();
   if (gTagRotate) {
     // The command tag is byte 3 of the UPIU header and every command so far used zero.
-    gHost.virt[kUcdOffset + 3] = static_cast<uint8_t> (gRootDiagnostic.command & 0x1fU);
+    ucd[3] = static_cast<uint8_t> (gRootDiagnostic.command & 0x1fU);
   }
-  gRootDiagnostic.type = gHost.virt[kUcdOffset];
-  gRootDiagnostic.lun = gHost.virt[kUcdOffset + 2];
-  gRootDiagnostic.opcode = gHost.virt[kUcdOffset + (gRootDiagnostic.type == 1 ? 16 : 12)];
+  gRootDiagnostic.type = ucd[0];
+  gRootDiagnostic.lun = ucd[2];
+  gRootDiagnostic.opcode = ucd[gRootDiagnostic.type == 1 ? 16 : 12];
   gRootDiagnostic.scsi = 0xffff;
   gRootDiagnostic.response = 0;
   gRootDiagnostic.protocol = 0;
   gRootDiagnostic.residual = 0;
   gRootDiagnostic.sense = 0;
-  uint8_t *utrd = gHost.virt;
-  uint64_t ucdPhys = gHost.phys + kUcdOffset;
+  uint8_t *utrd = utrdBase ();
+  uint64_t ucdPhys = ucdPhysBase ();
   uint32_t *words = reinterpret_cast<uint32_t *> (utrd);
   for (unsigned index = 0; index < 8; index++) {
     words[index] = 0;
@@ -144,7 +168,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   words[7] = (dataBytes ? 1U : 0U) | (dataBytes ? ((kPrdtOffset >> 2) << 16) : 0U);
   if (dataBytes) {
     uint64_t dataPhys = gHost.phys + kDataOffset;
-    uint32_t *prd = reinterpret_cast<uint32_t *> (gHost.virt + kUcdOffset + kPrdtOffset);
+    uint32_t *prd = reinterpret_cast<uint32_t *> (ucd + kPrdtOffset);
     prd[0] = static_cast<uint32_t> (dataPhys);
     prd[1] = static_cast<uint32_t> (dataPhys >> 32);
     prd[2] = 0;
@@ -158,7 +182,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   HardwareTransferPort port;
   clock_interval_to_deadline (timeoutUs, kMicrosecondScale, &port.deadline);
   traceStep (10);   // about to write the doorbell
-  hostWrite (0x58, 1);
+  hostWrite (0x58, 1U << gSlot);
   traceStep (11);   // doorbell written
   UfsTransferPoll state;
   UfsTransferEnd end = pollUfsTransfer (port, state);
@@ -199,7 +223,7 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
     cacheInvalidate (gHost.virt, kDataOffset + dataBytes);
   }
   traceStep (15);
-  gRootDiagnostic.response = loadBe32 (gHost.virt + kUcdOffset + kRspOffset);
+  gRootDiagnostic.response = loadBe32 (ucdBase () + kRspOffset);
   // 14 separates a stall in the cache/response read from one after the command returned: the
   // deferred run stopped at 13 (50029, command 1) with ocs=00 and scsi=0000, so the first
   // command completed and the thread never reached the caller.
@@ -242,6 +266,10 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
 
 static bool hostClearUcd (void)
 {
+  // Pick the slot before anything touches the page: slot 1 rotates every other command when
+  // native-ufs-slots=2 is set, so the controller's last UTRD and UCD are not overwritten while it
+  // may still be writing them.
+  gSlot = gSlotAlternate ? (gSlotSequence++ & 1U) : 0U;
   traceStep (1);
   if (gHost.poisoned) return false;
   // Check before touching the command/response area, not just before ringing.
@@ -260,7 +288,7 @@ static bool hostClearUcd (void)
     recordTransport (kIOReturnIOError, 15);
     return false;
   }
-  uint32_t *words = reinterpret_cast<uint32_t *> (gHost.virt + kUcdOffset);
+  uint32_t *words = reinterpret_cast<uint32_t *> (ucdBase ());
   for (unsigned index = 0; index < (kPrdtOffset + 16) / 4; index++) {
     words[index] = 0;
   }
@@ -281,7 +309,7 @@ static IOReturn hostProtocolError (uint32_t reason)
 // 6 short/overrun transfer, 7 nonzero NOP result.
 static IOReturn hostResponseHeader (uint8_t type, uint8_t lun, uint8_t tag)
 {
-  const uint8_t *rsp = gHost.virt + kUcdOffset + kRspOffset;
+  const uint8_t *rsp = ucdBase () + kRspOffset;
   if (rsp[0] != type) return hostProtocolError (1);
   if (rsp[3] != tag) return hostProtocolError (2);
   if (rsp[2] != lun) return hostProtocolError (3);
@@ -293,13 +321,13 @@ static IOReturn hostResponseHeader (uint8_t type, uint8_t lun, uint8_t tag)
 static IOReturn hostNop (void)
 {
   if (!hostClearUcd ()) return kIOReturnNotReady;
-  gHost.virt[kUcdOffset + 3] = 1;
+  ucdBase ()[3] = 1;
   uint32_t ocs = 15;
   IOReturn result = hostSubmit (0, 0, 200000, &ocs);
   if (result != kIOReturnSuccess) return result;
   result = hostResponseHeader (0x20, 0, 1);
   if (result != kIOReturnSuccess) return result;
-  const uint8_t *rsp = gHost.virt + kUcdOffset + kRspOffset;
+  const uint8_t *rsp = ucdBase () + kRspOffset;
   if (rsp[10] || rsp[11]) return hostProtocolError (4);
   if (rsp[6] || rsp[7]) return hostProtocolError (7);
   return kIOReturnSuccess;
@@ -314,7 +342,7 @@ static IOReturn hostScsiDir (uint8_t lun, const uint8_t *cdb, unsigned cdbLength
   if (!cdb || !cdbLength || cdbLength > 16 || dataBytes > kDataMax || direction > 2 ||
       (dataBytes & 3) || (dataBytes ? !direction : direction)) return kIOReturnBadArgument;
   if (!hostClearUcd ()) return kIOReturnNotReady;
-  uint8_t *ucd = gHost.virt + kUcdOffset;
+  uint8_t *ucd = ucdBase ();
   ucd[0] = 0x01;                      // COMMAND UPIU
   ucd[1] = direction == 2 ? 0x40 : direction == 1 ? 0x20 : 0x00;   // R: data in, W: data out
   ucd[2] = lun;
@@ -360,7 +388,7 @@ static IOReturn hostQueryRead (uint8_t opcode, uint8_t idn, uint32_t *value)
 {
   if (!value || (opcode != 3 && opcode != 5)) return kIOReturnBadArgument;
   if (!hostClearUcd ()) return kIOReturnNotReady;
-  uint8_t *ucd = gHost.virt + kUcdOffset;
+  uint8_t *ucd = ucdBase ();
   ucd[0] = 0x16;                      // QUERY REQUEST
   ucd[3] = 1;
   ucd[5] = 0x01;                      // standard read request (header dword 1, byte 1)
