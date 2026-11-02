@@ -1468,6 +1468,16 @@ static bool hostBringUp (const char **why)
   gRootDiagnostic.contiguous = contiguous;
   native_ufs_root_step = 40003;
   if (stopAfter (40003)) { *why = "stop requested"; return false; }
+  // native-ufs-nohib=1 disarms the controller's auto-hibernate idle timer once the controller is
+  // mapped: it is hardware state the bootloader may have left running, and this driver has never
+  // touched it. Linux writes 0 here on init.
+  gAhit = read32 (gHost.hc, 0x18);
+  unsigned nohib = 0;
+  PE_parse_boot_argn ("native-ufs-nohib", &nohib, sizeof (nohib));
+  if (nohib) {
+    write32 (gHost.hc, 0x18, 0);
+    gAhit = read32 (gHost.hc, 0x18);
+  }
   if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
       (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
     *why = "DMA address/contiguity";

@@ -95,6 +95,11 @@ static unsigned gNoCopy;
 // on this window: its base 0x104400 is 1024 bytes into a device block, so every 4 KiB DMA block
 // straddles the caller's buffer and the shift has to be applied by the CPU somewhere.
 static unsigned gDirectCopy;
+// The controller's Auto-Hibernate Idle Timer (UFSHCI 0x18). If the bootloader left it armed, the
+// link drops into Hibernate between commands and every command becomes a wake cycle - the reading
+// that a 500 ms gap stops after 83 reads fits, while 100-200 ms sits flat at 259-261. The page
+// carries its value so a frozen frame says whether the hardware was hibernating under the traffic.
+static uint32_t gAhit;
 
 static bool hostResetTransport (void)
 {
@@ -257,8 +262,10 @@ static IOReturn hostSubmit (uint32_t direction, uint32_t dataBytes, uint32_t tim
   // Single-letter labels keep four fields inside the page's 28-byte strip. n is the transfer size the
   // driver just issued: the stop is fixed at one command, so a size that changes there - a larger
   // read than the buffer was sized for - would explain a controller DMA that runs past its buffer.
-  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "i=%x h=%x b=%x n=%x",
-            is, hcs, static_cast<uint32_t> (gRootDiagnostic.lba & 0xffffffffU), dataBytes);
+  // The transfer size is always 0x2000 here, so its field now carries the auto-hibernate timer:
+  // a=0 means the hardware never hibernates, anything else is the idle window the link drops on.
+  snprintf (gLastControllerStatus, sizeof gLastControllerStatus, "i=%x h=%x a=%x b=%x",
+            is, hcs, gAhit, static_cast<uint32_t> (gRootDiagnostic.lba & 0xffffffffU));
   native_ufs_root_failure = gLastControllerStatus;
   traceStep (14);
   return recordTransport (*ocs == 0 ? kIOReturnSuccess : kIOReturnIOError, *ocs);
