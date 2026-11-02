@@ -18,3 +18,7 @@ kebab-route/kona-vfs-cp.patch
 # after it, so the boot page says which file system was tried and what it returned when a
 # mountroot path stops asking for blocks.
 kebab-route/kona-mountroot-trace.patch
+# Every process exit lands on the boot page with its name and status: launchd execs with an
+# accepted signature and PID 1 then exits with status 0, so the trace says which process it
+# actually was and what it returned.
+kebab-route/kona-init-exit-trace.patch
