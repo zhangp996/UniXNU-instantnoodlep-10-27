@@ -1,0 +1,15 @@
+Run BA: cold-init level 3, 2026-11-02 18:14
+
+Image:  boot-runBA-cold3.img, sha256 c8d74c2bcf281af65b924e5e090a407e3286c7543736a94e63fc38c4c9958c40
+Kernel: CI C9859A6D33A8C81B7A554D9FCDC97BFE4169B43E37F90BBAECEB0319F96A1507 (staged coldinit, d081c05)
+Args:   native-ufs-delay=10 wake-first=1 paint=1 noirq=1 gic-mask=1 settle=5000
+        heartbeat=1 post-delay=200000 directcpy=1 coldinit=3
+
+Result: fastboot boot reported Booting OKAY at 18:14:23; the unit entered Qualcomm 900E
+        about 11 s later and the diagnostic page never became readable. The bring-up
+        thread sleeps native-ufs-delay=10 before running coldInit, so the crash follows
+        the reset pulse by about a second.
+
+Reading: level 2 writes the same 72 QMP entries and survives to its deadline, so the
+         fatal action is the block reset at GCC 0x77000 (assert, 200 us, release).
+         The cold-initialisation route is closed: adopt the bootloader's PHY state.
