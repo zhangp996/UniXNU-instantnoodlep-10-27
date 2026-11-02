@@ -1,0 +1,14 @@
+Run AV: cold init, 2026-11-02 16:54
+
+Image:   boot-runAV-coldinit.img, 99,119,104 bytes, sha256 4f7b20ed70637a1671685ae990691113e0726f41b8cca22c5859908e644dc784
+Kernel:  CI 642A5620CEA27A733C2D57EAF769EDD4C2EE2B5190F0A915C642C75D4D032D47 -> payload f1a57e5241ba7bfbc8f3d5b687a258d02f808406f61ee12a5851b1b21b589dfd
+Args:    native-ufs-delay=10 wake-first=1 paint=1 noirq=1 gic-mask=1 settle=5000
+         heartbeat=1 post-delay=200000 directcpy=1 coldinit=1
+
+Result:  fastboot boot reported Booting OKAY at 16:54:32; the unit came back in
+         Qualcomm 900E (EDL) and never drew the diagnostic page, so the failure sits
+         before the first frame and the page cannot localise it.
+
+Reading: the clock/power half of the sequence is a measured no-op on this board, so the
+         suspects are the block reset at GCC 0x77000 and the QMP table burst at 0x1d87000.
+         native-ufs-coldinit is now staged 1..4 to bisect them.

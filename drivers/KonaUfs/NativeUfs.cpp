@@ -1326,7 +1326,7 @@ static bool uicCommand (uint32_t opcode, uint32_t arg1, uint32_t arg2, uint32_t 
 // domain on, branch clocks on, PHY block reset, QMP tables, link start. Every run so far
 // inherited a trained link and a PHY it never touched, so the new variables are the reset pulse
 // and the LINKSTARTUP that follows it - this driver has never started this link itself.
-static bool coldInit (const char **why)
+static bool coldInit (unsigned stage, const char **why)
 {
   // hostBringUp runs for the probe and again for the root start; the link is started once.
   static bool done = false;
@@ -1348,24 +1348,44 @@ static bool coldInit (const char **why)
       IODelay (100);
     }
   }
-  native_ufs_root_step = 68003;   // cold init: PHY map
-  uintptr_t phy = mapRegisters (UFS_PHY_BASE, UFS_PHY_SIZE);
-  if (!phy) {
-    *why = "coldinit: PHY map";
-    return false;
+  // The stage argument splits the sequence so a run that crashes says where: 1 is the clock and
+  // power ownership alone (a measured no-op on this board), 2 adds the QMP tables without the
+  // reset, 3 adds the block reset pulse, 4 adds the link start. The 900E on 2026-11-02 came from
+  // the whole sequence at once, and an EDL entry leaves no page to say which part did it.
+  if (stage < 1) {
+    return true;
   }
-  // qcom_reset_set writes 0 to assert and 1 to release, so a run that leaves 0 behind holds the
-  // PHY in reset: that is what the probe's single write of 0 did.
-  write32 (gcc, GCC_UFS_PHY_BCR, 0);
-  IODelay (200);
-  write32 (gcc, GCC_UFS_PHY_BCR, 1);
-  IODelay (1000);
-  native_ufs_root_step = 68004;   // cold init: QMP tables
-  writePhyTable (phy, SM8150_UFSPHY_SERDES, sizeof (SM8150_UFSPHY_SERDES) / sizeof (UFS_PHY_TBL));
-  writePhyTable (phy + 0x400, SM8150_UFSPHY_TX, sizeof (SM8150_UFSPHY_TX) / sizeof (UFS_PHY_TBL));
-  writePhyTable (phy + 0x800, SM8150_UFSPHY_RX, sizeof (SM8150_UFSPHY_RX) / sizeof (UFS_PHY_TBL));
-  writePhyTable (phy + 0xc00, SM8150_UFSPHY_PCS, sizeof (SM8150_UFSPHY_PCS) / sizeof (UFS_PHY_TBL));
-  IODelay (1000);
+  native_ufs_root_step = 68010U + stage;
+  uintptr_t phy = 0;
+  if (stage >= 2) {
+    native_ufs_root_step = 68003;   // cold init: PHY map
+    phy = mapRegisters (UFS_PHY_BASE, UFS_PHY_SIZE);
+    if (!phy) {
+      *why = "coldinit: PHY map";
+      return false;
+    }
+  }
+  if (stage >= 3) {
+    // qcom_reset_set writes 0 to assert and 1 to release, so a run that leaves 0 behind holds the
+    // PHY in reset: that is what the probe's single write of 0 did.
+    native_ufs_root_step = 68013;   // cold init: block reset assert
+    write32 (gcc, GCC_UFS_PHY_BCR, 0);
+    IODelay (200);
+    write32 (gcc, GCC_UFS_PHY_BCR, 1);
+    IODelay (1000);
+  }
+  if (stage >= 2) {
+    native_ufs_root_step = 68004;   // cold init: QMP tables
+    writePhyTable (phy, SM8150_UFSPHY_SERDES, sizeof (SM8150_UFSPHY_SERDES) / sizeof (UFS_PHY_TBL));
+    writePhyTable (phy + 0x400, SM8150_UFSPHY_TX, sizeof (SM8150_UFSPHY_TX) / sizeof (UFS_PHY_TBL));
+    writePhyTable (phy + 0x800, SM8150_UFSPHY_RX, sizeof (SM8150_UFSPHY_RX) / sizeof (UFS_PHY_TBL));
+    writePhyTable (phy + 0xc00, SM8150_UFSPHY_PCS, sizeof (SM8150_UFSPHY_PCS) / sizeof (UFS_PHY_TBL));
+    IODelay (1000);
+  }
+  if (stage < 4) {
+    done = true;
+    return true;
+  }
   native_ufs_root_step = 68005;   // cold init: link start
   uint32_t result = 0;
   if (!uicCommand (0x16, 0, 0, 0, &result)) {
@@ -1448,7 +1468,7 @@ static bool hostBringUp (const char **why)
   uint32_t report[3] = { 0, 0, 0 };
   unsigned cold = 0;
   PE_parse_boot_argn ("native-ufs-coldinit", &cold, sizeof (cold));
-  if (cold && !coldInit (why)) {
+  if (cold && !coldInit (cold, why)) {
     return false;
   }
   gRootDiagnostic.stage = "SMMU and request list";
