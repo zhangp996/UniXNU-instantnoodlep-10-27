@@ -1688,10 +1688,13 @@ static bool hostBringUp (const char **why)
       return false;
     }
     const unsigned at = 0x2000U + 3U * 0x1000U;
-    snprintf (nocWhy, sizeof nocWhy, "noc %x %x %x %x ax %x ag %x",
-              read32 (noc, at), read32 (noc, at + 4), read32 (noc, at + 8), read32 (noc, at + 0xc),
-              read32 (gcc, GCC_UFS_PHY_AXI_ENABLE), read32 (gcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE));
-    native_ufs_root_step = 65000;
+    const uint32_t axi = read32 (gcc, GCC_UFS_PHY_AXI_ENABLE) & 1U;
+    const uint32_t agg = read32 (gcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE) & 1U;
+    // The reason row keeps 28 characters, so the branch enables ride the step number instead
+    // (65010 = AXI only, 65001 = aggre only) and the row carries the four fabric words whole.
+    native_ufs_root_step = 65000U + axi * 10U + agg;
+    snprintf (nocWhy, sizeof nocWhy, "noc %x %x %x %x",
+              read32 (noc, at), read32 (noc, at + 4), read32 (noc, at + 8), read32 (noc, at + 0xc));
     *why = nocWhy;
     return false;
   }
