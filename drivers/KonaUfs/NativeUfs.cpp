@@ -1674,6 +1674,27 @@ static bool hostBringUp (const char **why)
         return false;
       }
     }
+    // native-ufs-tur=<n>: issue n TEST UNIT READYs, with the device awake and before any media
+    // read. Every run so far mixed 8 KiB reads with the few bring-up commands, so nothing separates
+    // "any command traffic" from "data traffic". These commands move no bytes: a run that dies near
+    // the same count as the read runs puts the wall in the controller or the link, and one that
+    // survives puts it in the data path. 69xxx on the page is the probe's own counter.
+    unsigned turCount = 0;
+    PE_parse_boot_argn ("native-ufs-tur", &turCount, sizeof (turCount));
+    if (turCount) {
+      static const uint8_t tur[6] = { 0x00, 0, 0, 0, 0, 0 };
+      gRootDiagnostic.stage = "test-unit-ready probe";
+      for (unsigned index = 0; index < turCount; index++) {
+        uint32_t scsi = 0;
+        native_ufs_root_step = 69000U + (index < 999U ? index : 999U);
+        if (hostScsi (0, tur, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
+          gRootDiagnostic.stage = "test-unit-ready probe returned";
+          break;
+        }
+        IODelay (2000);
+      }
+      native_ufs_root_step = 69999U;
+    }
     // 40014 and 40015 bracket the settle delay: 50029 leaves the SSU inside hostScsi, 40014 puts
     // the gap in IODelay, and 40015 means the TUR loop was entered.
     native_ufs_root_step = 40014;
