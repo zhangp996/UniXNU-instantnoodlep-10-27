@@ -1,6 +1,6 @@
 {
-  "image_sha256": "e5634d04a8ac35f024845f583394e0a35deb26a04cb0c00286a8674e25a9a4f2",
-  "blocks_verified": 1483785,
+  "image_sha256": "d8808bea18b949142b3e47bbcb780c3f22faaacd9b40a88f77c23557181edc9c",
+  "blocks_verified": 1483776,
   "block_bytes": 4096,
   "volume_uuid": "04769D26-2CA0-4825-B443-E2E5F88300F2",
   "real_c_signature_and_block_verification": true,
@@ -9,14 +9,14 @@
   "actual_sample_indices": [
     0,
     1,
-    741892,
-    1483784
+    741888,
+    1483775
   ],
   "actual_sample_lengths": [
     4096,
     4096,
     4096,
-    1536
+    4096
   ],
-  "source": "signed from the original OS window of userdata-root.img at 0x100000"
+  "source": "signed from the OS window the board manifest declares: userdata-root.img 0x104400 + 0x16a400000"
 }
