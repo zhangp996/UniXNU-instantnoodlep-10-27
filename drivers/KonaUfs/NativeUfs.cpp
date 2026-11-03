@@ -3478,8 +3478,10 @@ bool NativeUfs::startRoot (IOService *provider)
       // The generic message hid which step of configureVerification() refused: the page's row
       // holds 28 characters, so carry the vr_open status and the first letters of the stage.
       static char konaPrepReason[48];
-      snprintf (konaPrepReason, sizeof (konaPrepReason), "prep v=%x %.12s",
-                gRootDiagnostic.verify, gRootDiagnostic.stage ? gRootDiagnostic.stage : "-");
+      // The window size is what the policy's signed image_bytes is compared against, so it has to
+      // be on the page beside the refusal: "prep v=ffffffff b=16a408600" still fits 28 columns.
+      snprintf (konaPrepReason, sizeof (konaPrepReason), "prep v=%x b=%llx",
+                gRootDiagnostic.verify, static_cast<unsigned long long> (gRootDiagnostic.windowBytes));
       rootDiagnosticFailure (konaPrepReason);
     }
     return false;
