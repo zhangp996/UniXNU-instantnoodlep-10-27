@@ -1,7 +1,19 @@
 diff --git a/bsd/miscfs/devfs/devfs_vfsops.c b/bsd/miscfs/devfs/devfs_vfsops.c
 --- a/bsd/miscfs/devfs/devfs_vfsops.c
 +++ b/bsd/miscfs/devfs/devfs_vfsops.c
-@@ -491,7 +491,17 @@
+@@ -173,6 +173,11 @@
+ {
+ 	struct devfsmount *devfs_mp_p;  /* devfs specific mount info */
+ 	int error;
++
++	{
++		extern void boot_progress_stage(const char *);
++		boot_progress_stage("dm enter");
++	}
+ 
+ 	/*-
+ 	 *  If they just want to update, we don't need to do anything.
+@@ -491,7 +496,17 @@
  	vfs_context_t ctx = vfs_context_kernel();
  	char fsname[] = "devfs";
  
@@ -33,3 +45,36 @@ diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
  	kern_flags &= KERNEL_MOUNT_SANITIZE_MASK;
  
  	/*
+@@ -312,6 +316,12 @@
+ 	 */
+ 	if (vp == NULLVP) {
+ 		error = namei(&nd);
++	{
++		extern void boot_progress_stage(const char *);
++		char konatrace[48];
++		snprintf(konatrace, sizeof(konatrace), "km namei=%d", error);
++		boot_progress_stage(konatrace);
++	}
+ 		if (error) {
+ 			if (kern_flags & (KERNEL_MOUNT_SNAPSHOT | KERNEL_MOUNT_VOLBYROLE_MASK)) {
+ 				printf("failed to locate mount-on path: %s ", path);
+@@ -330,9 +340,19 @@
+ 	}
+ 
+ 	kern_flags |= KERNEL_MOUNT_KMOUNT;
++	{
++		extern void boot_progress_stage(const char *);
++		boot_progress_stage("km common");
++	}
+ 	error = mount_common(fstype, pvp, vp, &nd.ni_cnd, CAST_USER_ADDR_T(data),
+ 	    syscall_flags, kern_flags, NULL, ctx);
+ 
++	{
++		extern void boot_progress_stage(const char *);
++		char konatrace[48];
++		snprintf(konatrace, sizeof(konatrace), "km common=%d", error);
++		boot_progress_stage(konatrace);
++	}
+ 	if (did_namei) {
+ 		vnode_put(vp);
+ 		vnode_put(pvp);
