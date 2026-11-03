@@ -171,3 +171,10 @@ __attribute__((weak)) void boot_progress_user_breakpoint(void *a0, unsigned a1) 
  * definition satisfies the link without pretending a policy was applied.
  */
 __attribute__((weak)) int sheng_boot_watchdog_policy(void *process, uint64_t scratch) { (void)process; (void)scratch; return 0; }
+/*
+ * VirtioMmioBlock declares this weak hook for a UFS window provider. This board's KonaUfs
+ * is built without NATIVE_VERIFIED_BLOCK during bring-up, so no provider defines it and the
+ * kernel link still needs the symbol. A weak no-op leaves the UFS window unauthenticated while
+ * the Virtio archive provides the owner-root policy functions.
+ */
+__attribute__((weak)) int native_ufs_block_authenticates(void *provider, const char *uuid, uint8_t *digest) { (void)provider; (void)uuid; (void)digest; return 0; }
