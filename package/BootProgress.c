@@ -171,8 +171,11 @@ extern int nprocs;
 extern volatile int native_owner_root_accepted;
 // offline-owner-cache-carrier.patch counts how often the shared-region map accepted or rejected
 // the dyld cache carrier. A refused carrier is the documented reason a launchd ends before main.
-extern unsigned long native_owner_cache_carrier_accepts __attribute__((weak_import));
-extern unsigned long native_owner_cache_carrier_rejects __attribute__((weak_import));
+// Weak definitions, not weak imports: the kernel link only satisfies weak imports from a dylib,
+// and the carrier counters live in a translation unit this build does not compile them into, so
+// the page reads 0/0 instead of failing the link.
+unsigned long native_owner_cache_carrier_accepts __attribute__((weak));
+unsigned long native_owner_cache_carrier_rejects __attribute__((weak));
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -509,8 +512,7 @@ static void draw(unsigned now) {
       native_ram_block_sparse,native_ram_block_reads,native_ram_block_failures,
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
-      &native_owner_cache_carrier_accepts ? native_owner_cache_carrier_accepts : 0,
-      &native_owner_cache_carrier_rejects ? native_owner_cache_carrier_rejects : 0);line(36,b,0xffffff00);
+      native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
   }
   if (visible->frozen) {
     // Capture without touching the controller, including when an interrupted
