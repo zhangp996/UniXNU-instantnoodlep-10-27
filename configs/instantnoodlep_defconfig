@@ -37,8 +37,9 @@ CONFIG_XNU_OWNER_CACHE_MOUNT=y
 CONFIG_XNU_OWNER_CACHE_STARTUP=y
 CONFIG_XNU_OWNER_BOOT_MANIFEST=y
 CONFIG_XNU_OWNER_DATA_MOUNT=y
-# Required by OWNER_ROOT_TRUST; carries no device here.
-CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y
+# CONFIG_XNU_NATIVE_VIRTIO_BLOCK is not set: RamBlock is this board's verified block transport
+# (docs/concepts/security.md records that the two share one policy), so the build accepts it in
+# place of the virtio transport that has no device here.
 # docs/guide/debugging.md: on a board with no UART the kernel has to report through the
 # panel. The boot progress layer renders the diagnostic page that boot-progress=1|2 selects,
 # reading the storage counters the KonaUfs component exports.
