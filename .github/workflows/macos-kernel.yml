@@ -298,10 +298,13 @@ jobs:
         run: |
           set -o pipefail
           TRUST="$PWD/build/trust.bundle"
+          DATA="$PWD/build/owner-data-fixture/owner-data-32.cdr"
           test -f "$TRUST"
+          test -f "$DATA"
           echo "trust cache: $TRUST"
+          echo "Data seed: $DATA"
           if [ -n "$TRUST" ]; then
-            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" 2>&1 | tee "$RUNNER_TEMP/payload.log"
+            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" --data-ramdisk "$DATA" 2>&1 | tee "$RUNNER_TEMP/payload.log"
           else
             ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" 2>&1 | tee "$RUNNER_TEMP/payload.log"
           fi
