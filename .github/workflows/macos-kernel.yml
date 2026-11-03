@@ -283,12 +283,23 @@ jobs:
           echo "kernel: $KERNEL"
           python3 device/scripts/patch-amfi-nopmgr.py "$KERNEL" 2>&1 | tee "$RUNNER_TEMP/amfi-patch.log"
 
+      - name: Wrap the static trust cache
+        # The board pins the wrapped module bundle, not the raw .trustcache IM4P that the
+        # IPSW extraction leaves behind. Derive the bundle from the original static module and
+        # let the wrapper refuse anything that is not the 21H461 module this board records.
+        run: |
+          set -o pipefail
+          TRUST_RAW=$(ls -S out/ipsw/*/*.trustcache 2>/dev/null | head -1)
+          test -n "$TRUST_RAW"
+          echo "raw trust cache: $TRUST_RAW"
+          python3 device/scripts/wrap-static-trustcache.py "$TRUST_RAW" build/trust.bundle 2>&1 | tee "$RUNNER_TEMP/trust-bundle.log"
+
       - name: Build the payload
         run: |
           set -o pipefail
-          # The static trust cache is the large one; the cryptex ones next to it are tiny.
-          TRUST=$(ls -S out/ipsw/*/*.trustcache 2>/dev/null | head -1)
-          echo "trust cache: ${TRUST:-none}"
+          TRUST="$PWD/build/trust.bundle"
+          test -f "$TRUST"
+          echo "trust cache: $TRUST"
           if [ -n "$TRUST" ]; then
             ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" 2>&1 | tee "$RUNNER_TEMP/payload.log"
           else
