@@ -150,7 +150,7 @@ panic_screen = false
 # the boot shim, the firmware volume and the appended device tree all live in one of
 # them, and the image keeps 8 MiB of the partition free, so the volume is bounded here
 # at 80 MiB. Re-measure once the shim and firmware volume sizes are known.
-size_mib = 160
+size_mib = 180
 loader = "firmware"
 title = "Boot"
 # The ADT generator requires one contiguous DRAM range and checks this value against
@@ -186,6 +186,10 @@ kernel_args = [
   # log transport (no UART). Level 2 runs continuously, so the last checkpoint survives
   # on the panel for a photograph.
   "boot-progress=2",
+  # The sheng watchdog policy runs right after the Data mount; on this board the first userland
+  # attempt ends inside watchdogd instead of reaching a shell, so the daemon stays disabled while
+  # the dyld cache path is being brought up.
+  "sheng-disable-watchdogd=1",
 ]
 
 # Two bring-up profiles, applied on top of the list above with --kernel-arg so the

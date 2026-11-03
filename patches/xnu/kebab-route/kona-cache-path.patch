@@ -1,0 +1,28 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -8187,6 +8187,24 @@
+ 	boot_progress_stage("SystemOS mount enter");
+ 	int cache_error = native_owner_cache_prepare(p, (user_addr_t)scratch_addr, &init_envp);
+ 	boot_progress_stage("SystemOS mount returned");
++	{
++		// Does the cryptex carry the shared cache where the environment says it is? The
++		// mountpoint and DYLD_SHARED_CACHE_DIR disagree with the OS view
++		// (/System/Cryptexes/OS -> ../../private/preboot/Cryptexes/OS), so both candidates are
++		// looked up and reported: cache a= is the dictionary the kernel passed to dyld, cache b=
++		// is the path the system volume itself points at.
++		extern void boot_progress_stage(const char *);
++		vnode_t kona_cache_vp = NULL;
++		char konatrace[64];
++		int kona_a = vnode_lookup("/private/preboot/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
++		                          0, &kona_cache_vp, vfs_context_current());
++		if (kona_cache_vp) { vnode_put(kona_cache_vp); kona_cache_vp = NULL; }
++		int kona_b = vnode_lookup("/private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
++		                          0, &kona_cache_vp, vfs_context_current());
++		if (kona_cache_vp) { vnode_put(kona_cache_vp); }
++		snprintf(konatrace, sizeof(konatrace), "cache a=%d b=%d", kona_a, kona_b);
++		boot_progress_stage(konatrace);
++	}
+ 	if (cache_error) panic("offline owner SystemOS mount failed: %d", cache_error);
+ #endif
+ #if defined(XNU_OWNER_DATA_MOUNT) && XNU_OWNER_DATA_MOUNT
