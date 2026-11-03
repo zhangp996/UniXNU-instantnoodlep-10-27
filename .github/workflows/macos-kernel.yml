@@ -205,9 +205,10 @@ jobs:
         # policies/verified-root-os carries the owner-signed manifest of the original OS window
         # and its verification record. build-verified-root-probe.py consumes that directory.
         run: |
-          mkdir -p build/verified-root-os
+          mkdir -p build/verified-root-os build/verified-root-systemos
           cp "$DEVICE_DIR"/policies/verified-root-os/* build/verified-root-os/
-          ls -l build/verified-root-os
+          cp "$DEVICE_DIR"/policies/verified-root-systemos/* build/verified-root-systemos/
+          ls -l build/verified-root-os build/verified-root-systemos
 
       - name: Build the kernel
         run: |
@@ -226,13 +227,19 @@ jobs:
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel-pass1.log" || true
           # Run it unconditionally: the builder now locates the recipe itself and states what it
           # is missing, which is more useful than a guard that hides the reason.
-          python3 scripts/build-verified-root-probe.py --component os 2>&1 | tee "$RUNNER_TEMP/verified-root.log" || true
-          # --component os writes build/verified-root-os-xnu; the link reads the archive from
-          # XNU_VERIFIED_ROOT_ARCHIVE, whose default is the systemos directory.
-          if [ -f build/verified-root-os-xnu/libVerifiedRootProbe.a ]; then
-            export XNU_VERIFIED_ROOT_ARCHIVE="$PWD/build/verified-root-os-xnu/libVerifiedRootProbe.a"
-            echo "verified root archive: $XNU_VERIFIED_ROOT_ARCHIVE"
-          fi
+          # The owner chain links the two-volume bundle: NativeUfsBlock::configureVerification()
+          # imports _verified_root_policies/_verified_root_policy_count, and only the SystemOS
+          # member defines them.
+          python3 scripts/build-verified-root-probe.py --component os --include-systemos 2>&1 | tee "$RUNNER_TEMP/verified-root.log" || true
+          # The bundle lands in build/verified-root-os-xnu-bundle; the plain os archive is the
+          # fallback, and the link reads whichever exists through XNU_VERIFIED_ROOT_ARCHIVE.
+          for candidate in build/verified-root-os-xnu-bundle/libVerifiedRootProbe.a build/verified-root-os-xnu/libVerifiedRootProbe.a; do
+            if [ -f "$candidate" ]; then
+              export XNU_VERIFIED_ROOT_ARCHIVE="$PWD/$candidate"
+              echo "verified root archive: $XNU_VERIFIED_ROOT_ARCHIVE"
+              break
+            fi
+          done
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
 
       - name: Kernel bootstrap diagnostics
