@@ -316,6 +316,22 @@ jobs:
             ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" 2>&1 | tee "$RUNNER_TEMP/payload.log"
           fi
 
+      - name: Collect the tree logs
+        if: always()
+        # The kernel step writes its real diagnostics into <tree>/logs/, not into RUNNER_TEMP, so a
+        # failure whose cause only appears there (the bootstrap pass stopping before link.filelist
+        # is one) had no visible reason at all. Small logs are copied next to the step logs; the
+        # 40 MB bootstrap log would dwarf the artifact and stays out.
+        run: |
+          set +e
+          for f in out/*/*/*/logs/*.log; do
+            [ -f "$f" ] || continue
+            size=$(wc -c < "$f")
+            [ "$size" -gt 5000000 ] && continue
+            cp "$f" "$RUNNER_TEMP/tree-$(basename "$f")"
+          done
+          ls -l "$RUNNER_TEMP"/tree-*.log 2>/dev/null | tail -5
+
       - name: Publish the build artifacts
         if: always()
         uses: actions/upload-artifact@v5
@@ -329,6 +345,7 @@ jobs:
             ${{ runner.temp }}/data-seed*.log
             ${{ runner.temp }}/verified-root.log
             ${{ runner.temp }}/kernel-pass1.log
+            ${{ runner.temp }}/tree-*.log
           if-no-files-found: warn
 
       - name: Report the failure
