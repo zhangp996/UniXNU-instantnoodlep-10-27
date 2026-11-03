@@ -201,9 +201,33 @@ jobs:
           hdiutil detach "$MP" 2>&1 || true
           ls -l build/owner-data-fixture/ 2>&1 | tee -a "$RUNNER_TEMP/data-seed.log"
 
+      - name: Install the owner root policy
+        # policies/verified-root-os carries the owner-signed manifest of the original OS window
+        # and its verification record. build-verified-root-probe.py consumes that directory.
+        run: |
+          mkdir -p build/verified-root-os
+          cp "$DEVICE_DIR"/policies/verified-root-os/* build/verified-root-os/
+          ls -l build/verified-root-os
+
       - name: Build the kernel
         run: |
           set -o pipefail
+          # The verified-root archive is produced between two kernel passes: the probe builder
+          # reads bsd_init.o.json, which only a kernel pass writes, and the link force-loads the
+          # archive that pass then needs.
+          ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel-pass1.log" || true
+          if [ -f build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/bsd_init.o.json ]; then
+            python3 scripts/build-verified-root-probe.py --component os 2>&1 | tee "$RUNNER_TEMP/verified-root.log" || true
+          else
+            echo 'no bsd_init.o.json after the first pass' | tee "$RUNNER_TEMP/verified-root.log"
+          fi
+          # The scratch Data volume identity is the seed the payload will carry; it is fresh on
+          # every run because hdiutil formats the container each time.
+          if [ -f build/owner-data-fixture/seed.json ]; then
+            export XNU_OWNER_DATA_VOLUME_UUID
+            XNU_OWNER_DATA_VOLUME_UUID=$(python3 -c "import json;print(json.load(open('build/owner-data-fixture/seed.json'))['volume_uuid'])")
+            echo "seed volume uuid: $XNU_OWNER_DATA_VOLUME_UUID"
+          fi
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel.log"
 
       - name: Kernel bootstrap diagnostics
@@ -266,6 +290,8 @@ jobs:
             build/owner-data-fixture/*.cdr
             build/owner-data-fixture/seed.json
             ${{ runner.temp }}/data-seed*.log
+            ${{ runner.temp }}/verified-root.log
+            ${{ runner.temp }}/kernel-pass1.log
           if-no-files-found: warn
 
       - name: Report the failure

@@ -26,6 +26,19 @@ CONFIG_XNU_DT_PANIC_REGION=y
 CONFIG_XNU_NATIVE_UFS=y
 # RamBlock publishes the packed Data seed as an IOMedia so APFS can see a Data volume.
 CONFIG_XNU_NATIVE_RAM_BLOCK=y
+# The owner root chain, in the order scripts/build-xnu-4k-baseline.sh enforces:
+#   DATA_MOUNT -> BOOT_MANIFEST -> CACHE_STARTUP -> CACHE_MOUNT -> ROOT_TRUST -> AUDIT -> PROBE.
+# The policy itself is policies/verified-root-os (signed from the original OS window of the
+# userdata image); the workflow installs it as build/verified-root-os before the kernel step.
+CONFIG_XNU_VERIFIED_ROOT_PROBE=y
+CONFIG_XNU_OWNER_ROOT_AUDIT=y
+CONFIG_XNU_OWNER_ROOT_TRUST=y
+CONFIG_XNU_OWNER_CACHE_MOUNT=y
+CONFIG_XNU_OWNER_CACHE_STARTUP=y
+CONFIG_XNU_OWNER_BOOT_MANIFEST=y
+CONFIG_XNU_OWNER_DATA_MOUNT=y
+# Required by OWNER_ROOT_TRUST; carries no device here.
+CONFIG_XNU_NATIVE_VIRTIO_BLOCK=y
 # docs/guide/debugging.md: on a board with no UART the kernel has to report through the
 # panel. The boot progress layer renders the diagnostic page that boot-progress=1|2 selects,
 # reading the storage counters the KonaUfs component exports.
