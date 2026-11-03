@@ -224,11 +224,9 @@ jobs:
           # reads bsd_init.o.json, which only a kernel pass writes, and the link force-loads the
           # archive that pass then needs.
           ./unixnu build kernel -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/kernel-pass1.log" || true
-          if [ -f build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/bsd_init.o.json ]; then
-            python3 scripts/build-verified-root-probe.py --component os 2>&1 | tee "$RUNNER_TEMP/verified-root.log" || true
-          else
-            echo 'no bsd_init.o.json after the first pass' | tee "$RUNNER_TEMP/verified-root.log"
-          fi
+          # Run it unconditionally: the builder now locates the recipe itself and states what it
+          # is missing, which is more useful than a guard that hides the reason.
+          python3 scripts/build-verified-root-probe.py --component os 2>&1 | tee "$RUNNER_TEMP/verified-root.log" || true
           # --component os writes build/verified-root-os-xnu; the link reads the archive from
           # XNU_VERIFIED_ROOT_ARCHIVE, whose default is the systemos directory.
           if [ -f build/verified-root-os-xnu/libVerifiedRootProbe.a ]; then
