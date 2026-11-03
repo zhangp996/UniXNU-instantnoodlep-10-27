@@ -22,4 +22,3 @@ kebab-route/kona-mountroot-trace.patch
 # devfs_kernel_mount and "km enter" inside kernel_mount, so a boot that stops after root
 # authentication says whether it is blocked entering kernel_mount, inside it, or after it.
 kebab-route/kona-devfs-trace.patch
-# (/System/Cryptexes/OS -> ../../private/preboot/Cryptexes/OS).
