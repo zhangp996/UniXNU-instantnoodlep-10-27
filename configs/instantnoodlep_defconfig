@@ -37,6 +37,11 @@ CONFIG_XNU_OWNER_CACHE_MOUNT=y
 CONFIG_XNU_OWNER_CACHE_STARTUP=y
 CONFIG_XNU_OWNER_BOOT_MANIFEST=y
 CONFIG_XNU_OWNER_DATA_MOUNT=y
+# The cache carrier instrument is the code that decides whether a dyld shared-cache carrier may
+# be mapped (bsd/vm/vm_unix.c, guarded by XNU_OWNER_CACHE_CARRIER && !CONFIG_CSR). Without it the
+# stock path runs, the map is refused, dyld finds no cache, and PID 1 ends before main - run BX
+# showed cache=0/0 on the page, i.e. the counters were not even compiled in.
+CONFIG_XNU_OWNER_CACHE_CARRIER=y
 # CONFIG_XNU_NATIVE_VIRTIO_BLOCK is not set: RamBlock is this board's verified block transport
 # (docs/concepts/security.md records that the two share one policy), so the build accepts it in
 # place of the virtio transport that has no device here.
