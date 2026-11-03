@@ -165,3 +165,9 @@ __attribute__((weak)) int boot_diag_stream(int (*boot_diag_stream0)(const void *
 __attribute__((weak)) void boot_progress_critical_exit(int a0, char *a1, unsigned long a2) { (void)a0; (void)a1; (void)a2; }
 __attribute__((weak)) void boot_progress_user_abort(void *a0, unsigned a1, uint64_t a2) { (void)a0; (void)a1; (void)a2; }
 __attribute__((weak)) void boot_progress_user_breakpoint(void *a0, unsigned a1) { (void)a0; (void)a1; }
+/*
+ * The Data mount path in zzz-boot-progress.patch calls sheng's watchdog launch policy.
+ * Kona has no sheng PMGR or watchdog policy, so the call is a no-op here; this weak
+ * definition satisfies the link without pretending a policy was applied.
+ */
+__attribute__((weak)) int sheng_boot_watchdog_policy(void *process, uint64_t scratch) { (void)process; (void)scratch; return 0; }
