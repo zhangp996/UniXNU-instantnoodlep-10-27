@@ -318,19 +318,27 @@ jobs:
 
       - name: Collect the tree logs
         if: always()
-        # The kernel step writes its real diagnostics into <tree>/logs/, not into RUNNER_TEMP, so a
-        # failure whose cause only appears there (the bootstrap pass stopping before link.filelist
-        # is one) had no visible reason at all. Small logs are copied next to the step logs; the
-        # 40 MB bootstrap log would dwarf the artifact and stays out.
+        # scripts/unixnu/kernel.py writes each invocation into <tree>/logs/: kernel-bootstrap.log
+        # for the first pass (40 MB), kernel.log for the real build, and one log per component or
+        # archive. A failure whose cause is only there had no visible reason at all, so small
+        # logs travel whole and the large bootstrap log travels as its tail.
         run: |
           set +e
           for f in out/*/*/*/logs/*.log; do
             [ -f "$f" ] || continue
+            base=$(basename "$f")
             size=$(wc -c < "$f")
-            [ "$size" -gt 5000000 ] && continue
-            cp "$f" "$RUNNER_TEMP/tree-$(basename "$f")"
+            if [ "$size" -gt 5000000 ]; then
+              tail -n 4000 "$f" > "$RUNNER_TEMP/tree-$base.tail"
+            else
+              cp "$f" "$RUNNER_TEMP/tree-$base"
+            fi
           done
-          ls -l "$RUNNER_TEMP"/tree-*.log 2>/dev/null | tail -5
+          ls -l "$RUNNER_TEMP"/tree-* 2>/dev/null | tail -8
+
+      - name: Publish the build artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
 
       - name: Publish the build artifacts
         if: always()
@@ -345,7 +353,7 @@ jobs:
             ${{ runner.temp }}/data-seed*.log
             ${{ runner.temp }}/verified-root.log
             ${{ runner.temp }}/kernel-pass1.log
-            ${{ runner.temp }}/tree-*.log
+            ${{ runner.temp }}/tree-*
           if-no-files-found: warn
 
       - name: Report the failure
