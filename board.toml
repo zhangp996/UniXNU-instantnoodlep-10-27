@@ -150,7 +150,7 @@ panic_screen = false
 # the boot shim, the firmware volume and the appended device tree all live in one of
 # them, and the image keeps 8 MiB of the partition free, so the volume is bounded here
 # at 80 MiB. Re-measure once the shim and firmware volume sizes are known.
-size_mib = 120
+size_mib = 160
 loader = "firmware"
 title = "Boot"
 # The ADT generator requires one contiguous DRAM range and checks this value against
