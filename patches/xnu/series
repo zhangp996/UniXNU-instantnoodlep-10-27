@@ -18,3 +18,7 @@ kebab-route/kona-vfs-cp.patch
 # after it, so the boot page says which file system was tried and what it returned when a
 # mountroot path stops asking for blocks.
 kebab-route/kona-mountroot-trace.patch
+# Traces around the kernel mount that follows VFS_ROOT: "dkm enter"/"dkm ret=" in
+# devfs_kernel_mount and "km enter" inside kernel_mount, so a boot that stops after root
+# authentication says whether it is blocked entering kernel_mount, inside it, or after it.
+kebab-route/kona-devfs-trace.patch

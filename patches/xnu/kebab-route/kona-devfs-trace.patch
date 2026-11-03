@@ -1,0 +1,35 @@
+diff --git a/bsd/miscfs/devfs/devfs_vfsops.c b/bsd/miscfs/devfs/devfs_vfsops.c
+--- a/bsd/miscfs/devfs/devfs_vfsops.c
++++ b/bsd/miscfs/devfs/devfs_vfsops.c
+@@ -491,7 +491,17 @@
+ 	vfs_context_t ctx = vfs_context_kernel();
+ 	char fsname[] = "devfs";
+ 
++	{
++		extern void boot_progress_stage(const char *);
++		boot_progress_stage("dkm enter");
++	}
+ 	error = kernel_mount(fsname, NULLVP, NULLVP, mntname, NULL, 0, MNT_DONTBROWSE, KERNEL_MOUNT_NOAUTH | KERNEL_MOUNT_DEVFS, ctx);
++	{
++		extern void boot_progress_stage(const char *);
++		char konatrace[48];
++		snprintf(konatrace, sizeof(konatrace), "dkm ret=%d", error);
++		boot_progress_stage(konatrace);
++	}
+ 	if (error) {
+ 		printf("devfs_kernel_mount: kernel_mount failed: %d\n", error);
+ 		return error;
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -305,6 +305,10 @@
+ 	NDINIT(&nd, LOOKUP, OP_MOUNT, FOLLOW | AUDITVNPATH1 | WANTPARENT,
+ 	    UIO_SYSSPACE, CAST_USER_ADDR_T(path), ctx);
+ 
++	{
++		extern void boot_progress_stage(const char *);
++		boot_progress_stage("km enter");
++	}
+ 	kern_flags &= KERNEL_MOUNT_SANITIZE_MASK;
+ 
+ 	/*
