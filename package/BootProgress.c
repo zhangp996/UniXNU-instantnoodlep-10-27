@@ -174,8 +174,10 @@ extern volatile int native_owner_root_accepted;
 // Weak definitions, not weak imports: the kernel link only satisfies weak imports from a dylib,
 // and the carrier counters live in a translation unit this build does not compile them into, so
 // the page reads 0/0 instead of failing the link.
-unsigned long native_owner_cache_carrier_accepts __attribute__((weak));
-unsigned long native_owner_cache_carrier_rejects __attribute__((weak));
+// clang defaults to -fno-common, so an uninitialized definition becomes an undefined reference
+// instead of a common symbol: the initializer is what makes these real weak definitions.
+unsigned long native_owner_cache_carrier_accepts __attribute__((weak)) = 0;
+unsigned long native_owner_cache_carrier_rejects __attribute__((weak)) = 0;
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
