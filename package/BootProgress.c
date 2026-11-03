@@ -169,6 +169,10 @@ extern volatile int32_t __attribute__((weak_import)) armcpu_smp_psci_rc[8];
 extern volatile uint32_t __attribute__((weak_import)) armcpu_irq_phase,armcpu_irq_id,armcpu_quiesce_calls,armcpu_halt_calls;
 extern int nprocs;
 extern volatile int native_owner_root_accepted;
+// offline-owner-cache-carrier.patch counts how often the shared-region map accepted or rejected
+// the dyld cache carrier. A refused carrier is the documented reason a launchd ends before main.
+extern unsigned long native_owner_cache_carrier_accepts __attribute__((weak_import));
+extern unsigned long native_owner_cache_carrier_rejects __attribute__((weak_import));
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -501,10 +505,12 @@ static void draw(unsigned now) {
   if(&native_ram_block_sparse){
     // reads/failures first: they say whether the file system in RAM is being served at all, which
     // is the only question a frozen page has to answer for a RAM-root boot.
-    snprintf(b,sizeof(b),"RAMDISK sparse=%u reads=%llu fails=%llu capMiB=%llu resKiB=%llu; free=%u/%u/%u",
+    snprintf(b,sizeof(b),"RAMDISK sparse=%u reads=%llu fails=%llu capMiB=%llu resKiB=%llu; free=%u/%u/%u cache=%lu/%lu",
       native_ram_block_sparse,native_ram_block_reads,native_ram_block_failures,
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
-      vm_page_free_min,vm_page_free_reserved,vm_page_free_target);line(36,b,0xffffff00);
+      vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
+      &native_owner_cache_carrier_accepts ? native_owner_cache_carrier_accepts : 0,
+      &native_owner_cache_carrier_rejects ? native_owner_cache_carrier_rejects : 0);line(36,b,0xffffff00);
   }
   if (visible->frozen) {
     // Capture without touching the controller, including when an interrupted
