@@ -3470,9 +3470,18 @@ bool NativeUfs::startRoot (IOService *provider)
     IOLog ("NativeUfs: root preparation failed phase=%u window=%u; nothing published\n",
            static_cast<unsigned> (result.phase), result.index);
     IOService::stop (provider);
-    rootDiagnosticFailure (result.phase == UfsRootPhase::Schedule ? "root publisher thread creation failed" :
-                          result.phase == UfsRootPhase::Identity ? "signed window identities rejected" :
-                          "root window preparation failed");
+    if (result.phase == UfsRootPhase::Schedule) {
+      rootDiagnosticFailure ("root publisher thread creation failed");
+    } else if (result.phase == UfsRootPhase::Identity) {
+      rootDiagnosticFailure ("signed window identities rejected");
+    } else {
+      // The generic message hid which step of configureVerification() refused: the page's row
+      // holds 28 characters, so carry the vr_open status and the first letters of the stage.
+      static char konaPrepReason[48];
+      snprintf (konaPrepReason, sizeof (konaPrepReason), "prep v=%x %.12s",
+                gRootDiagnostic.verify, gRootDiagnostic.stage ? gRootDiagnostic.stage : "-");
+      rootDiagnosticFailure (konaPrepReason);
+    }
     return false;
   }
   return true;
