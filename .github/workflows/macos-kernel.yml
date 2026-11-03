@@ -272,6 +272,17 @@ jobs:
           echo "== resolved kernel config =="
           grep -n -E "MOCKFS|NATIVE_UFS|VIRTIO_BLOCK|VERIFIED_ROOT" out/*/*/*/.config 2>/dev/null | head -n 20
 
+      - name: Patch AMFI for the no-PMGR bring-up
+        # The payload builder refuses a native-ufs-root kernel whose AMFI "No PMGR?" call is
+        # not branched past. The prelinked kernel is board-specific, so apply the recorded
+        # patch here instead of teaching the shared payload builder about this board.
+        run: |
+          set -o pipefail
+          KERNEL=$(find out -path '*/kernel/kernel.macho' -type f | head -1)
+          test -n "$KERNEL"
+          echo "kernel: $KERNEL"
+          python3 device/scripts/patch-amfi-nopmgr.py "$KERNEL" 2>&1 | tee "$RUNNER_TEMP/amfi-patch.log"
+
       - name: Build the payload
         run: |
           set -o pipefail
