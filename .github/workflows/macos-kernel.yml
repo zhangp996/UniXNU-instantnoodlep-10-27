@@ -225,6 +225,24 @@ jobs:
             fi
           done
 
+      - name: Add the bringup linker to the Data seed
+        # assets/dyld.bringup is a 32 KB MH_DYLINKER that writes BRINGUP to stderr and exits. The
+        # kernel honours alt-dyld=<path> (kebab-route/kona-alt-dyld.patch), so pointing launchd's
+        # interpreter at this file proves the alternate-linker path end to end before any real
+        # linker is available.
+        run: |
+          set -o pipefail
+          SEED="$PWD/build/owner-data-fixture/owner-data-32.cdr"
+          STUB="$DEVICE_DIR/assets/dyld.bringup"
+          test -f "$SEED"
+          test -f "$STUB"
+          MP=$(hdiutil attach "$SEED" 2>/dev/null | grep -E '/Volumes/' | tail -1 | awk '{print $NF}')
+          echo "seed mounted at $MP"
+          if [ -z "$MP" ]; then echo 'seed did not mount'; exit 1; fi
+          cp "$STUB" "$MP/dyld.bringup"
+          ls -l "$MP/dyld.bringup"
+          hdiutil detach "$MP"
+
       - name: Install the owner root policy
         # policies/verified-root-os carries the owner-signed manifest of the original OS window
         # and its verification record. build-verified-root-probe.py consumes that directory.
