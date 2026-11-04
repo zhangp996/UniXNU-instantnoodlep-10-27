@@ -531,8 +531,8 @@ static void draw(unsigned now) {
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
       native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
-    snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu err=%d",native_sr_check_calls,native_sr_map_calls,native_sr_map_error);line(38,b,0xffffff00);
-    snprintf(b,sizeof(b),"P1ERR[%lu] %.100s",native_p1_stderr_len,native_p1_stderr);line(39,b,0xffffff00);
+    snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu e=%d [%lu] %.60s",native_sr_check_calls,native_sr_map_calls,
+      native_sr_map_error,native_p1_stderr_len,native_p1_stderr);line(38,b,0xffffff00);
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
       native_owner_cache_readonly,native_owner_cache_mount_status,
       native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);
