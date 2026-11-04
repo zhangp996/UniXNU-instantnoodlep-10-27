@@ -188,6 +188,7 @@ unsigned long long native_owner_cache_actual_mount_flags __attribute__((weak)) =
 // kona-union-trace.patch counts _shared_region_map_and_slide and keeps its last error, which is how
 // the page says whether dyld asked the kernel to map the cache at all now that the union resolves it.
 unsigned long native_sr_map_calls __attribute__((weak)) = 0;
+unsigned long native_sr_check_calls __attribute__((weak)) = 0;
 int native_sr_map_error __attribute__((weak)) = -1;
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
@@ -526,7 +527,7 @@ static void draw(unsigned now) {
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
       native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
-    snprintf(b,sizeof(b),"SRMAP calls=%lu err=%d",native_sr_map_calls,native_sr_map_error);line(38,b,0xffffff00);
+    snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu err=%d",native_sr_check_calls,native_sr_map_calls,native_sr_map_error);line(38,b,0xffffff00);
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
       native_owner_cache_readonly,native_owner_cache_mount_status,
       native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);
