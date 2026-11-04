@@ -190,6 +190,10 @@ unsigned long long native_owner_cache_actual_mount_flags __attribute__((weak)) =
 unsigned long native_sr_map_calls __attribute__((weak)) = 0;
 unsigned long native_sr_check_calls __attribute__((weak)) = 0;
 int native_sr_map_error __attribute__((weak)) = -1;
+// kona-p1-stderr.patch keeps what PID 1 writes to stderr; the page prints it because dyld's own
+// failure text is the only description of why it leaves before touching the shared region.
+char native_p1_stderr[256] __attribute__((weak)) = {0};
+unsigned long native_p1_stderr_len __attribute__((weak)) = 0;
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -528,6 +532,7 @@ static void draw(unsigned now) {
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
       native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
     snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu err=%d",native_sr_check_calls,native_sr_map_calls,native_sr_map_error);line(38,b,0xffffff00);
+    snprintf(b,sizeof(b),"P1ERR[%lu] %.100s",native_p1_stderr_len,native_p1_stderr);line(39,b,0xffffff00);
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
       native_owner_cache_readonly,native_owner_cache_mount_status,
       native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);

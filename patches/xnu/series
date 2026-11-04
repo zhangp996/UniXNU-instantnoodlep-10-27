@@ -35,3 +35,7 @@ kebab-route/kona-union-trace.patch
 # clear so dyld follows its ordinary cache path: runs CE..CI show shared_region_check_np never
 # called (SRMAP chk=0 map=0) and PID 1 exiting before main.
 kebab-route/kona-no-ignition-flag.patch
+# dyld reports its own failures on stderr, and this board has no console, so the first bytes PID 1
+# writes to fd 2 are kept in a buffer the boot page prints. That is the only way to read why dyld
+# leaves before it ever calls shared_region_check_np (runs CE..CJ show SRMAP chk=0 map=0).
+kebab-route/kona-p1-stderr.patch
