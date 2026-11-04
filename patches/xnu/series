@@ -25,8 +25,6 @@ kebab-route/kona-devfs-trace.patch
 # Looks up the dyld shared cache at both candidate cryptex paths right after the SystemOS mount
 # and reports them on the boot page as "cache a=<err> b=<err>". dyld ends PID 1 before main when
 # it cannot find the cache, and the kernel's DYLD_SHARED_CACHE_DIR disagrees with the OS view
-# (/System/Cryptexes/OS -> ../../private/preboot/Cryptexes/OS).
-kebab-route/kona-cache-path.patch
 # Counts every _shared_region_map_and_slide call and records the error it returned, so the page
 # says whether dyld ever asked the kernel to map the cache now that the union root resolves it.
 kebab-route/kona-union-trace.patch

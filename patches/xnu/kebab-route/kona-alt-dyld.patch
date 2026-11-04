@@ -9,7 +9,15 @@ diff --git a/bsd/kern/mach_loader.c b/bsd/kern/mach_loader.c
  
  extern char dyld_suffix[];
  extern int use_dyld_suffix;
-@@ -3091,16 +3092,9 @@
+@@ -3055,6 +3056,7 @@
+ 	)
+ {
+ 	const char              *name;
++	strlcpy(native_dyld_choice, "enter", sizeof(native_dyld_choice));
+ 	struct vnode            *vp = NULLVP;   /* set by get_macho_vnode() */
+ 	struct mach_header      *header;
+ 	off_t                   file_offset = 0; /* set by get_macho_vnode() */
+@@ -3091,16 +3093,9 @@
  	 */
  
  	if (use_alt_dyld) {
@@ -29,7 +37,7 @@ diff --git a/bsd/kern/mach_loader.c b/bsd/kern/mach_loader.c
  	} else if (use_dyld_suffix) {
  		size_t i = 0;
  
-@@ -3114,6 +3108,7 @@
+@@ -3114,6 +3109,7 @@
  			}
  		}
  	}
