@@ -1,16 +1,15 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -95,6 +95,8 @@
+@@ -95,6 +95,7 @@
  #include <sys/namei.h>
  #include <sys/mount_internal.h>
  #include <sys/vnode_internal.h>
 +#include <sys/dirent.h>
-+#include <sys/uio_internal.h>
  #include <sys/file_internal.h>
  #include <sys/stat.h>
  #include <sys/uio_internal.h>
-@@ -8200,6 +8202,48 @@
+@@ -8200,6 +8201,48 @@
  	int policy_error=sheng_boot_watchdog_policy(p, (uint64_t)scratch_addr);
  	if (policy_error) panic("sheng watchdog launch policy failed: %d", policy_error);
  	boot_progress_stage("temporary watchdog launch policy ready");
