@@ -6,7 +6,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
  #include <sys/mount_internal.h>
  #include <sys/vnode_internal.h>
 +#include <sys/dirent.h>
-+#include <sys/uio.h>
++#include <sys/uio_internal.h>
  #include <sys/file_internal.h>
  #include <sys/stat.h>
  #include <sys/uio_internal.h>
