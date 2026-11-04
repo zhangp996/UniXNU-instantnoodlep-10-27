@@ -1,33 +1,62 @@
 diff --git a/bsd/kern/sys_generic.c b/bsd/kern/sys_generic.c
 --- a/bsd/kern/sys_generic.c
 +++ b/bsd/kern/sys_generic.c
-@@ -696,9 +696,29 @@
+@@ -696,9 +696,48 @@
  	return writev_internal(p, fd, uio, flags, puguard, retval);
  }
  
 +char native_p1_stderr[256];
 +unsigned long native_p1_stderr_len = 0;
 +
++static void
++native_p1_capture(user_addr_t base, user_size_t len)
++{
++	if (!base || !len || native_p1_stderr_len + 1 >= sizeof(native_p1_stderr)) {
++		return;
++	}
++	size_t room = sizeof(native_p1_stderr) - 1 - native_p1_stderr_len;
++	size_t take = (size_t)len < room ? (size_t)len : room;
++	if (take && copyin(base, native_p1_stderr + native_p1_stderr_len, take) == 0) {
++		for (size_t at = 0; at < take; at++) {
++			char c = native_p1_stderr[native_p1_stderr_len + at];
++			if (c < 0x20 || c > 0x7e) {
++				native_p1_stderr[native_p1_stderr_len + at] = ' ';
++			}
++		}
++		native_p1_stderr_len += take;
++		native_p1_stderr[native_p1_stderr_len] = 0;
++	}
++}
++
++static void
++native_p1_capture_writev(user_addr_t iovp, int iovcnt)
++{
++	struct iovec kona_iov[4];
++	unsigned want = iovcnt > 0 && iovcnt < 4 ? (unsigned)iovcnt : 4;
++	if (iovcnt <= 0 || copyin(iovp, kona_iov, want * sizeof(struct iovec))) {
++		return;
++	}
++	for (unsigned at = 0; at < want; at++) {
++		native_p1_capture((user_addr_t)kona_iov[at].iov_base, (user_size_t)kona_iov[at].iov_len);
++	}
++}
++
  int
  write_nocancel(struct proc *p, struct write_nocancel_args *uap, user_ssize_t *retval)
  {
-+	/* dyld reports its own failures on stderr and this board has no console, so keep the first
-+	 * bytes PID 1 writes to fd 2: the page prints them and the reason becomes readable. */
-+	if (proc_getpid(p) == 1 && uap->fd == 2 && uap->nbyte > 0 &&
-+	    native_p1_stderr_len + 1 < sizeof(native_p1_stderr)) {
-+		size_t room = sizeof(native_p1_stderr) - 1 - native_p1_stderr_len;
-+		size_t take = (size_t)uap->nbyte < room ? (size_t)uap->nbyte : room;
-+		if (take && copyin(uap->cbuf, native_p1_stderr + native_p1_stderr_len, take) == 0) {
-+			for (size_t at = 0; at < take; at++) {
-+				char c = native_p1_stderr[native_p1_stderr_len + at];
-+				if (c < 0x20 || c > 0x7e) {
-+					native_p1_stderr[native_p1_stderr_len + at] = ' ';
-+				}
-+			}
-+			native_p1_stderr_len += take;
-+			native_p1_stderr[native_p1_stderr_len] = 0;
-+		}
++	if (proc_getpid(p) == 1 && uap->fd == 2) {
++		native_p1_capture(uap->cbuf, uap->nbyte);
 +	}
  	return write_internal(p, uap->fd, uap->cbuf, uap->nbyte, (off_t)-1, 0,
  	           NULL, retval);
  }
+@@ -796,6 +835,9 @@
+ int
+ writev_nocancel(struct proc *p, struct writev_nocancel_args *uap, user_ssize_t *retval)
+ {
++	if (proc_getpid(p) == 1 && uap->fd == 2) {
++		native_p1_capture_writev(uap->iovp, uap->iovcnt);
++	}
+ 	return writev_uio(p, uap->fd, uap->iovp, uap->iovcnt, 0, 0, NULL, retval);
+ }
+ 
