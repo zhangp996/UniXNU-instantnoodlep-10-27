@@ -194,6 +194,9 @@ int native_sr_map_error __attribute__((weak)) = -1;
 // failure text is the only description of why it leaves before touching the shared region.
 char native_p1_stderr[256] __attribute__((weak)) = {0};
 unsigned long native_p1_stderr_len __attribute__((weak)) = 0;
+// kona-p1-open.patch keeps the last path PID 1 opened; it names the step dyld reached.
+char native_p1_path[128] __attribute__((weak)) = {0};
+unsigned long native_p1_path_len __attribute__((weak)) = 0;
 // Defined next to the interrupt sampler, which owns the ring; draw() runs before that point.
 static unsigned bp_p1_pcs(uint64_t out[2]);
 
@@ -539,8 +542,8 @@ static void draw(unsigned now) {
     {
       uint64_t p1pc[2]={0,0};
       bp_p1_pcs(p1pc);
-      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu e=%d p1=%llx,%llx [%lu] %.40s",native_sr_check_calls,
-        native_sr_map_calls,native_sr_map_error,p1pc[0],p1pc[1],native_p1_stderr_len,native_p1_stderr);
+      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu p1=%llx [%lu] %.34s open=%.40s",native_sr_check_calls,
+        native_sr_map_calls,p1pc[0],native_p1_stderr_len,native_p1_stderr,native_p1_path);
       line(38,b,0xffffff00);
     }
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,

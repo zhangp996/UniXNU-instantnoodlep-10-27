@@ -1,0 +1,26 @@
+diff --git a/bsd/vfs/vfs_syscalls.c b/bsd/vfs/vfs_syscalls.c
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -5136,10 +5136,22 @@
+ 	           uap->mode, AT_FDCWD, UIO_USERSPACE, retval);
+ }
+ 
++char native_p1_path[128];
++unsigned long native_p1_path_len = 0;
++
+ int
+ openat_nocancel(__unused proc_t p, struct openat_nocancel_args *uap,
+     int32_t *retval)
+ {
++	/* The last path PID 1 opened: dyld reads the shared cache through here, and this names the
++	 * step it reached when it leaves without a message. */
++	if (proc_getpid(p) == 1) {
++		size_t taken = 0;
++		if (copyinstr(uap->path, native_p1_path, sizeof(native_p1_path) - 1, &taken) == 0) {
++			native_p1_path[taken] = 0;
++			native_p1_path_len = taken;
++		}
++	}
+ 	return openat_internal(vfs_context_current(), uap->path, uap->flags,
+ 	           uap->mode, uap->fd, UIO_USERSPACE, retval);
+ }

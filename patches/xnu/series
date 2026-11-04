@@ -39,3 +39,7 @@ kebab-route/kona-no-ignition-flag.patch
 # writes to fd 2 are kept in a buffer the boot page prints. That is the only way to read why dyld
 # leaves before it ever calls shared_region_check_np (runs CE..CJ show SRMAP chk=0 map=0).
 kebab-route/kona-p1-stderr.patch
+# Names the last path PID 1 opened. dyld reaches the shared cache through openat, and this says
+# which step it had reached when it leaves without a message (the stderr capture shows only the
+# dyld[1]: prefix).
+kebab-route/kona-p1-open.patch
