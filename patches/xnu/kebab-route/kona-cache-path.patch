@@ -1,32 +1,59 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -8200,6 +8200,30 @@
+@@ -95,6 +95,8 @@
+ #include <sys/namei.h>
+ #include <sys/mount_internal.h>
+ #include <sys/vnode_internal.h>
++#include <sys/dirent.h>
++#include <sys/uio.h>
+ #include <sys/file_internal.h>
+ #include <sys/stat.h>
+ #include <sys/uio_internal.h>
+@@ -8200,6 +8202,48 @@
  	int policy_error=sheng_boot_watchdog_policy(p, (uint64_t)scratch_addr);
  	if (policy_error) panic("sheng watchdog launch policy failed: %d", policy_error);
  	boot_progress_stage("temporary watchdog launch policy ready");
 +	{
-+		// The cryptex root resolves System and usr, so the volume is mounted and readable, but the
-+		// cache file was not found. Walk one level at a time to tell a sealed-volume traversal
-+		// limit apart from a volume that simply does not carry the cache.
-+		vnode_t kona_vp = NULL;
-+		char konatrace[96];
-+		static const char *const kona_paths[] = {
-+			"/private/preboot/System/Library",
-+			"/private/preboot/System/Library/Caches",
-+			"/private/preboot/System/Library/Caches/com.apple.dyld",
-+			"/private/preboot/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
-+			"/private/preboot/usr/lib",
-+			"/private/preboot/Applications",
-+		};
-+		int kona_e[6];
-+		for (int kona_i = 0; kona_i < 6; kona_i++) {
-+			kona_e[kona_i] = vnode_lookup(kona_paths[kona_i], 0, &kona_vp, vfs_context_current());
-+			if (kona_vp) { vnode_put(kona_vp); kona_vp = NULL; }
++		// The cache directory exists but no dyld_shared_cache_arm64e lives in it, so list what it
++		// does hold. readdir needs struct dirent and a kernel uio, hence the includes above.
++		vnode_t kona_dir = NULL;
++		char konatrace[128];
++		int kona_lookup = vnode_lookup("/private/preboot/System/Library/Caches/com.apple.dyld",
++		    0, &kona_dir, vfs_context_current());
++		if (kona_lookup == 0 && kona_dir) {
++			char kona_buf[1024];
++			bzero(kona_buf, sizeof(kona_buf));
++			struct uio kona_uio;
++			struct iovec kona_iov;
++			kona_iov.iov_base = kona_buf;
++			kona_iov.iov_len = sizeof(kona_buf);
++			kona_uio.uio_iov = &kona_iov;
++			kona_uio.uio_iovcnt = 1;
++			kona_uio.uio_offset = 0;
++			kona_uio.uio_segflg = UIO_SYSSPACE;
++			kona_uio.uio_rw = UIO_READ;
++			kona_uio.uio_resid = sizeof(kona_buf);
++			int kona_eoff = 0, kona_num = 0;
++			errno_t kona_err = VNOP_READDIR(kona_dir, &kona_uio, 0, &kona_eoff, &kona_num,
++			    vfs_context_current());
++			vnode_put(kona_dir);
++			if (kona_err == 0 && kona_num > 0) {
++				struct dirent *kona_de = (struct dirent *)kona_buf;
++				char kona_n1[40] = {0}, kona_n2[40] = {0};
++				strlcpy(kona_n1, kona_de->d_name, sizeof(kona_n1));
++				if (kona_de->d_reclen >= sizeof(struct dirent) &&
++				    (char *)kona_de + kona_de->d_reclen + sizeof(struct dirent) < kona_buf + sizeof(kona_buf)) {
++					struct dirent *kona_de2 = (struct dirent *)((char *)kona_de + kona_de->d_reclen);
++					strlcpy(kona_n2, kona_de2->d_name, sizeof(kona_n2));
++				}
++				snprintf(konatrace, sizeof(konatrace), "names %.30s|%.30s", kona_n1, kona_n2);
++			} else {
++				snprintf(konatrace, sizeof(konatrace), "names err=%d n=%d", (int)kona_err, kona_num);
++			}
++		} else {
++			snprintf(konatrace, sizeof(konatrace), "names lookup=%d", kona_lookup);
 +		}
-+		snprintf(konatrace, sizeof(konatrace), "walk g=%d h=%d i=%d", kona_e[0], kona_e[1], kona_e[2]);
-+		boot_progress_stage(konatrace);
-+		snprintf(konatrace, sizeof(konatrace), "walk2 j=%d k=%d l=%d", kona_e[3], kona_e[4], kona_e[5]);
 +		boot_progress_stage(konatrace);
 +	}
  #endif
