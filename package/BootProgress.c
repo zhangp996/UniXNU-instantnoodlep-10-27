@@ -341,10 +341,13 @@ static void draw(unsigned now) {
     snprintf(b,sizeof(b),"PC %us p%d %.10s %llx/%x | %us p%d %.10s %llx/%x",a->second,a->pid,a->name,a->pc,(unsigned)a->psr,c->second,c->pid,c->name,c->pc,(unsigned)c->psr);
     line(12+i,b,0xffaaaaaa);
   }
-  bar(16," Kernel console (latest lines; an IRQ-off hard lock stops refresh)",0xffffff00,BP_BAR_SECTION);
+  // The exit panel below redraws rows 16..23 as soon as any process leaves, which used to erase the
+  // kernel console exactly when it mattered (a panic after PID 1 exits). Keep the console block on
+  // its own rows so the last lines survive the exit panel.
+  bar(24," Kernel console (latest lines; an IRQ-off hard lock stops refresh)",0xffffff00,BP_BAR_SECTION);
   {
     unsigned last=visible->logs[visible->log_row][0] ? visible->log_row : (visible->log_row+BP_LOGS-1)%BP_LOGS;
-    for (unsigned i=0;i<7;++i) line(17+i,visible->logs[(last+BP_LOGS-6+i)%BP_LOGS],0xffffffff);
+    for (unsigned i=0;i<5;++i) line(25+i,visible->logs[(last+BP_LOGS-4+i)%BP_LOGS],0xffffffff);
   }
   if(exit_snapshot.total) {
     snprintf(b,sizeof(b)," Process exits: total=%u nonzero-status-or-reason=%u dropped=%u; FAIL rows persist across normal exits",
