@@ -1,0 +1,26 @@
+diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1458,10 +1458,22 @@
+  * exit --
+  *	Death of process.
+  */
++volatile uint64_t native_p1_exit_pc = 0;
++volatile uint32_t native_p1_exit_status = 0;
++
+ __attribute__((noreturn))
+ void
+ exit(proc_t p, struct exit_args *uap, int *retval)
+ {
++	/* Where in userland PID 1 asked to exit: the saved EL0 PC at the syscall names the dyld or
++	 * launchd instruction that called exit, which the kernel trace cannot show. */
++	if (proc_getpid(p) == 1) {
++		native_p1_exit_status = (uint32_t)uap->rval;
++		struct arm_saved_state *state = find_user_regs(current_thread());
++		if (state) {
++			native_p1_exit_pc = arm_get_saved_state_pc(state);
++		}
++	}
+ 	p->p_xhighbits = ((uint32_t)(uap->rval) & 0xFF000000) >> 24;
+ 	exit1(p, W_EXITCODE((uint32_t)uap->rval, 0), retval);
+ 

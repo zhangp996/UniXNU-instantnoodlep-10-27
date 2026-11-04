@@ -43,3 +43,6 @@ kebab-route/kona-p1-stderr.patch
 # which step it had reached when it leaves without a message (the stderr capture shows only the
 # dyld[1]: prefix).
 kebab-route/kona-p1-open.patch
+# Records the saved EL0 PC and status when PID 1 calls exit, so the page names the userland
+# instruction (dyld or launchd) that asked to leave instead of only reporting that it did.
+kebab-route/kona-p1-exit-pc.patch
