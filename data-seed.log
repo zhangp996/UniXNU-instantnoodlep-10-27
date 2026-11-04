@@ -1,0 +1,19 @@
+created: /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/build/owner-data-fixture/owner-data-32.cdr
+"disk9" ejected.
+{
+  "volume_uuid": "77B22A4B-49F8-47DA-B676-7160960656E2",
+  "bytes": 33554432,
+  "sha256": "80c99c6dac3ca9ca42f2b90e2cfa26d4b9279b59f8f1c592a494c4a31f0e43c1",
+  "source_regular_files": 39,
+  "source_regular_bytes": 611715,
+  "guest_mutable": true,
+  "initial_seed_signature_verified": false,
+  "seed": "Original private/var excluding staged_system_apps; symlinks preserved; runtime directories added",
+  "owner_keybag_created": false,
+  "os_inputs_modified": false,
+  "production_storage_qualified": false
+}
+total 65544
+drwxr-xr-x  2 runner  staff        64 Nov  4 18:44 mount
+-rw-r--r--  1 runner  staff  33554432 Nov  4 18:44 owner-data-32.cdr
+-rw-r--r--  1 runner  staff       509 Nov  4 18:44 seed.json

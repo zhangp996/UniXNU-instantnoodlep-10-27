@@ -1,0 +1,5 @@
+run: 41888140974
+sha: 55d3e1cc72a9621897e422314442f38a916fbf7c
+job: kernel
+conclusion: failure
+built: 2026-11-04T18:54:30Z

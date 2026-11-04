@@ -1,0 +1,1 @@
+/Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/device/dts/instantnoodlep.dts:56.14-58.7: Warning (unit_address_vs_reg): /kona-ufs: node has a reg or ranges property, but no unit name

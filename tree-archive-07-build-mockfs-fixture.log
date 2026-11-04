@@ -1,0 +1,2 @@
+3 XNU mockfs sources compiled (typed-allocation correction retained); ordinary ARM64 / iOS 17 audited
+Offline minimal-root fixture only; not an APFS driver or iPadOS filesystem

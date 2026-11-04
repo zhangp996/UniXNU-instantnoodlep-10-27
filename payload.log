@@ -1,0 +1,7 @@
+== submodules /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27
+== tree /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/tree
+== payload
+== kernel args: -v serial=3 debug=0x14e kt_fixed_zones=120 -no_slto_panic ml-timeout-lock-panic-scale=40 amfi_get_out_of_my_way=1 native-ufs-root=1 boot-progress=2 sheng-disable-watchdogd=1
++ /opt/homebrew/bin/dtc -I dts -O dtb -o /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/device-tree/hardware.dtb -i /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/feeds/UniXNU-sm8250-common-91e20bbb/dts /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/device/dts/instantnoodlep.dts
+== payload: /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/payload/payload.img (180 MiB)
+== next: run ./unixnu bootimg to pack this payload into the boot image
