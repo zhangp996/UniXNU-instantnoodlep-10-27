@@ -178,6 +178,13 @@ extern volatile int native_owner_root_accepted;
 // instead of a common symbol: the initializer is what makes these real weak definitions.
 unsigned long native_owner_cache_carrier_accepts __attribute__((weak)) = 0;
 unsigned long native_owner_cache_carrier_rejects __attribute__((weak)) = 0;
+// offline-owner-systemos-mount.patch records what the cryptex mount actually produced. The page
+// reads these directly, so a union that silently did not compose the root shows up as u=0 rather
+// than as a cache directory that cannot be found.
+int native_owner_cache_native_union __attribute__((weak)) = 0;
+int native_owner_cache_readonly __attribute__((weak)) = 0;
+int native_owner_cache_mount_status __attribute__((weak)) = 0;
+unsigned long long native_owner_cache_actual_mount_flags __attribute__((weak)) = 0;
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -515,6 +522,9 @@ static void draw(unsigned now) {
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
       native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
+    snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
+      native_owner_cache_readonly,native_owner_cache_mount_status,
+      native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);
   }
   if (visible->frozen) {
     // Capture without touching the controller, including when an interrupted
