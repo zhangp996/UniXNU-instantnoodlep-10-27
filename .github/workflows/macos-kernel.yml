@@ -201,6 +201,30 @@ jobs:
           hdiutil detach "$MP" 2>&1 || true
           ls -l build/owner-data-fixture/ 2>&1 | tee -a "$RUNNER_TEMP/data-seed.log"
 
+      - name: Locate the dyld shared cache in the IPSW
+        # The SystemOS window that gets signed and flashed is a real system tree (System, usr,
+        # ExtensionKit extensions) yet neither it nor the OS window contains
+        # dyld_shared_cache_arm64e, and dyld ends PID 1 before main when the cache is missing.
+        # This walks every dmg the run fetched and reports which volume, if any, ships the cache.
+        if: inputs.fetch_ipsw && inputs.inspect_osimage
+        continue-on-error: true
+        run: |
+          set +e
+          LOG="$RUNNER_TEMP/cache-search.log"
+          ls -l out/ipsw/*/*.dmg | tee "$LOG"
+          for d in out/ipsw/*/*.dmg; do
+            [ -f "$d" ] || continue
+            echo "=== $d" | tee -a "$LOG"
+            MP=$(hdiutil attach "$d" -nobrowse -owners off 2>/dev/null | grep -E '/Volumes/' | tail -1 | awk '{print $NF}')
+            if [ -n "$MP" ]; then
+              echo "mounted at $MP" | tee -a "$LOG"
+              ls "$MP" | head -20 | tee -a "$LOG"
+              ls -l "$MP/System/Library/Caches" 2>/dev/null | tee -a "$LOG"
+              find "$MP" -maxdepth 7 -name 'dyld_shared_cache*' 2>/dev/null | head -5 | tee -a "$LOG"
+              hdiutil detach "$MP" >/dev/null 2>&1 || true
+            fi
+          done
+
       - name: Install the owner root policy
         # policies/verified-root-os carries the owner-signed manifest of the original OS window
         # and its verification record. build-verified-root-probe.py consumes that directory.
