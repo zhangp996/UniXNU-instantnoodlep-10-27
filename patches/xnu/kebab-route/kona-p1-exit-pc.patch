@@ -1,7 +1,16 @@
 diff --git a/bsd/kern/kern_exit.c b/bsd/kern/kern_exit.c
 --- a/bsd/kern/kern_exit.c
 +++ b/bsd/kern/kern_exit.c
-@@ -1458,10 +1458,22 @@
+@@ -74,6 +74,8 @@
+  */
+ 
+ #include <machine/reg.h>
++#include <arm/thread.h>
++#include <arm/arm_saved_state.h>
+ #include <machine/psl.h>
+ #include <stdatomic.h>
+ 
+@@ -1458,10 +1460,22 @@
   * exit --
   *	Death of process.
   */
