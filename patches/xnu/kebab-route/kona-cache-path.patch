@@ -1,51 +1,68 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -8200,6 +8200,49 @@
+@@ -8200,6 +8200,66 @@
  	int policy_error=sheng_boot_watchdog_policy(p, (uint64_t)scratch_addr);
  	if (policy_error) panic("sheng watchdog launch policy failed: %d", policy_error);
  	boot_progress_stage("temporary watchdog launch policy ready");
 +	{
-+		// The cache directory exists but dyld_shared_cache_arm64e is not the name inside it, so list
-+		// what it holds instead of guessing. Same shape as native_ls_store_drop: kalloc_data, a
-+		// uio_create handle, then VNOP_READDIR, because struct uio is opaque in this file.
++		// The union root now resolves /System/Library/Caches/com.apple.dyld and it holds the caches
++		// under variant names (dyld_shared_cache_arm64.<n>), so report the plain names too: dyld asks
++		// for the unsuffixed one first and only falls back to a variant.
 +		char konatrace[128];
 +		vfs_context_t kona_ctx = vfs_context_current();
-+		vnode_t kona_vp = NULLVP;
-+		if (vnode_lookup("/System/Library/Caches/com.apple.dyld", 0, &kona_vp, kona_ctx)) {
-+			snprintf(konatrace, sizeof(konatrace), "names lookup failed");
-+		} else {
-+			char *kona_buf = kalloc_data(4096, Z_WAITOK);
++		char kona_n[4][28];
++		for (int kona_i = 0; kona_i < 4; kona_i++) {
++			kona_n[kona_i][0] = 0;
++		}
++		static const char *const kona_plain[] = {
++			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64",
++			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
++			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.32",
++			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64.35",
++		};
++		int kona_plain_e[4];
++		for (int kona_i = 0; kona_i < 4; kona_i++) {
++			vnode_t kona_vp = NULLVP;
++			kona_plain_e[kona_i] = vnode_lookup(kona_plain[kona_i], 0, &kona_vp, kona_ctx);
++			if (kona_vp) { vnode_put(kona_vp); }
++		}
++		vnode_t kona_dir = NULLVP;
++		if (!vnode_lookup("/System/Library/Caches/com.apple.dyld", 0, &kona_dir, kona_ctx)) {
++			char *kona_buf = kalloc_data(8192, Z_WAITOK);
 +			uio_t kona_uio = kona_buf ? uio_create(1, 0, UIO_SYSSPACE, UIO_READ) : NULL;
-+			char kona_n1[36] = {0}, kona_n2[36] = {0};
 +			if (kona_uio) {
 +				uio_reset(kona_uio, 0, UIO_SYSSPACE, UIO_READ);
-+				uio_addiov(kona_uio, CAST_USER_ADDR_T(kona_buf), 4096);
++				uio_addiov(kona_uio, CAST_USER_ADDR_T(kona_buf), 8192);
 +				int kona_eof = 0, kona_entries = 0;
-+				int kona_err = VNOP_READDIR(kona_vp, kona_uio, 0, &kona_eof, &kona_entries, kona_ctx);
-+				size_t kona_used = kona_err ? 0 : 4096 - (size_t)uio_resid(kona_uio);
++				int kona_err = VNOP_READDIR(kona_dir, kona_uio, 0, &kona_eof, &kona_entries, kona_ctx);
++				size_t kona_used = kona_err ? 0 : 8192 - (size_t)uio_resid(kona_uio);
 +				unsigned kona_found = 0;
 +				for (size_t at = 0;
-+				    at + sizeof(struct dirent) - sizeof(((struct dirent *)0)->d_name) <= kona_used && kona_found < 2;) {
++				    at + sizeof(struct dirent) - sizeof(((struct dirent *)0)->d_name) <= kona_used && kona_found < 4;) {
 +					const struct dirent *entry = (const struct dirent *)(kona_buf + at);
 +					if (!entry->d_reclen) {
 +						break;
 +					}
-+					if (entry->d_namlen && entry->d_namlen < sizeof(kona_n1) &&
++					if (entry->d_namlen && entry->d_namlen < sizeof(kona_n[0]) &&
 +					    strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
-+						strlcpy(kona_found == 0 ? kona_n1 : kona_n2, entry->d_name, sizeof(kona_n1));
-+						kona_found++;
++						strlcpy(kona_n[kona_found++], entry->d_name, sizeof(kona_n[0]));
 +					}
 +					at += entry->d_reclen;
 +				}
 +				uio_free(kona_uio);
 +			}
 +			if (kona_buf) {
-+				kfree_data(kona_buf, 4096);
++				kfree_data(kona_buf, 8192);
 +			}
-+			vnode_put(kona_vp);
-+			snprintf(konatrace, sizeof(konatrace), "names %.34s|%.34s", kona_n1, kona_n2);
++			vnode_put(kona_dir);
 +		}
++		snprintf(konatrace, sizeof(konatrace), "plain %d %d %d %d", kona_plain_e[0], kona_plain_e[1],
++		    kona_plain_e[2], kona_plain_e[3]);
++		boot_progress_stage(konatrace);
++		snprintf(konatrace, sizeof(konatrace), "n1 %.22s|%.22s", kona_n[0], kona_n[1]);
++		boot_progress_stage(konatrace);
++		snprintf(konatrace, sizeof(konatrace), "n2 %.22s|%.22s", kona_n[2], kona_n[3]);
 +		boot_progress_stage(konatrace);
 +	}
  #endif
