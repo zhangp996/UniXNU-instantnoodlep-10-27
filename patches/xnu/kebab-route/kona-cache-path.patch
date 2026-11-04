@@ -12,7 +12,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 +		char konatrace[128];
 +		vfs_context_t kona_ctx = vfs_context_current();
 +		vnode_t kona_vp = NULLVP;
-+		if (vnode_lookup("/private/preboot/System/Library/Caches/com.apple.dyld", 0, &kona_vp, kona_ctx)) {
++		if (vnode_lookup("/System/Library/Caches/com.apple.dyld", 0, &kona_vp, kona_ctx)) {
 +			snprintf(konatrace, sizeof(konatrace), "names lookup failed");
 +		} else {
 +			char *kona_buf = kalloc_data(4096, Z_WAITOK);
