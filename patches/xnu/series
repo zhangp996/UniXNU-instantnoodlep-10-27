@@ -22,3 +22,8 @@ kebab-route/kona-mountroot-trace.patch
 # devfs_kernel_mount and "km enter" inside kernel_mount, so a boot that stops after root
 # authentication says whether it is blocked entering kernel_mount, inside it, or after it.
 kebab-route/kona-devfs-trace.patch
+# Looks up the dyld shared cache at both candidate cryptex paths right after the SystemOS mount
+# and reports them on the boot page as "cache a=<err> b=<err>". dyld ends PID 1 before main when
+# it cannot find the cache, and the kernel's DYLD_SHARED_CACHE_DIR disagrees with the OS view
+# (/System/Cryptexes/OS -> ../../private/preboot/Cryptexes/OS).
+kebab-route/kona-cache-path.patch
