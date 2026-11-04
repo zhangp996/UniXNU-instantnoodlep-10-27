@@ -1,20 +1,13 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -8200,6 +8200,66 @@
+@@ -8200,6 +8200,59 @@
  	int policy_error=sheng_boot_watchdog_policy(p, (uint64_t)scratch_addr);
  	if (policy_error) panic("sheng watchdog launch policy failed: %d", policy_error);
  	boot_progress_stage("temporary watchdog launch policy ready");
 +	{
-+		// The union root now resolves /System/Library/Caches/com.apple.dyld and it holds the caches
-+		// under variant names (dyld_shared_cache_arm64.<n>), so report the plain names too: dyld asks
-+		// for the unsuffixed one first and only falls back to a variant.
 +		char konatrace[128];
 +		vfs_context_t kona_ctx = vfs_context_current();
-+		char kona_n[4][28];
-+		for (int kona_i = 0; kona_i < 4; kona_i++) {
-+			kona_n[kona_i][0] = 0;
-+		}
 +		static const char *const kona_plain[] = {
 +			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64",
 +			"/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
@@ -27,6 +20,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 +			kona_plain_e[kona_i] = vnode_lookup(kona_plain[kona_i], 0, &kona_vp, kona_ctx);
 +			if (kona_vp) { vnode_put(kona_vp); }
 +		}
++		char kona_n1[34] = {0}, kona_n2[34] = {0};
 +		vnode_t kona_dir = NULLVP;
 +		if (!vnode_lookup("/System/Library/Caches/com.apple.dyld", 0, &kona_dir, kona_ctx)) {
 +			char *kona_buf = kalloc_data(8192, Z_WAITOK);
@@ -39,14 +33,15 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 +				size_t kona_used = kona_err ? 0 : 8192 - (size_t)uio_resid(kona_uio);
 +				unsigned kona_found = 0;
 +				for (size_t at = 0;
-+				    at + sizeof(struct dirent) - sizeof(((struct dirent *)0)->d_name) <= kona_used && kona_found < 4;) {
++				    at + sizeof(struct dirent) - sizeof(((struct dirent *)0)->d_name) <= kona_used && kona_found < 2;) {
 +					const struct dirent *entry = (const struct dirent *)(kona_buf + at);
 +					if (!entry->d_reclen) {
 +						break;
 +					}
-+					if (entry->d_namlen && entry->d_namlen < sizeof(kona_n[0]) &&
++					if (entry->d_namlen && entry->d_namlen < sizeof(kona_n1) &&
 +					    strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
-+						strlcpy(kona_n[kona_found++], entry->d_name, sizeof(kona_n[0]));
++						strlcpy(kona_found == 0 ? kona_n1 : kona_n2, entry->d_name, sizeof(kona_n1));
++						kona_found++;
 +					}
 +					at += entry->d_reclen;
 +				}
@@ -60,9 +55,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 +		snprintf(konatrace, sizeof(konatrace), "plain %d %d %d %d", kona_plain_e[0], kona_plain_e[1],
 +		    kona_plain_e[2], kona_plain_e[3]);
 +		boot_progress_stage(konatrace);
-+		snprintf(konatrace, sizeof(konatrace), "n1 %.22s|%.22s", kona_n[0], kona_n[1]);
-+		boot_progress_stage(konatrace);
-+		snprintf(konatrace, sizeof(konatrace), "n2 %.22s|%.22s", kona_n[2], kona_n[3]);
++		snprintf(konatrace, sizeof(konatrace), "n %.31s|%.31s", kona_n1, kona_n2);
 +		boot_progress_stage(konatrace);
 +	}
  #endif
