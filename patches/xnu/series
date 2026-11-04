@@ -46,3 +46,6 @@ kebab-route/kona-p1-open.patch
 # Records the saved EL0 PC and status when PID 1 calls exit, so the page names the userland
 # instruction (dyld or launchd) that asked to leave instead of only reporting that it did.
 kebab-route/kona-p1-exit-pc.patch
+# Makes alt-dyld= effective without a UUID policy entry and records the linker path the loader
+# picked, so dyldsuffix=bringup and alt-dyld=<path> stop being silent no-ops on this port.
+kebab-route/kona-alt-dyld.patch

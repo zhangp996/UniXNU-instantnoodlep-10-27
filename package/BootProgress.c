@@ -200,6 +200,8 @@ unsigned long native_p1_path_len __attribute__((weak)) = 0;
 // kona-p1-exit-pc.patch records where PID 1 called exit from, in its own address space.
 unsigned long long native_p1_exit_pc __attribute__((weak)) = 0;
 unsigned int native_p1_exit_status __attribute__((weak)) = 0;
+// kona-alt-dyld.patch records which linker path the loader chose.
+char native_dyld_choice[96] __attribute__((weak)) = {0};
 // Defined next to the interrupt sampler, which owns the ring; draw() runs before that point.
 static unsigned bp_p1_pcs(uint64_t out[2]);
 
@@ -548,9 +550,9 @@ static void draw(unsigned now) {
     {
       uint64_t p1pc[2]={0,0};
       bp_p1_pcs(p1pc);
-      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu exitpc=%llx st=%u p1=%llx [%lu] %.24s open=%.30s",
-        native_sr_check_calls,native_sr_map_calls,native_p1_exit_pc,native_p1_exit_status,p1pc[0],
-        native_p1_stderr_len,native_p1_stderr,native_p1_path);
+      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu exitpc=%llx st=%u open=%.28s dyld=%.26s",
+        native_sr_check_calls,native_sr_map_calls,native_p1_exit_pc,native_p1_exit_status,
+        native_p1_path,native_dyld_choice);
       line(38,b,0xffffff00);
     }
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,

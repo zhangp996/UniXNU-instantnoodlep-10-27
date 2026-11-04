@@ -1,0 +1,39 @@
+diff --git a/bsd/kern/mach_loader.c b/bsd/kern/mach_loader.c
+--- a/bsd/kern/mach_loader.c
++++ b/bsd/kern/mach_loader.c
+@@ -3019,6 +3019,7 @@
+ #if (DEVELOPMENT || DEBUG)
+ extern char dyld_alt_path[];
+ extern int use_alt_dyld;
++char native_dyld_choice[96];
+ 
+ extern char dyld_suffix[];
+ extern int use_dyld_suffix;
+@@ -3091,16 +3092,9 @@
+ 	 */
+ 
+ 	if (use_alt_dyld) {
+-		int policy_error;
+-		uint32_t policy_flags = 0;
+-		int32_t policy_gencount = 0;
+-
+-		policy_error = proc_uuid_policy_lookup(result->uuid, &policy_flags, &policy_gencount);
+-		if (policy_error == 0) {
+-			if (policy_flags & PROC_UUID_ALT_DYLD_POLICY) {
+-				name = dyld_alt_path;
+-			}
+-		}
++		/* kona: take the alternate linker whenever the argument names one. The UUID policy is
++		 * empty on this port, so honoring it would make alt-dyld= a silent no-op. */
++		name = dyld_alt_path;
+ 	} else if (use_dyld_suffix) {
+ 		size_t i = 0;
+ 
+@@ -3114,6 +3108,7 @@
+ 			}
+ 		}
+ 	}
++	strlcpy(native_dyld_choice, name, sizeof(native_dyld_choice));
+ #endif
+ 
+ #if !(DEVELOPMENT || DEBUG)
