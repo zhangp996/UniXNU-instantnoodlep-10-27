@@ -30,3 +30,8 @@ kebab-route/kona-cache-path.patch
 # Counts every _shared_region_map_and_slide call and records the error it returned, so the page
 # says whether dyld ever asked the kernel to map the cache now that the union root resolves it.
 kebab-route/kona-union-trace.patch
+# The owner mount sets commpage dyld_flags bit 3 ("no ignition") whenever the cache startup block
+# runs, and the build will not take the boot manifest without that block. This patch leaves the bit
+# clear so dyld follows its ordinary cache path: runs CE..CI show shared_region_check_np never
+# called (SRMAP chk=0 map=0) and PID 1 exiting before main.
+kebab-route/kona-no-ignition-flag.patch

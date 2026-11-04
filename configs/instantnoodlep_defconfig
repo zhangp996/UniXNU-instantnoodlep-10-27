@@ -34,21 +34,16 @@ CONFIG_XNU_VERIFIED_ROOT_PROBE=y
 CONFIG_XNU_OWNER_ROOT_AUDIT=y
 CONFIG_XNU_OWNER_ROOT_TRUST=y
 CONFIG_XNU_OWNER_CACHE_MOUNT=y
-# Off for the dyld experiment: the startup block is what sets commpage dyld_flags bit 3
-# ("no ignition"), and with the union root resolving the cache the kernel never ignites it. If that
-# bit tells dyld to run without a cache, PID 1 ends before main exactly as runs CE..CI show
-# (SRMAP chk=0 map=0). Re-enable together with the carrier if the page still shows no map calls.
-# CONFIG_XNU_OWNER_CACHE_STARTUP is not set
+# The build rejects the boot manifest without the startup block, so this stays on; the experiment
+# moves to the bit itself (kebab-route/kona-no-ignition-flag.patch clears dyld_flags bit 3).
+CONFIG_XNU_OWNER_CACHE_STARTUP=y
 CONFIG_XNU_OWNER_BOOT_MANIFEST=y
 CONFIG_XNU_OWNER_DATA_MOUNT=y
 # The cache carrier instrument is the code that decides whether a dyld shared-cache carrier may
 # be mapped (bsd/vm/vm_unix.c, guarded by XNU_OWNER_CACHE_CARRIER && !CONFIG_CSR). Without it the
 # stock path runs, the map is refused, dyld finds no cache, and PID 1 ends before main - run BX
 # showed cache=0/0 on the page, i.e. the counters were not even compiled in.
-# CONFIG_XNU_OWNER_CACHE_CARRIER is not set: the build requires CACHE_STARTUP for it, and the
-# carrier only decides whether a cache *outside* the process root may be mapped. With the union the
-# cache is inside the root, so the stock path is the one under test.
-# CONFIG_XNU_OWNER_CACHE_CARRIER=y
+CONFIG_XNU_OWNER_CACHE_CARRIER=y
 # The cryptex carries System and usr but no /System/Library/Caches/com.apple.dyld (run CE walked it
 # one level at a time: System/Library and System/Library/Caches resolve, com.apple.dyld does not),
 # so mounting it beside the root leaves dyld with neither a cache nor the library tree. The owner

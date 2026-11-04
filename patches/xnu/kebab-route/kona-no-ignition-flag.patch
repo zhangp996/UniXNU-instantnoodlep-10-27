@@ -1,0 +1,14 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7167,7 +7167,9 @@
+ 	if (!error && cache_authorized && root_recheck) {
+ 		/* Original dyld bit 3 selects no ignition; the owner chain and actual
+ 		 * readonly mounts above supply image authentication in this mode. */
+-		dyld_flags |= UINT64_C(8);
++		/* kona: the ignition bit is the experiment - leave it clear so dyld takes the
++		 * ordinary cache path instead of running without a cache. */
++		dyld_flags |= UINT64_C(0);
+ 		commpage_update_dyld_flags(dyld_flags);
+ 		native_owner_cache_dyld_flags = dyld_flags;
+ 	}
