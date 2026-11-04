@@ -531,8 +531,23 @@ static void draw(unsigned now) {
       native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
       vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
       native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
-    snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu e=%d [%lu] %.60s",native_sr_check_calls,native_sr_map_calls,
-      native_sr_map_error,native_p1_stderr_len,native_p1_stderr);line(38,b,0xffffff00);
+    // Where PID 1 was actually executing: the interrupt sampler already records every process's
+    // interrupted PC, user or kernel, in bp_prof. Pull the newest PID 1 entries on the row so dyld's
+    // own code shows up as U<address> instead of another guess.
+    {
+      uint64_t p1pc[2]={0,0};
+      unsigned found=0;
+      uint32_t head=__atomic_load_n(&bp_prof_head,__ATOMIC_RELAXED);
+      uint32_t start=head>BpProfSamples?head-BpProfSamples:0;
+      for(uint32_t i=head;i>start && found<2;--i){
+        uint64_t w=bp_prof[(i-1)%BpProfSamples];
+        if(((w>>48)&0xffff)!=1)continue;
+        p1pc[found++]=(((w>>47)&1)?(1ull<<63):0)|(w&((1ull<<47)-1));
+      }
+      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu e=%d p1=%llx,%llx [%lu] %.40s",native_sr_check_calls,
+        native_sr_map_calls,native_sr_map_error,p1pc[0],p1pc[1],native_p1_stderr_len,native_p1_stderr);
+      line(38,b,0xffffff00);
+    }
     snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
       native_owner_cache_readonly,native_owner_cache_mount_status,
       native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);
