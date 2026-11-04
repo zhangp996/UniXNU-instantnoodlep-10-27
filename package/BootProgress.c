@@ -194,6 +194,8 @@ int native_sr_map_error __attribute__((weak)) = -1;
 // failure text is the only description of why it leaves before touching the shared region.
 char native_p1_stderr[256] __attribute__((weak)) = {0};
 unsigned long native_p1_stderr_len __attribute__((weak)) = 0;
+// Defined next to the interrupt sampler, which owns the ring; draw() runs before that point.
+static unsigned bp_p1_pcs(uint64_t out[2]);
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -536,14 +538,7 @@ static void draw(unsigned now) {
     // own code shows up as U<address> instead of another guess.
     {
       uint64_t p1pc[2]={0,0};
-      unsigned found=0;
-      uint32_t head=__atomic_load_n(&bp_prof_head,__ATOMIC_RELAXED);
-      uint32_t start=head>BpProfSamples?head-BpProfSamples:0;
-      for(uint32_t i=head;i>start && found<2;--i){
-        uint64_t w=bp_prof[(i-1)%BpProfSamples];
-        if(((w>>48)&0xffff)!=1)continue;
-        p1pc[found++]=(((w>>47)&1)?(1ull<<63):0)|(w&((1ull<<47)-1));
-      }
+      bp_p1_pcs(p1pc);
       snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu e=%d p1=%llx,%llx [%lu] %.40s",native_sr_check_calls,
         native_sr_map_calls,native_sr_map_error,p1pc[0],p1pc[1],native_p1_stderr_len,native_p1_stderr);
       line(38,b,0xffffff00);
@@ -767,6 +762,18 @@ static void bp_kernel_chain(uint64_t pc) {
     const uint64_t *frame=(const uint64_t *)fp;e[i]=(uint32_t)frame[1];
     const uint64_t next=frame[0];if(next<=fp)break;fp=next;
   }
+}
+// Newest PID 1 samples, kernel bit in bit 63; 0 means no sample was seen for that process.
+static unsigned bp_p1_pcs(uint64_t out[2]) {
+  unsigned found=0;
+  uint32_t head=__atomic_load_n(&bp_prof_head,__ATOMIC_RELAXED);
+  uint32_t start=head>BpProfSamples?head-BpProfSamples:0;
+  for(uint32_t i=head;i>start && found<2;--i){
+    uint64_t w=bp_prof[(i-1)%BpProfSamples];
+    if(((w>>48)&0xffff)!=1)continue;
+    out[found++]=(((w>>47)&1)?(1ull<<63):0)|(w&((1ull<<47)-1));
+  }
+  return found;
 }
 void boot_progress_irq(uint64_t pc,uint64_t psr,uint64_t sp) {
   // Independent of the recorder lock. IRQ still performs no pixel stores.
