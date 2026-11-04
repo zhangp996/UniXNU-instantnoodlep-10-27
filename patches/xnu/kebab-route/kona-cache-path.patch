@@ -1,23 +1,33 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -8200,6 +8200,21 @@
+@@ -8200,6 +8200,31 @@
  	int policy_error=sheng_boot_watchdog_policy(p, (uint64_t)scratch_addr);
  	if (policy_error) panic("sheng watchdog launch policy failed: %d", policy_error);
  	boot_progress_stage("temporary watchdog launch policy ready");
 +	{
-+		// Which cryptex path actually holds the dyld shared cache? The kernel points dyld at
-+		// /private/preboot/System/... while the system volume links /System/Cryptexes/OS to
-+		// ../../private/preboot/Cryptexes/OS, so both are looked up and reported as cache a= b=.
-+		vnode_t kona_cache_vp = NULL;
-+		char konatrace[64];
-+		int kona_a = vnode_lookup("/private/preboot/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
-+		                          0, &kona_cache_vp, vfs_context_current());
-+		if (kona_cache_vp) { vnode_put(kona_cache_vp); kona_cache_vp = NULL; }
-+		int kona_b = vnode_lookup("/private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64e",
-+		                          0, &kona_cache_vp, vfs_context_current());
-+		if (kona_cache_vp) { vnode_put(kona_cache_vp); }
-+		snprintf(konatrace, sizeof(konatrace), "cache a=%d b=%d", kona_a, kona_b);
++		// Neither candidate cache path exists, so the cryptex volume is either not the volume the
++		// policy names or has a different root layout. Report the device the mount used plus four
++		// marker directories: the dyld cache directory, Cryptexes, private (an OS-root marker) and
++		// db (a Data-root marker).
++		vnode_t kona_vp = NULL;
++		char konatrace[96];
++		struct {
++			const char *path;
++		} kona_paths[4] = {
++			{ "/private/preboot/System/Library/Caches/com.apple.dyld" },
++			{ "/private/preboot/Cryptexes" },
++			{ "/private/preboot/private" },
++			{ "/private/preboot/db" },
++		};
++		int kona_e[4];
++		for (int kona_i = 0; kona_i < 4; kona_i++) {
++			kona_e[kona_i] = vnode_lookup(kona_paths[kona_i].path, 0, &kona_vp, vfs_context_current());
++			if (kona_vp) { vnode_put(kona_vp); kona_vp = NULL; }
++		}
++		snprintf(konatrace, sizeof(konatrace), "cryptex %.20s", native_owner_cache_device_path);
++		boot_progress_stage(konatrace);
++		snprintf(konatrace, sizeof(konatrace), "cache a=%d b=%d c=%d d=%d", kona_e[0], kona_e[1], kona_e[2], kona_e[3]);
 +		boot_progress_stage(konatrace);
 +	}
  #endif
