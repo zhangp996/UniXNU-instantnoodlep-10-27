@@ -14,7 +14,7 @@ paths = ["board.toml", "feeds.toml", "configs/**", "dts/**", ".github/**", ".git
 inputs = ["Layered profiles: profiles/arch/arm64, UniXNU-sm8250-common/soc.toml (commit 3481a8bfd60fb9f8cefe5cfdf402b64c8b303b1e), profiles/os/ipados-17.7.11-21H461, then this board.toml.", "SoC facts from the board's own stock boot_a and dtbo_a images."]
 configuration = ["board.soc = \"SM8250\"", "board.soc_source = \"sm8250\"", "board.os_profile = \"ipados-17.7.11-21H461\"", "kernel.defconfig = \"instantnoodlep_defconfig\"", "device_tree.source = \"device:dts/instantnoodlep.dts\""]
 procedure = ["python3 ./unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep", "python3 ./unixnu status -D ../UniXNU-instantnoodlep"]
-findings = ["The arm64 profile is correct for this board: SM8250 is Armv8.2-A and exposes no FEAT_PAuth, so arm64e does not apply.", "The SoC feed is the kona repository whose soc.toml records IN2020 stock boot_a and dtbo_a as its hardware source."]
+findings = ["The arm64 profile is correct for this board: SM8250 is Armv8.2-A and exposes no FEAT_PAuth, so arm64e does not apply.", "The SoC feed is the kona repository whose soc.toml records IN2020 stock boot_a and dtbo_a as its hardware source.", "The OS profile applies patches/xnu/zzz-boot-progress.patch, whose bsd_init.c hunk needs the XNU_SHENG_PMGR block inserted by patches/xnu/sheng-platform-power.patch; no series applied that patch, so the device applies a copy (00-pmgr-run-hook.patch) before the OS series. CONFIG_XNU_SHENG_PMGR is unset, so the block compiles out."]
 completion = ["Every source pin resolves and status lists the intended profile, components and patch order."]
 limits = ["No UEFI firmware repository (uefi-instantnoodlep) exists yet, so the firmware, payload and boot-image inputs cannot be filled."]
 next_action = ["Create or locate the Mu-Silicium platform for kona/instantnoodlep, then fill [firmware] and [bootimg]."]
@@ -172,7 +172,7 @@ findings = ["The OS profile pins kernelcache sha256 f18b4df8... and the two 044-
 completion = ["The payload and boot image pack and the device boots the firmware from fastboot."]
 limits = ["Kernel, trust cache and Data seed inputs are not built; the platform seed is required."]
 next_action = ["Run ./unixnu ipsw info against the local IPSW and record the extracted member hashes."]
-evidence = []
+evidence = [{ kind = "host", reference = "docs/evidence/2026-11-09-unixnu-ipsw.log", command = "python3 ./unixnu ipsw info --ipsw <local IPSW> && python3 ./unixnu ipsw fetch --ipsw <local IPSW>", result = "Identified 17.7.11 (21H461) j120ap and extracted kernelcache.decompressed, DeviceTree.j120ap.im4p and both trust caches; the standalone ADT generator produced a 13852-byte kernel.macho.adt from the board DTS.", revision = "8ec13bb1077502e53e8ba3b82c56842589b5c837" }]
 
 [[area]]
 id = "diagnostics"
