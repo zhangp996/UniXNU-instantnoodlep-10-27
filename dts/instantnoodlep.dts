@@ -1,0 +1,12 @@
+/dts-v1/;
+/include/ "sm8250.dtsi"
+
+/ {
+    model = "OnePlus 8 Pro (IN2020)";
+    compatible = "oneplus,instantnoodlep", "qcom,sm8250";
+
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x0 0x80000000 0x2 0x00000000>;
+    };
+};

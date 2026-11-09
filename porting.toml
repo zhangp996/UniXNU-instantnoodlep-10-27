@@ -1,0 +1,203 @@
+schema_version = 1
+
+[device]
+name = "instantnoodlep"
+soc = "SM8250"
+os_profile = "ipados-17.7.11-21H461"
+summary = "OnePlus 8 Pro (IN2020) bring-up: arm64 iPadOS 17 profile, configuration resolves; firmware platform, UFS, display and touch drivers are pending."
+
+[[area]]
+id = "configuration"
+status = "host-verified"
+components = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+paths = ["board.toml", "feeds.toml", "configs/**", "dts/**", ".github/**", ".gitignore"]
+inputs = ["Layered profiles: profiles/arch/arm64, UniXNU-sm8250-common/soc.toml (commit 3481a8bfd60fb9f8cefe5cfdf402b64c8b303b1e), profiles/os/ipados-17.7.11-21H461, then this board.toml.", "SoC facts from the board's own stock boot_a and dtbo_a images."]
+configuration = ["board.soc = \"SM8250\"", "board.soc_source = \"sm8250\"", "board.os_profile = \"ipados-17.7.11-21H461\"", "kernel.defconfig = \"instantnoodlep_defconfig\"", "device_tree.source = \"device:dts/instantnoodlep.dts\""]
+procedure = ["python3 ./unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep", "python3 ./unixnu status -D ../UniXNU-instantnoodlep"]
+findings = ["The arm64 profile is correct for this board: SM8250 is Armv8.2-A and exposes no FEAT_PAuth, so arm64e does not apply.", "The SoC feed is the kona repository whose soc.toml records IN2020 stock boot_a and dtbo_a as its hardware source."]
+completion = ["Every source pin resolves and status lists the intended profile, components and patch order."]
+limits = ["No UEFI firmware repository (uefi-instantnoodlep) exists yet, so the firmware, payload and boot-image inputs cannot be filled."]
+next_action = ["Create or locate the Mu-Silicium platform for kona/instantnoodlep, then fill [firmware] and [bootimg]."]
+evidence = [{ kind = "host", reference = "docs/evidence/2026-11-09-unixnu-status.log", command = "python3 ./unixnu defconfig instantnoodlep_defconfig -D ../UniXNU-instantnoodlep && python3 ./unixnu status -D ../UniXNU-instantnoodlep", result = "Resolved arch arm64, soc sm8250 at 3481a8bfd60f, os ipados-17.7.11-21H461 and 59 XNU patches; output out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep.", revision = "8ec13bb1077502e53e8ba3b82c56842589b5c837" }]
+
+[[area]]
+id = "firmware"
+status = "planned"
+components = ["DarwinBoot"]
+paths = ["proprietary-files.txt", "board.toml"]
+inputs = ["boot_a is 96 MiB on sde11; dtbo_a is 8 MiB on sde17 with 19 overlay entries.", "Mu-Silicium platform for SM8250 is not published for this device."]
+configuration = ["[firmware] is intentionally absent until the UEFI checkout exists."]
+procedure = ["Build the firmware with ./unixnu build firmware --uefi ../uefi-instantnoodlep after the platform exists."]
+findings = ["The bootloader passes a merged DT (kona v2.1 base plus dtbo entry 2) and requires the stock DTBO to stay installed.", "The stock boot image uses a 4096-byte page size and a 96 MiB boot partition, so the payload must stay below that."]
+completion = ["The firmware enters UniXNU, publishes the framebuffer and preserves the memory reservations."]
+limits = ["Blocked on the UEFI firmware platform and the platform seed (UNIXNU_UNIQUE_CHIP_ID)."]
+next_action = ["Port the Mu-Silicium kona platform to instantnoodlep and verify the UEFI menu on hardware."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "GPT, boot partition and DTBO geometry measured on the device." }]
+
+[[area]]
+id = "cpu"
+status = "implemented"
+components = ["ArmCpu", "ArmDTPlatform"]
+paths = ["dts/**"]
+inputs = ["8 CPUs at MPIDR 0x000-0x700: four A55-class cores and four Cortex-A77 cores.", "GICv3 at 0x17a00000 (distributor) and 0x17a60000 (redistributors), PSCI over SMC."]
+configuration = ["CPUs are inherited from soc:dts/sm8250.dtsi; the board exports all eight.", "timebase-frequency = <19200000>."]
+procedure = ["dtc -I dts -O dtb -i <soc>/dts dts/instantnoodlep.dts"]
+findings = ["/proc/cpuinfo reports implementer 0x51 part 0x805 on cpu0-3 and 0x41 part 0xd0d on cpu4-7, matching the SoC DTSI topology.", "The SoC has no FEAT_PAuth: ID_AA64ISAR1 has no address or generic authentication, so arm64e cannot be used."]
+completion = ["Every enabled CPU reaches its entry checkpoint and timer/IPI handling works on each core."]
+limits = ["Secondary-core bring-up is not verified; only the stock Android kernel has run on this board."]
+next_action = ["Build the kernel with the SoC defconfig and check the CPU topology probe on hardware."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "CPU parts and MPIDR values read from /proc/cpuinfo." }]
+
+[[area]]
+id = "memory"
+status = "implemented"
+components = ["ArmDTPlatform"]
+paths = ["dts/**"]
+inputs = ["DRAM base 0x80000000, size 0x200000000 (8 GiB).", "/proc/iomem shows the carveouts the bootloader leaves inside that range."]
+configuration = ["memory@80000000 reg = <0x0 0x80000000 0x2 0x00000000>.", "dram_size = 0x200000000 in [payload]."]
+procedure = ["Read /proc/iomem and /proc/meminfo on the device; compare with the memory node."]
+findings = ["MemTotal is 7,708,100 kB on an 8 GiB board, consistent with the 0x80000000-0x27fffffff window.", "The largest System RAM range runs to 0x27fffffff."]
+completion = ["All handoff regions are accounted for and DMA accesses its allocated ranges."]
+limits = ["Reserved-memory and SMMU ownership are not described yet."]
+next_action = ["Add the display and firmware reserved regions once the firmware platform fixes their addresses."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "DRAM banks and System RAM ranges." }]
+
+[[area]]
+id = "storage"
+status = "planned"
+components = []
+paths = ["board.toml"]
+inputs = ["UFS 3.0 host 1d84000, PHY 1d87000, ICE 1d90000.", "GPT userdata entry: first LBA 4133800, last LBA 30513146 (4 KiB LBA)."]
+configuration = ["[userdata] first_lba/last_lba/lba_bytes and two windows (OS, SystemOS)."]
+procedure = ["dd the GPT header with bs=4096 and parse the entry array at 0x2000."]
+findings = ["The disk uses 4 KiB logical blocks: the GPT header is at byte 4096 and entries at 8192.", "boot_a (sde11) is 96 MiB; userdata is 100.63 GiB, enough for the iPadOS 17 root image."]
+completion = ["The UFS host enumerates, the OS window mounts read-only and launchd starts; Data persists."]
+limits = ["No SM8250 storage component is selected. The sheng UFS driver targets SM8550 and the alioth fork carries alioth-specific stream configuration."]
+next_action = ["Evaluate the NativeUfs SM8250 fork against this board's UFS PHY and gear settings, then select it."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "UFS registers and GPT geometry." }]
+
+[[area]]
+id = "display"
+status = "planned"
+components = []
+paths = ["dts/**"]
+inputs = ["Panel qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd, 1440x3168 DSC command mode.", "MDSS 0xae00000, DSI0 0xae94000, Pixelworks Iris bridge."]
+configuration = ["No display node is exported yet; the panel node stays in the stock DTBO."]
+procedure = ["Boot the firmware and use the inherited framebuffer through GopFramebuffer first."]
+findings = ["The panel is a Samsung 1440x3168 DSC command panel driven through a Pixelworks Iris bridge; the stock cmdline names it as msm_drm.dsi_display0."]
+completion = ["A known frame appears with correct geometry and colors, then userland presentation works."]
+limits = ["No display driver is selected; the GOP path depends on the missing firmware platform."]
+next_action = ["Check whether the Mu-Silicium framebuffer covers the panel and add GopFramebuffer to the selection."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "Panel compatible and controller addresses." }]
+
+[[area]]
+id = "input"
+status = "planned"
+components = []
+paths = ["dts/**", "proprietary-files.txt"]
+inputs = ["S6SY791 touch controller at I2C 0x48 on the board's touch bus.", "Firmware /odm/firmware/tp/19811/FW_S6SY791_SAMSUNG.bin."]
+configuration = ["No touch node is exported yet."]
+procedure = ["Read the stock DTBO fragment@71 for the IRQ/reset GPIOs and the I2C bus."]
+findings = ["The controller reports 17 TX x 38 RX with panel coordinates 1439x3168, matching the panel resolution.", "The board uses Samsung S6SY791, not the FocalTech part used by the alioth reference."]
+completion = ["Touches map to the display, contacts keep stable IDs and release events arrive."]
+limits = ["No S6SY791 driver exists in the catalog; QcomGeniSpi plus a new probe would be required."]
+next_action = ["Extract the I2C bus number and GPIOs from dtbo entry 2 and write the touch node."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "Touch controller address, geometry and firmware hash." }]
+
+[[area]]
+id = "gpu"
+status = "planned"
+components = []
+paths = ["proprietary-files.txt"]
+inputs = ["Adreno 650, kgsl 0x3d00000, GMU 0x3d6a000.", "a650_gmu.bin and a650_sqe.fw from the stock vendor partition."]
+configuration = ["GPU nodes are inherited disabled from the SoC DTSI."]
+procedure = ["Select the A650 GMU kit from the SoC repository before enabling the GPU nodes."]
+findings = ["The SoC feed carries no A650 kit; the FFT fork's Sm8250Platform kit is the only SM8250 GMU implementation seen so far."]
+completion = ["GPU submissions render the system interface with working fences."]
+limits = ["No GPU component is selected; the firmware platform is missing."]
+next_action = ["Review the Sm8250Platform GMU kit and its AdrenoFirmware dependency for reuse."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "GPU register blocks and firmware hashes." }]
+
+[[area]]
+id = "network"
+status = "planned"
+components = []
+paths = ["docs/evidence/2026-11-09-device-inventory.md"]
+inputs = ["QCA6390 Wi-Fi/Bluetooth combo (stock DTBO bt_qca6390 node)."]
+configuration = ["No Wi-Fi or Bluetooth node is exported; the stock DTBO bt_qca6390 node and the WLAN regulators are the inputs to add."]
+procedure = ["Read the stock DTBO for the WLAN/BT regulators and firmware paths."]
+findings = ["The board uses a QCA6390 combo; no network component is selected."]
+completion = ["The OS associates and passes packets."]
+limits = ["No Wi-Fi or Bluetooth driver is selected."]
+next_action = ["Inventory the WLAN firmware and PCIe/SNOC path."]
+evidence = []
+
+[[area]]
+id = "audio"
+status = "planned"
+components = []
+paths = ["docs/evidence/2026-11-09-device-inventory.md"]
+inputs = ["WCD9385 codec and ADSP firmware from the vendor partition."]
+configuration = ["No audio node is exported; the WCD9385 codec and ADSP services are identified but not described."]
+procedure = ["Follow the audio guide after the root volume mounts."]
+findings = ["Audio is out of scope until userland starts."]
+completion = ["Playback and capture work through the DSP."]
+limits = ["No audio component is selected."]
+next_action = ["Collect ADSP firmware hashes when the payload stage starts."]
+evidence = []
+
+[[area]]
+id = "power"
+status = "planned"
+components = []
+paths = ["docs/evidence/2026-11-09-device-inventory.md"]
+inputs = ["PM8150/PM8150B/PM8150L PMICs, PM8008, battery gauge."]
+configuration = ["No PMIC node is exported; the board currently inherits bootloader regulator state."]
+procedure = ["Read the PMIC nodes from the stock DT."]
+findings = ["No regulator or battery driver is selected; the board currently relies on bootloader state."]
+completion = ["Regulators and battery units are owned by the OS and suspend/resume is defined."]
+limits = ["No power component is selected."]
+next_action = ["Inventory the PMIC rails used by UFS, display and touch."]
+evidence = []
+
+[[area]]
+id = "packaging"
+status = "planned"
+components = ["XnuPrelink"]
+paths = ["scripts/package.sh", "board.toml"]
+inputs = ["OS profile ipados-17.7.11-21H461: iPad7,1 / j120ap, chip 0x8011, board 0x0C.", "IPSW iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw (6.83 GB)."]
+configuration = ["[ipsw] product iPad7,1, build 21H461, fetch KernelCache/DeviceTree/StaticTrustCache/Cryptex1,SystemTrustCache.", "payload size_mib = 88 against the 96 MiB boot_a."]
+procedure = ["./unixnu ipsw info; ./unixnu ipsw fetch; ./unixnu build payload; ./unixnu bootimg"]
+findings = ["The OS profile pins kernelcache sha256 f18b4df8... and the two 044-*.dmg members.", "The boot partition is 96 MiB, smaller than the 192 MiB used by alioth, so payload size must be re-checked after every component addition."]
+completion = ["The payload and boot image pack and the device boots the firmware from fastboot."]
+limits = ["Kernel, trust cache and Data seed inputs are not built; the platform seed is required."]
+next_action = ["Run ./unixnu ipsw info against the local IPSW and record the extracted member hashes."]
+evidence = []
+
+[[area]]
+id = "diagnostics"
+status = "planned"
+components = []
+paths = ["docs/evidence/2026-11-09-device-inventory.md"]
+inputs = ["No serial console; the stock kernel uses ttyMSM0 at 0xa90000 and the UEFI menu framebuffer."]
+configuration = ["No log transport is configured; the UEFI menu framebuffer is the first checkpoint."]
+procedure = ["Integrate the log-capture plugin before the first firmware boot."]
+findings = ["The device exposes no accessible UART, so diagnostics must go through the screen or USB."]
+completion = ["Firmware and kernel checkpoints are captured and linked from this record."]
+limits = ["No diagnostic transport is configured."]
+next_action = ["Add the firmware log exporter and the boot-progress component."]
+evidence = []
+
+[[area]]
+id = "cellular"
+status = "not-applicable"
+components = []
+paths = ["docs/evidence/2026-11-09-device-inventory.md"]
+inputs = ["SDX55 modem with QMI/QRTR."]
+configuration = ["Cellular is not implemented in this profile; the modem remains owned by Android."]
+procedure = ["No operation: the modem is not driven by this port."]
+findings = ["UniXNU iPadOS profiles do not provide a cellular stack for this board."]
+completion = ["Not planned."]
+limits = ["Cellular is outside this port's scope; the modem stays owned by Android."]
+next_action = ["None."]
+evidence = []

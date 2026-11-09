@@ -1,0 +1,70 @@
+schema_version = 2
+
+[board]
+name = "instantnoodlep"
+soc = "SM8250"
+soc_source = "sm8250"
+os_profile = "ipados-17.7.11-21H461"
+description = "OnePlus 8 Pro (IN2020): SM8250, 8 GiB, 1440x3168 DSC command panel, S6SY791 touch"
+kit = "instantnoodlep"
+
+[components]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot"]
+
+[kernel]
+defconfig = "instantnoodlep_defconfig"
+config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
+patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "os:patches/xnu/series", "device:patches/xnu/series"]
+
+[device_tree]
+source = "device:dts/instantnoodlep.dts"
+include_dirs = ["soc:dts"]
+
+[ipsw]
+url = "https://updates.cdn-apple.com/2025SpringFCS/fullrestores/122-77166/DCA6CFE8-90E9-4B92-880D-3DE171798E40/iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw"
+product = "iPad7,1"
+version = "17.7.11"
+build = "21H461"
+device_class = "j120ap"
+chip_id = 0x8011
+board_id = 0x0C
+fetch = ["KernelCache", "DeviceTree", "StaticTrustCache", "Cryptex1,SystemTrustCache"]
+
+[ipsw.sha256]
+"044-76034-038.dmg" = "b4908cde41d23e6bc05e6af51a2c9eeb00cf0f863a6a18b1600c96a3fd70414f"
+"044-76040-038.dmg" = "3f99b859c9728379110b66657c7b15285bcb1925ad8b5726542e2cdcf8b1028d"
+
+[userdata]
+# GPT entry "userdata" on UFS LUN 0, 4 KiB LBAs (blockdev: sda23 start 33070400 x 512 B).
+first_lba = 4133800
+last_lba = 30513146
+lba_bytes = 4096
+windows = [
+  { name = "OS", component = "OS" },
+  { name = "SystemOS", component = "Cryptex1,SystemOS" },
+]
+
+[payload]
+volume = "OP8PRO"
+# boot_a is 96 MiB (sde11: 98304 KiB); the payload must fit with the boot shim and DTB.
+size_mib = 88
+loader = "firmware"
+title = "UniXNU"
+dram_size = "0x200000000"
+kernel_args = ["-v", "serial=3"]
+
+[payload.adt]
+chip_id = "0x164"
+owned_memory_size = "0x100000000"
+root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
+cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
+psci_method = "smc"
+packed_data_ramdisk = true
+ipad_identity = true
+unique_chip_id = "required"
+
+[package]
+unixnu = "../UniXNU"
+
+[package.defconfig]
+"ipados-17.7.11-21H461" = "instantnoodlep_defconfig"
