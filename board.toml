@@ -46,14 +46,30 @@ windows = [
 
 [payload]
 volume = "OP8PRO"
+timeout = 60
 # boot_a is 96 MiB (sde11: 98304 KiB); the payload must fit with the boot shim and DTB.
 size_mib = 88
 loader = "firmware"
+# The panel is this board's only console: patch the panic screen into the payload
+# copy of the kernel. entry_probe_reset_delay + entry_probe_reset_after = "<symbol>"
+# replace it with a positional reset probe (the two do not fit in one kernel copy).
+panic_screen = true
 title = "UniXNU"
 dram_size = "0x200000000"
-kernel_args = ["-v", "serial=3"]
+# debug=0x14e, -no_slto_panic and amfi_get_out_of_my_way=1 come from the reference
+# port for this board: AMFI panics with "No PMGR?" until a PMGR provider exists, and
+# the spinlock-timeout panic has to be off while the timer path is still unverified.
+kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "amfi_get_out_of_my_way=1"]
 
 [payload.adt]
+# Panic region: XNU's DT panic path (CONFIG_XNU_DT_PANIC_REGION) reads
+# /chosen/embedded-panic-log-size and the pram node's reg. PE_create_console()
+# maps this region before the console exists, so a panic that the screen cannot
+# show is still left in DRAM, and PanicLogDxe prints it on the next boot.
+# The address is PE_create_console()'s PANIC_LOG_BASE; it sits in the free window
+# between the firmware volume (0x9E400000 + 4 MiB), the UEFI stack (0x9F000000 +
+# 2 MiB) and kboot_uboot_logmem (0x9FE00000), and below the DarwinBoot window at
+# 0xC0F98000.
 chip_id = "0x164"
 owned_memory_size = "0x100000000"
 root_match_volume_uuid = "04769D26-2CA0-4825-B443-E2E5F88300F2"
@@ -63,8 +79,47 @@ packed_data_ramdisk = true
 ipad_identity = true
 unique_chip_id = "required"
 
+# The whole-device-tree tables ([adt] below) are what the ADT generator turns
+# into root nodes; [payload.adt] only carries the handoff scalars above.
+[adt.chosen.u32]
+embedded-panic-log-size = "0x80000"
+
+[adt.pram.u64s]
+# Apple's pram reg is two 64-bit cells: the physical base and the region size.
+# xnu's check_for_panic_log() rejects anything but 2 * sizeof(uintptr_t).
+reg = ["0x9F400000", "0x80000"]
+
+[firmware]
+config = "instantnoodlep"
+dsc = "Platforms/OnePlus/instantnoodlepPkg/instantnoodlep.dsc"
+fd = "Build/instantnoodlepPkg/{target}_CLANGPDB/FV/SILICIUM_UEFI.fd"
+submodules = ["Common/Mu", "Common/Mu_OEM_Sample", "Mu_Basecore", "Silicium-ACPI", "Silicon/Silicium/OpensslPkg/Library/OpensslLib/openssl"]
+packages = [
+  "{uefi}",
+  "{uefi}/Platforms/OnePlus",
+  "{tree}/package",
+  "{tree}/drivers/DarwinBoot",
+  "{edk2}",
+  "{uefi}/Common/Mu",
+  "{uefi}/Common/Mu_OEM_Sample",
+  "{uefi}/Silicon/Qualcomm",
+  "{uefi}/Silicon/Silicium",
+  "{uefi}/Silicium-ACPI",
+  "{uefi}/Silicium-ACPI/Silicon/Qualcomm",
+]
+
+[firmware.defines]
+ENABLE_SECUREBOOT = "1"
+DEVICE_MODEL = "1"
+MEMORY_PROTECTION = "TRUE"
+SHIP_MODE = "FALSE"
+BUILDID_STRING = "instantnoodlep-research"
+
 [package]
 unixnu = "../UniXNU"
 
 [package.defconfig]
 "ipados-17.7.11-21H461" = "instantnoodlep_defconfig"
+
+[bootimg.image]
+kernel_compression = "none"

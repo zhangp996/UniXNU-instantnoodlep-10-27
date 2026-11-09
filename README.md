@@ -11,14 +11,14 @@ FEAT_PAuth, so arm64e does not apply.
 | Area | State | Notes |
 | --- | --- | --- |
 | Configuration | host-verified | `unixnu defconfig` and `unixnu status` resolve the arm64/SM8250/iPadOS layers and 59 XNU patches |
-| Firmware and boot | implemented | 93 DXE modules extracted from this phone's own xbl_a; DSC/FDF pending |
+| Firmware and boot | device-verified | menu, 60 s timeout and keys work on the phone; the kernel console now reaches the panel |
 | CPU and interrupts | implemented | 8 CPUs at MPIDR 0x000-0x700, GICv3 0x17a00000, 19.2 MHz timer |
 | Memory and DMA | implemented | 0x80000000 + 0x200000000 (8 GiB) |
 | Storage and root | planned | UFS 3.0 at 0x1d84000; userdata 4 KiB LBA 4133800-30513146 |
 | Display | planned | `qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd` |
 | Input | planned | S6SY791 at I2C 0x48, 17x38, firmware in `proprietary-files.txt` |
 | GPU / network / audio / power | planned | no components selected yet |
-| Packaging | host-verified | kernel.macho builds (51 MB, arm64); payload/boot image need the firmware platform and seed |
+| Packaging | device-verified | hand-packed boot images (header v2, stock dtb) boot to the menu; seed is a placeholder |
 
 Hardware measurements and the commands that produced them are in
 [`docs/evidence/2026-11-09-device-inventory.md`](docs/evidence/2026-11-09-device-inventory.md);

@@ -1,0 +1,80 @@
+--- a/osfmk/console/video_console.c
++++ b/osfmk/console/video_console.c
+@@ -118,6 +118,16 @@
+ 
+ struct vc_info vinfo;
+ 
++/* Device bring-up: the panel's frame buffer arrives as a physical address. It can
++ * only be mapped once the kernel's static virtual space exists (pmap_startup runs
++ * with the STARTUP_SUB_KMEM entries, after PE_create_console in arm_init), so the
++ * physical base is remembered here and mapped by the later kPEAcquireScreen call
++ * from kernel_bootstrap_thread. Apple's iBoot hands over an already-mapped base and
++ * never needs this. */
++static vm_offset_t deferred_fb_pa;
++static vm_size_t   deferred_fb_len;
++static unsigned    deferred_fb_width, deferred_fb_height, deferred_fb_rowbytes, deferred_fb_depth;
++
+ void noroot_icon_test(void);
+ 
+ 
+@@ -2803,6 +2813,28 @@
+ 	boolean_t graphics_now;
+ 	uint32_t delay;
+ 
++	if ((boot_vinfo == NULL) && (deferred_fb_pa != 0) && (kernel_map != VM_MAP_NULL) &&
++	    (startup_phase >= STARTUP_SUB_KMEM)) {
++		static PE_Video deferred_video;
++		vm_offset_t     virt;
++
++		virt = ml_io_map_unmappable(deferred_fb_pa, deferred_fb_len, VM_WIMG_WCOMB);
++		if (virt != 0) {
++			deferred_video.v_baseAddr = virt;
++			deferred_video.v_rowBytes = deferred_fb_rowbytes;
++			deferred_video.v_width    = deferred_fb_width;
++			deferred_video.v_height   = deferred_fb_height;
++			deferred_video.v_depth    = deferred_fb_depth;
++			deferred_video.v_display  = 1;
++			deferred_video.v_scale    = kPEScaleFactor1x;
++			boot_vinfo   = &deferred_video;
++			deferred_fb_pa = 0;
++			gc_graphics_boot = TRUE;
++			kprintf("initialize_screen: frame buffer mapped at 0x%lx for 0x%lx\n",
++			    (unsigned long)virt, (unsigned long)deferred_fb_len);
++		}
++	}
++
+ 	if (boot_vinfo) {
+ 		struct vc_info new_vinfo = vinfo;
+ 		boolean_t makeMapping = FALSE;
+@@ -2853,6 +2885,20 @@
+ 			    new_vinfo.v_physaddr, new_vinfo.v_width, new_vinfo.v_height, new_vinfo.v_rowbytes, new_vinfo.v_type);       /* (BRINGUP) */
+ 		}
+ 
++		if (makeMapping && (startup_phase < STARTUP_SUB_KMEM)) {
++			/* io_map() would take its static virtual_space_start branch, which does
++			 * not exist yet, and return 0 -> the console would store to address 0. */
++			deferred_fb_pa       = new_vinfo.v_physaddr;
++			deferred_fb_len      = round_page((vm_size_t)new_vinfo.v_height * new_vinfo.v_rowbytes);
++			deferred_fb_width    = new_vinfo.v_width;
++			deferred_fb_height   = new_vinfo.v_height;
++			deferred_fb_rowbytes = new_vinfo.v_rowbytes;
++			deferred_fb_depth    = new_vinfo.v_depth;
++			new_vinfo.v_physaddr = 0;
++			newVideoVirt         = 0;
++			makeMapping          = FALSE;
++		}
++
+ 		if (!newVideoVirt && !new_vinfo.v_physaddr) {                                                   /* Check to see if we have a framebuffer */
+ 			kprintf("initialize_screen: No video - forcing serial mode\n");         /* (BRINGUP) */
+ 			new_vinfo.v_depth = 0;                                          /* vc routines are nop */
+@@ -2860,6 +2906,10 @@
+ 			gc_graphics_boot = FALSE;                                       /* Say we are not in graphics mode */
+ 			disableConsoleOutput = FALSE;                                   /* Allow printfs to happen */
+ 			gc_acquired = TRUE;
++			if (deferred_fb_pa != 0) {
++				/* Leave the console unacquired so kPEAcquireScreen maps it later. */
++				gc_acquired = FALSE;
++			}
+ 		} else {
+ 			if (makeMapping) {
+ #if HAS_UCNORMAL_MEM
