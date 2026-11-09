@@ -22,17 +22,17 @@ evidence = [{ kind = "host", reference = "docs/evidence/2026-11-09-unixnu-status
 
 [[area]]
 id = "firmware"
-status = "planned"
+status = "implemented"
 components = ["DarwinBoot"]
-paths = ["proprietary-files.txt", "board.toml"]
-inputs = ["boot_a is 96 MiB on sde11; dtbo_a is 8 MiB on sde17 with 19 overlay entries.", "Mu-Silicium platform for SM8250 is not published for this device."]
-configuration = ["[firmware] is intentionally absent until the UEFI checkout exists."]
-procedure = ["Build the firmware with ./unixnu build firmware --uefi ../uefi-instantnoodlep after the platform exists."]
-findings = ["The bootloader passes a merged DT (kona v2.1 base plus dtbo entry 2) and requires the stock DTBO to stay installed.", "The stock boot image uses a 4096-byte page size and a 96 MiB boot partition, so the payload must stay below that."]
-completion = ["The firmware enters UniXNU, publishes the framebuffer and preserves the memory reservations."]
-limits = ["Blocked on the UEFI firmware platform and the platform seed (UNIXNU_UNIQUE_CHIP_ID)."]
-next_action = ["Port the Mu-Silicium kona platform to instantnoodlep and verify the UEFI menu on hardware."]
-evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-device-inventory.md", result = "GPT, boot partition and DTBO geometry measured on the device." }]
+paths = ["proprietary-files.txt", "docs/evidence/2026-11-09-xbl-dxe.md"]
+inputs = ["xbl_a (sdb1, 5 MiB) holds the board's UEFI firmware: one FV at offset 0x87e30 with 93 PE32 DXE modules.", "Modules include EnvDxe, UFSDxe, DisplayDxe, DALSys, ClockDxe, DALTLMM, HALIOMMU, QcomBds and the USB stack."]
+configuration = ["No [firmware] section yet: it is added together with the DSC/FDF generated from these modules."]
+procedure = ["Dump xbl_a, parse the firmware volume with uefi_firmware 1.16 and emit one .inf/.efi/.depex set per module.", "Populate Binaries/instantnoodlep from the extracted set, then write the board DSC/FDF."]
+findings = ["The 8 Pro's vendor DXE set differs from other SM8250 boards; the earlier 8T-derived platform was wrong and has been discarded.", "The volume's inner FV is a compressed GUIDed section; the parser expands it before the PE32 sections are reachable."]
+completion = ["Firmware enters UniXNU, publishes the framebuffer and preserves the memory reservations."]
+limits = ["DSC and FDF are not generated yet; the RawFiles set (panel XML, BDS menu, battery provision) and ACPI tables are not extracted.", "Boot geometry (FD base 0x9F000000, 96 MiB boot partition) is measured but the payload/boot-image build is on hold until the new platform exists."]
+next_action = ["Generate the platform DSC/FDF from the 93 modules, build SILICIUM_UEFI.fd and verify it with fastboot boot."]
+evidence = [{ kind = "source", reference = "docs/evidence/2026-11-09-xbl-dxe.md", result = "93 DXE modules extracted from the board's own xbl_a with INF wrappers and file GUIDs." }]
 
 [[area]]
 id = "cpu"

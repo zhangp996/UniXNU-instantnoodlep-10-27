@@ -11,7 +11,7 @@ FEAT_PAuth, so arm64e does not apply.
 | Area | State | Notes |
 | --- | --- | --- |
 | Configuration | host-verified | `unixnu defconfig` and `unixnu status` resolve the arm64/SM8250/iPadOS layers and 59 XNU patches |
-| Firmware and boot | planned | no `uefi-instantnoodlep` platform yet |
+| Firmware and boot | implemented | 93 DXE modules extracted from this phone's own xbl_a; DSC/FDF pending |
 | CPU and interrupts | implemented | 8 CPUs at MPIDR 0x000-0x700, GICv3 0x17a00000, 19.2 MHz timer |
 | Memory and DMA | implemented | 0x80000000 + 0x200000000 (8 GiB) |
 | Storage and root | planned | UFS 3.0 at 0x1d84000; userdata 4 KiB LBA 4133800-30513146 |
