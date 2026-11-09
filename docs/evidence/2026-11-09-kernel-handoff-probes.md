@@ -111,3 +111,129 @@ Its record says AMFI panics with "No PMGR?" until the board has a PMGR provider
 and that the spinlock timeout panic has to be turned off before the PMGR work,
 which matches the three-to-six second gap between the bars and 900E.
 `bootN.img` is the image built with them.
+## Third round: the AMFI call site is patched and the wall is unchanged
+
+The reference port records that every kernel rebuild needs
+`scripts/patch-amfi-nopmgr.py`, which skips AMFI's "No PMGR?" panic. The call
+site matched this board's kernel exactly:
+
+    scripts/patch-amfi-nopmgr.py out/.../kernel/kernel.macho --dry-run
+    0x198ad04: 0x940069b8 -> 0x17ffffd2 (b 0xfffffff004aaec4c)
+
+`bootP.img` carries that patched kernel (`90ddd6d5...`), the panic screen and
+the reference boot arguments. The result is unchanged: three bars, then 900E a
+few seconds later. AMFI is therefore not the layer that stops this boot.
+
+## What the timing means
+
+A panic parks the CPU; the SoC watchdog then resets it, and XBL shows 900E. The
+few seconds between the bars and 900E are the watchdog, not work being done, so
+the fault is at or just after the last confirmed checkpoint: console creation.
+`initialize_screen()` is the only code between the KPRINTF startup entries and
+the first console draw that can fail this way, and the panic screen cannot report
+it because `vinfo.v_baseaddr` is exactly what has not been set yet.
+## Fourth round: the A/B rules out both the tag and AMFI
+
+| Image | FD video base | AMFI | Result |
+| --- | --- | --- | --- |
+| `bootE.img` | physical (untagged) | unpatched | three bars, then 900E |
+| `bootJ.img` | physical \| 1 | unpatched | panic screen: alignment fault from the probe's own bar paint |
+| `bootK.img` | physical \| 1 | unpatched | three bars, then 900E |
+| `bootN.img` | physical \| 1 | unpatched | three bars, then 900E (reference arguments) |
+| `bootP.img` | physical \| 1 | patched | three bars, then 900E |
+| `bootQ.img` | physical (untagged) | patched | three bars, then 900E |
+
+So neither the AMFI skip nor the physical tag changes where the boot stops: with
+an untagged base the console draws into an unmapped virtual address, and with the
+tag the mapping that `initialize_screen()` asks for does not happen. The next
+question is therefore why the tag path fails here while the reference port
+records a mapped `vinfo.v_baseaddr`.
+
+Candidates, in order:
+
+1. `ml_io_map_unmappable` before `STARTUP_SUB_KMEM` goes through
+   `io_map()`'s static `virtual_space_start` branch and `pmap_map_bd`. If the
+   DarwinBoot window (kernel plus ramdisk) really sits over the splash region,
+   `pmap_map_bd` is asked to map pages the kernel already manages.
+2. The static virtual window may be too small for a 10 MiB framebuffer when
+   `pmap_startup` sized it from the window the firmware handed over.
+## Fifth round: why the mapping cannot work that early
+
+The DarwinBoot diagnostics (frame-buffer text added to the driver, plus the
+boot-args tag) gave the hand-off layout on the panel:
+
+    kernel pa 0xC007C000    window 0x100000000
+    window end 0x1C007C000  args 0xC4044000
+    video 0x9C000000  1080x2376  row 4320   entry 0xC32144B8
+
+The frame buffer at 0x9C000000 is below the 4 GiB DarwinBoot window, so it is
+outside the kernel's managed memory and `ml_io_map_unmappable` is allowed to
+map it. The window is also large, so the static virtual window is not short of
+space.
+
+The real cause is ordering. `io_map()` takes its static branch while
+`startup_phase < STARTUP_SUB_KMEM`:
+
+    start = virtual_space_start;
+    virtual_space_start += round_page(size);
+    pmap_map_bd_with_options(start, phys_addr, phys_addr + alloc_size, ...);
+
+`virtual_space_start` is assigned only by `pmap_startup()`, which
+`vm_page_bootstrap()` calls during the `STARTUP_SUB_KMEM` entries. On arm64
+`PE_create_console()` runs in `arm_init()` right after the
+`STARTUP_SUB_KPRINTF` entries, so `virtual_space_start` is still zero:
+`ml_io_map_unmappable` returns 0, `vinfo.v_baseaddr` becomes 0, and the first
+console store goes to address 0.
+
+The same call is what `check_for_panic_log()` makes for the `pram` region, so
+it also returns 0 and the function returns silently: the panic log is never
+armed, which is why `PanicLogDxe` found no header and the device still reached
+the menu. Apple's iBoot passes an already-mapped virtual frame buffer and never
+takes this branch, so the ordering hole is invisible on Apple hardware.
+
+The tag added to `Args->Video[0]` is what selects this branch; without it the
+kernel uses the physical address as a virtual address and faults at
+0x9C000000 instead. Both variants end in the same watchdog reset.
+
+### Fix to implement
+
+Patch `initialize_screen()` so the mapping is deferred instead of attempted
+too early: when `makeMapping` is requested and
+`startup_phase < STARTUP_SUB_KMEM`, keep the physical base, leave
+`vinfo.v_baseaddr` zero so the console reports "No video" and the boot
+continues, and map the frame buffer at the later
+`initialize_screen(NULL, kPEAcquireScreen)` call from
+`kernel_bootstrap_thread`, where the kernel map and `kmem` exist.
+
+That call currently skips the mapping block because `boot_vinfo` is NULL, so
+the patch also has to give it the remembered physical base.
+## Sixth round: the deferred mapping patch
+
+`patches/xnu/zzz-defer-framebuffer-mapping.patch` (device series, applied last)
+changes `initialize_screen()` in three places:
+
+* when `makeMapping` is requested and `startup_phase < STARTUP_SUB_KMEM`, it
+  stores the physical base, width, height, row bytes and depth, clears
+  `v_physaddr` and `newVideoVirt` and lets the documented "No video" path run,
+  so `PE_create_console()` returns and the boot continues;
+* in that path it leaves `gc_acquired` FALSE, so the console is not claimed;
+* at its start it turns the later `initialize_screen(NULL, kPEAcquireScreen)`
+  call (from `kernel_bootstrap_thread`, after the KMEM entries) into a real
+  graphics hand-off: it maps the remembered physical range with
+  `ml_io_map_unmappable()` and passes a synthetic `PE_Video` with the mapped
+  virtual base, so the normal path copies the geometry and initialises the
+  video console.
+
+The patch applies cleanly (`patch -p1 --dry-run`) and the kernel was rebuilt
+with it: 51,027,968 bytes, sha256
+54c3565b5d84303eebdcd971721c21d4d562eabe99f8b50cebf69e43040f1ed0.
+
+Artifacts for the next hardware run:
+
+| File | sha256 |
+| --- | --- |
+| `kernel_diag.bin` (BootShim + FD with the docking diagnostics) | shim 112 B + 4 MiB FD |
+| `bootT.img` (kernel above + AMFI patch + panic screen + pram region) | 1c06b7829d133df37076c942985b69373ae9971022df82ca04fec3c0169cb4e0 |
+
+Not yet run on the device: the phone was left parked from the previous attempt
+and has to be power cycled back to fastboot before `bootT.img` can be booted.
