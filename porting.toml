@@ -162,7 +162,7 @@ evidence = []
 
 [[area]]
 id = "packaging"
-status = "planned"
+status = "host-verified"
 components = ["XnuPrelink"]
 paths = ["scripts/package.sh", "board.toml"]
 inputs = ["OS profile ipados-17.7.11-21H461: iPad7,1 / j120ap, chip 0x8011, board 0x0C.", "IPSW iPad_Pro_HFR_17.7.11_21H461_Restore.ipsw (6.83 GB)."]
@@ -172,7 +172,7 @@ findings = ["The OS profile pins kernelcache sha256 f18b4df8... and the two 044-
 completion = ["The payload and boot image pack and the device boots the firmware from fastboot."]
 limits = ["Kernel, trust cache and Data seed inputs are not built; the platform seed is required."]
 next_action = ["Run ./unixnu ipsw info against the local IPSW and record the extracted member hashes."]
-evidence = [{ kind = "host", reference = "docs/evidence/2026-11-09-unixnu-ipsw.log", command = "python3 ./unixnu ipsw info --ipsw <local IPSW> && python3 ./unixnu ipsw fetch --ipsw <local IPSW>", result = "Identified 17.7.11 (21H461) j120ap and extracted kernelcache.decompressed, DeviceTree.j120ap.im4p and both trust caches; the standalone ADT generator produced a 13852-byte kernel.macho.adt from the board DTS.", revision = "8ec13bb1077502e53e8ba3b82c56842589b5c837" }]
+evidence = [{ kind = "host", reference = "docs/evidence/2026-11-09-unixnu-ipsw.log", command = "python3 ./unixnu ipsw info --ipsw <local IPSW> && python3 ./unixnu ipsw fetch --ipsw <local IPSW>", result = "Identified 17.7.11 (21H461) j120ap and extracted kernelcache.decompressed, DeviceTree.j120ap.im4p and both trust caches; the standalone ADT generator produced a 13852-byte kernel.macho.adt from the board DTS.", revision = "8ec13bb1077502e53e8ba3b82c56842589b5c837" }, { kind = "host", reference = "docs/evidence/2026-11-09-kernel-build.log", command = "python3 ./unixnu build kernel -D ../UniXNU-instantnoodlep", result = "Built kernel/kernel.macho (51027968 bytes, Mach-O arm64) with 60 patches and the XnuPrelink step; sha256 c639835d0a66e476d97f3989aff5baf2ad1671c91bebc2a7a7952911c9cd483b.", revision = "8ec13bb1077502e53e8ba3b82c56842589b5c837" }]
 
 [[area]]
 id = "diagnostics"

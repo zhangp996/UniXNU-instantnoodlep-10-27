@@ -18,7 +18,7 @@ FEAT_PAuth, so arm64e does not apply.
 | Display | planned | `qcom,mdss_dsi_oppo19811_samsung_1440_3168_dsc_cmd` |
 | Input | planned | S6SY791 at I2C 0x48, 17x38, firmware in `proprietary-files.txt` |
 | GPU / network / audio / power | planned | no components selected yet |
-| Packaging | planned | iPad7,1 IPSW profile; boot_a is 96 MiB |
+| Packaging | host-verified | kernel.macho builds (51 MB, arm64); payload/boot image need the firmware platform and seed |
 
 Hardware measurements and the commands that produced them are in
 [`docs/evidence/2026-11-09-device-inventory.md`](docs/evidence/2026-11-09-device-inventory.md);
