@@ -72,7 +72,7 @@ dram_size = "0x200000000"
 # native-ufs-root=1 starts the selected storage component's root path once the kernel is up: it
 # adopts the controller the firmware left running and publishes the userdata windows as an IOMedia.
 kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "amfi_get_out_of_my_way=1",
-               "native-ufs-root=1", "native-ufs-diagnostics=1",
+               "native-ufs-root=1", "native-ufs-diagnostics=1", "native-exit-report=1",
                "qcom-usb-debug=1"]
 
 [payload.adt]

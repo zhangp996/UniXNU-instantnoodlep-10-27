@@ -186,11 +186,95 @@ extern "C" int native_verified_block_volume_device(const char *uuid, dev_t *devi
 // One-shot report for the owner cache mount: the kernel asks
 // native_verified_block_volume_device() for the SystemOS volume, and this says whether that lookup
 // failed, which media the registry holds, and how far the mount got. Panics so the panel shows it.
+
+// Lock-free record of the userland services that exit during a bring-up boot.  Printing from
+// exit1 takes the console locks while the process lock is held, which is the lock order that
+// stalls the board when a host is attached; recording instead only writes a static slot.
+struct native_exit_note {
+    char name[28];
+    int pid;
+    int signal;
+    int status;
+};
+static struct native_exit_note native_exits[32];
+static volatile uint32_t native_exit_count;
+
+extern "C" void native_exit_note(const char *name, int pid, int signal, int status)
+{
+    uint32_t slot = __atomic_fetch_add(&native_exit_count, 1, __ATOMIC_RELAXED);
+    if (slot >= 32) {
+        return;
+    }
+    struct native_exit_note *note = &native_exits[slot];
+    size_t i = 0;
+    if (name) {
+        for (; i + 1 < sizeof(note->name) && name[i]; i++) {
+            note->name[i] = name[i];
+        }
+    }
+    note->name[i] = 0;
+    note->pid = pid;
+    note->signal = signal;
+    note->status = status;
+
+    /* Draw one magenta block per recorded exit at the top of the panel. The MMU is on by the
+     * time a service exits, and the loader told us the frame buffer's physical base, so this
+     * shows progress even when the video console never came up and no panic was taken. */
+    extern void *ml_io_map(vm_offset_t paddr, vm_size_t size, unsigned int flags);
+    static volatile uint32_t *panel;
+    if (!panel) {
+        panel = (volatile uint32_t *)ml_io_map(0x9C000000, 1080u * 480u * 4u, 0x00000040u /* VM_WIMG_WCOMB */);
+    }
+    if (panel && slot < 24) {
+        for (unsigned y = 0; y < 24; y++) {
+            for (unsigned x = 0; x < 24; x++) {
+                panel[y * 1080u + slot * 32u + 8u + x] = 0x00FF00FFu;
+            }
+        }
+    }
+}
+
+// One-line summary for the report panic: "name[pid] sig/status" per entry.
+static size_t native_exit_summary(char *out, size_t capacity)
+{
+    size_t used = 0;
+    uint32_t count = native_exit_count < 32 ? native_exit_count : 32;
+    for (uint32_t i = 0; i < count && used + 1 < capacity; i++) {
+        const struct native_exit_note *note = &native_exits[i];
+        if (i) {
+            out[used++] = ' ';
+        }
+        int written = snprintf(out + used, capacity - used, "%s[%d]:%d/%d",
+                               note->name, note->pid, note->signal, note->status);
+        if (written <= 0) {
+            break;
+        }
+        used += (size_t)written;
+    }
+    if (used < capacity) {
+        out[used] = 0;
+    } else {
+        out[capacity - 1] = 0;
+    }
+    return used;
+}
+
 extern "C" void qcom_owner_report(void);
 extern "C" int PE_parse_boot_argn(const char *arg_string, void *arg_ptr, int max_arg);
 
+
+
 extern "C" void qcom_owner_report(void)
 {
+    /* native-exit-report=1 turns the accumulated service exits into one readable stop, so the
+     * bring-up sees the whole service timeline instead of one panic per boot. */
+    int exit_report = 0;
+    if (PE_parse_boot_argn("native-exit-report", &exit_report, sizeof(exit_report)) && exit_report == 1 &&
+        native_exit_count >= 6) {
+        char list[480];
+        native_exit_summary(list, sizeof(list));
+        panic("XNU-EXITS: %s", list);
+    }
     int report = 0;
     if (!PE_parse_boot_argn("native-owner-report", &report, sizeof(report)) || report != 1) {
         return;
