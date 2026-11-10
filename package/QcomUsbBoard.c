@@ -27,8 +27,9 @@ void qcom_owner_heartbeat (void);
 
 void qcom_usb_board_check (void)
 {
-    /* One live trace for the rest of the boot; see package/VerifiedBlockBridge.cpp. */
-    qcom_owner_heartbeat ();
+    /* The periodic trace is off for now: with no host draining the console its kprintf
+     * stream fills the module's transmit backlog and the boot stalls at the handoff. */
+    /* qcom_owner_heartbeat (); */
     struct qcom_usb_debug_status status;
     int report = 0;
     qcom_usb_debug_get_status (&status);
