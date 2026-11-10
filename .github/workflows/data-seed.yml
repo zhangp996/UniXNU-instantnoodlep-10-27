@@ -58,9 +58,15 @@ jobs:
       - name: Install host tools
         run: brew install lzfse
 
+      - name: Fetch the SoC feed
+        run: |
+          set -o pipefail
+          ./unixnu fetch sm8250 -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/fetch.log" || true
+
       - name: Fetch the OS member of the IPSW
         run: |
           set -o pipefail
+          ./unixnu fetch sm8250 -D "$DEVICE_DIR" 2>&1 | tee -a "$RUNNER_TEMP/fetch.log" || true
           ./unixnu ipsw fetch -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/ipsw.log" || true
           ./unixnu ipsw fetch OS -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/os.log"
           ls -l out/ipsw/*/*.dmg | tee "$RUNNER_TEMP/dmgs.log"
