@@ -184,3 +184,31 @@ failed* when it fails, and that panic never appeared.
 
 Note for the next step: this kernel panics on the first service that exits, so each boot names one
 failing service. `watchdogd` is the current one.
+### What the day established, and the two walls it left
+
+The boot on hardware now runs the whole storage and privacy path: UFS transport, userdata GPT,
+both signed windows, APFS on the OS volume, the owner-policy authentication of the root, the
+SystemOS cryptex mount, the dyld cache carrier and union, launchd, and its early service list up to
+PID 158. That is the end of the storage route; everything past it is userland behaviour.
+
+Two walls remain, and both are now narrowly defined:
+
+1. **A service that exits stops the boot.** This DEVELOPMENT kernel panics in `exit1` on any process
+   that exits without an exit reason, so the first failing service names itself and ends the boot:
+   `mount_os` (before the boot manifest), `tzinit_17` (before the Data seed) and now `watchdogd`.
+   The documented remedy is the launchd disabled plist inside the Data seed
+   (`docs/zh/devices/merlinx-gytis283123`), but the seed image is created by `hdiutil create` with
+   ownership ignored, so a plist written on the runner is owned by uid 501 and launchd, which runs
+   as root, does not honour it. Fixing that needs the seed built on an owners-enabled image.
+   A local kernel patch that made only the initproc's exit fatal was tried twice and both boots
+   stopped before `bsd_autoconf` without output, so it was removed rather than kept.
+2. **An occasional early stall at `lockdown_mode`.** Three boots stopped there with the console
+   silent afterwards, while the same images booted to `watchdogd` on other attempts; a full power
+   off followed by one normal Android boot restored the good behaviour. The UFS controller is the
+   prime suspect, since the port's driver brings the controller up during IOKit initialisation and
+   has no bounded wait around it.
+
+The USB console works and is the first real log channel: `QCOM XNU USB CDC ACM v1` over
+`/dev/ttyACM0` or COMx, with two facts worth keeping - the host must not attach during early boot
+(it stalls the kernel at the next kprintf-heavy point), and the ring only carries the early boot
+because video console output after `lockdown_mode` no longer reaches it.

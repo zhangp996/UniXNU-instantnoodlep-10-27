@@ -1,0 +1,23 @@
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1878,6 +1878,12 @@
+ 	}
+ #endif
+ 
++	/*
++	 * Bring-up: a userland service that exits is reported, not fatal. Only the initproc's
++	 * exit stops the boot, which is what this panic is for; the rest of the service graph
++	 * keeps running so the port can see how far launchd gets.
++	 */
++	if (p == initproc) {
+ 	if (p->p_exit_reason == OS_REASON_NULL) {
+ 		panic_with_options(0, NULL, DEBUGGER_OPTION_INITPROC_PANIC, "%s -- no exit reason available -- (signal %d, exit status %d %s)",
+ 		    prefix_str, WTERMSIG(rv), WEXITSTATUS(rv), ((proc_getcsflags(p) & CS_KILLED) ? "CS_KILLED" : ""));
+@@ -1887,6 +1893,7 @@
+ 		    prefix_str, p->p_exit_reason->osr_namespace, p->p_exit_reason->osr_code,
+ 		    exit_reason_desc ? exit_reason_desc : "none");
+ 	}
++	}
+ }
+ 
+ void

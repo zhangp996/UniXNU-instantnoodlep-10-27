@@ -222,3 +222,38 @@ extern "C" void qcom_owner_report(void)
           native_owner_cache_stage, native_owner_cache_status, native_owner_cache_mount_status,
           native_owner_cache_authorized, native_owner_cache_device_path, media);
 }
+
+// A once-per-five-seconds live trace on the console: stage counters from the owner, storage and RAM
+// block paths. Without it a boot that neither panics nor prints cannot be told apart from a hang.
+extern "C" void qcom_owner_heartbeat(void);
+extern "C" int kernel_thread_start(void (*)(void *, wait_result_t), void *, thread_t *);
+extern "C" void thread_deallocate(thread_t);
+
+static void heartbeat_thread(void *, wait_result_t)
+{
+    extern volatile int native_owner_cache_stage;
+    extern volatile int native_owner_cache_mount_status;
+    extern volatile int native_owner_data_stage;
+    extern volatile int native_owner_data_status;
+    extern volatile int native_ufs_root_step;
+    extern volatile uint32_t native_ufs_verified_blocks;
+    extern volatile uint32_t native_ram_block_ready;
+    extern volatile uint64_t native_ram_block_bytes;
+    for (;;) {
+        IOSleep(5000);
+        kprintf("HEARTBEAT cache=%d/%d data=%d/%d root=%d verified=%u ram=%u/%llu\n",
+                native_owner_cache_stage, native_owner_cache_mount_status,
+                native_owner_data_stage, native_owner_data_status,
+                native_ufs_root_step, native_ufs_verified_blocks,
+                native_ram_block_ready, native_ram_block_bytes);
+    }
+}
+
+extern "C" void qcom_owner_heartbeat(void)
+{
+    thread_t thread = nullptr;
+    if (kernel_thread_start(heartbeat_thread, nullptr, &thread) == KERN_SUCCESS) {
+        thread_deallocate(thread);
+    }
+}
+

@@ -23,8 +23,12 @@ void boot_reset_bootloader (void)
     }
 }
 
+void qcom_owner_heartbeat (void);
+
 void qcom_usb_board_check (void)
 {
+    /* One live trace for the rest of the boot; see package/VerifiedBlockBridge.cpp. */
+    qcom_owner_heartbeat ();
     struct qcom_usb_debug_status status;
     int report = 0;
     qcom_usb_debug_get_status (&status);
