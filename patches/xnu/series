@@ -1,2 +1,4 @@
 # Board patch paths, one per line in application order.
 zzz-defer-framebuffer-mapping.patch
+zzz-arm-panic-region-guard.patch
+zzz-arm-panic-region-late.patch

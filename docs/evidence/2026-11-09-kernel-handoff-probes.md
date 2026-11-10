@@ -237,3 +237,35 @@ Artifacts for the next hardware run:
 
 Not yet run on the device: the phone was left parked from the previous attempt
 and has to be power cycled back to fastboot before `bootT.img` can be booted.
+## Seventh round: the kernel boots to bsd_init
+
+Two more device patches, both in `pexpert/arm/pe_init.c`:
+
+* `zzz-arm-panic-region-guard`: `check_for_panic_log()` returns immediately
+  while `kernel_map == VM_MAP_NULL`. Without it, adding the `pram` node made the
+  first call map the region through `io_map()`'s static branch with
+  `virtual_space_start == 0`, i.e. at virtual address 0.
+* `zzz-arm-panic-region-late`: `PE_initialize_console()` calls
+  `check_for_panic_log()` again once `kernel_map` exists, which is after
+  `pmap_startup()`, so the DT panic region is armed for real.
+
+Kernel `a8c5d42b...` (three device patches) + AMFI patch, panic screen and the
+480-row frame buffer, booted as `bootX.img`
+(`23627207e51bd2c151531bf46deecccc895722b914750fbefdd450b41a848e14`):
+
+**the panic screen drew**:
+
+    failed to mount root device @IOKitBSDInit.cpp:984
+    frames fffffff00797c384 fffffff0076e489c fffffff0072c4864 fffffff0074164a4
+    pages=0x20000000 000f814c
+    free=0x00000000 0f6f51
+
+That is the milestone for the handoff: `arm_init`, `machine_startup`,
+`vm_init`, `PE_create_console`, `kprintf`, the console acquisition in
+`kernel_bootstrap_thread` and the whole bootstrap up to `bsd_init` all run, and
+the deferred frame-buffer mapping succeeded (the panic screen draws through
+`vinfo.v_baseaddr`, which only exists if that mapping happened). The kernel now
+stops where a port without a storage driver stops: `vfs_mountroot` finds no root
+device.
+
+The next layer is storage (UFS), not the handoff.
