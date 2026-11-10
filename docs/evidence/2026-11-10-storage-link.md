@@ -52,8 +52,27 @@ to them means abstract complete/deleting destruction, which has to fail the link
 | `kernel/kernel.macho` | sha256 `82e653afbc0de677d5d3aa78ed17bfb9d10610728382b80040470aaf0b34538b`, links with the driver |
 | AMFI-patched copy | sha256 `94c76d9f3fda57aaa0bd2c96e77e5832e85007d005c96bb283fb5b5a3bf53dba` |
 | `payload/payload.img` | sha256 `bbb7580bc04b71347bb2926bd19ec0e6d4ffa04ab9dd0cfe60ae6f79aa04a387`, 92,274,688 bytes, args `-v serial=3 debug=0x14e -no_slto_panic amfi_get_out_of_my_way=1 native-ufs-root=1` |
-| ADT | sha256 `daf8ffa7c3e8135f84809633e60ed62a3b40cfe02f1ac5b6dedf4121b3bae6df`, root compatible `J120AP oneplus,instantnoodlep qcom,sm8250`, `arm-io` now exports `ufshc` (`qcom,sm8250-ufshc`) and `ufsphy` |
+| ADT | root compatible `J120AP oneplus,instantnoodlep qcom,sm8250`, 13904 bytes; the UFS nodes stay disabled in the board dts (see below) |
 | boot image `bootZ.img` | sha256 `cea799d1a77c2534b7dcc2e7a2eacb7497e152b8a92c8534421d542847b701a5`, 107,507,712 bytes (BootShim + FD `kernel_small.bin`, this payload, `stock_boot.dtb`) |
+
+## The device nodes that had to come back out
+
+Enabling `&ufs` and `&ufsphy` in the board dts exported `ufshc` and `ufsphy` under
+`arm-io` and grew the ADT from 13904 to 14400 bytes. With that ADT the kernel stopped right after
+the entry-probe bars and never reached its console. The A/B isolates it to the ADT, not the driver:
+
+| Image | kernel | ADT | args | result |
+| --- | --- | --- | --- | --- |
+| bootX (earlier) | a8c5d42b | without the UFS nodes | without `native-ufs-root` | console, then the root-mount panic |
+| bootZ4 | a8c5d42b | with them | with `native-ufs-root=1` | bars, then silence |
+| bootZ5 | a8c5d42b | without them | with `native-ufs-root=1` | console, then `failed to mount root device @IOKitBSDInit.cpp:984` |
+
+Same kernel in all three rows, so neither the storage driver nor the extra boot argument is
+involved: the two device nodes are. ShengUfs does not need them - it attaches to the platform
+expert and reads its windows from `ufs-soc-table.h` - so the board dts keeps them disabled and
+carries a comment with this measurement. Why the platform expert stops with them present is
+still open; the candidates are the hand-off buffer for the ADT and the exported properties
+(`reg` with two ranges, `interrupts` with `interrupt-parent`).
 
 The ADT root compatible is what resolves the SoC at run time: the platform-expert personality reads
 it, matches `qcom,sm8250` in the table, and takes the kona host window, the GCC branches and the
