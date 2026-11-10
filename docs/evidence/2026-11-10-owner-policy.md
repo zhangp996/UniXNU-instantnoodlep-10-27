@@ -243,3 +243,23 @@ must not be lowered.
 
 The handoff stalls seen around the same time are a device state problem, not an image problem: the
 same image that stalls one minute boots to `watchdogd` on the next power cycle.
+### watchdogd: the launchd database is correct and still not honoured (2026-11-10, 21:55)
+
+The kernel-side override follows the sm-t970 record (BOOT2387e904): after the volatile Data mount,
+while the boot thread is still root, the kernel creates
+`[base]/private/var/db/com.apple.xpc.launchd/disabled.plist` (and `disabled.501.plist`) with
+`{com.apple.watchdogd: true}`, `FWRITE | O_CREAT | O_TRUNC`, mode 0644, `fsync`, then closes.  A probe
+boot printed the result:
+
+`owner watchdog override probe: files 2 read 0 bytes 40 marker 2 head [<?xml version="1.0" ...]`
+
+so both files exist with the intended content, the write is root-owned, and the migration marker
+`disabled.migrated` that `scripts/check-launchd-watchdog-policy.py` shows launchd consulting does not
+exist.  launchd still starts `watchdogd`, which then exits and panics the DEVELOPMENT kernel at
+`exit1`: the first service of the boot.
+
+The documented reference implementation is sheng's `package/BootProcessWorker.c` (source storage
+runtime, built by `scripts/build-sheng-source-storage.py`), which the asteroids record describes as
+running "the process capture and the watchdog launch policy"; the same official checker calls its
+subject "the original launchd override loader **and job gate**", so the gate is the part a file alone
+does not reach on this iPadOS build.  That component is not part of this device repository.
