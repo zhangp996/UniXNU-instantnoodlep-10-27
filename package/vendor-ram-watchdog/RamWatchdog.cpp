@@ -30,6 +30,32 @@ int fuxi_ram_watchdog_prepare(void);
 // channel that can show the kernel is still scheduling once the service graph starts.
 extern "C" void *ml_io_map(vm_offset_t paddr, vm_size_t size, unsigned int flags);
 
+/* The storage stack can flood the console with a retry loop, which buries every early diagnostic.
+ * This repeats the block-device list from the watchdog tick so the panel always shows it. */
+static void ram_watchdog_block_report(void)
+{
+    OSDictionary *matching = IOService::serviceMatching("IOMedia");
+    OSIterator *iterator = matching ? IOService::getMatchingServices(matching) : nullptr;
+    while (iterator) {
+        IOService *entry = OSDynamicCast(IOService, iterator->getNextObject());
+        if (!entry) {
+            break;
+        }
+        OSString *name = OSDynamicCast(OSString, entry->getProperty("BSD Name"));
+        OSNumber *size = OSDynamicCast(OSNumber, entry->getProperty("Size"));
+        if (name) {
+            extern volatile uint64_t native_ram_block_state[4];
+            printf("BLK-TICK: %s size=%llu\n", name->getCStringNoCopy(),
+                   size ? size->unsigned64BitValue() : 0);
+            printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu\n",
+                   native_ram_block_state[0], native_ram_block_state[1],
+                   native_ram_block_state[2], native_ram_block_state[3]);
+        }
+    }
+    OSSafeReleaseNULL(iterator);
+    OSSafeReleaseNULL(matching);
+}
+
 static void ram_watchdog_panel_tick(uint64_t tick)
 {
     static volatile uint32_t *panel;
@@ -73,7 +99,11 @@ class RamWatchdog : public IOWatchdog {
         uint64_t now = mach_absolute_time();
         IOSimpleLockUnlock(lock);
         ml_set_interrupts_enabled(interrupts);
-        ram_watchdog_panel_tick(__atomic_add_fetch(&fuxi_ram_watchdog_state[2], 1, __ATOMIC_RELAXED));
+        uint64_t beat = __atomic_add_fetch(&fuxi_ram_watchdog_state[2], 1, __ATOMIC_RELAXED);
+        ram_watchdog_panel_tick(beat);
+        if ((beat % 20u) == 1u) {
+            ram_watchdog_block_report();
+        }
         fuxi_ram_watchdog_state[3] = sequence;
         fuxi_ram_watchdog_state[4] = enabled;
         fuxi_ram_watchdog_state[5] = deadline;

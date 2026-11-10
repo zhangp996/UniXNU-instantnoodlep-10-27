@@ -317,6 +317,11 @@ extern "C" int native_owner_watchdog_service(void)
     return 0;
 }
 
+/* Storage state the RAM block driver and the watchdog tick both read: online, media present,
+ * capacity in blocks, and the non-zero page count of the big path. */
+extern "C" volatile uint64_t native_ram_block_state[4];
+extern "C" volatile uint64_t native_ram_block_state[4] = { 0, 0, 0, 0 };
+
 extern "C" void qcom_owner_report(void)
 {
     /* native-exit-report=1 turns the accumulated service exits into one readable stop, so the

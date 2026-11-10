@@ -342,3 +342,32 @@ Next session, in order:
 
 Working images: bootDD (32 MB seed, reaches launchd and the services) and the 32 MB seed itself;
 bootDG (3 GiB seed + RamBlock diagnostic) is the one that stalls.
+
+## 06:45: the 3 GiB seed is healthy in the driver; the selection refuses two matches
+
+`RWSTATE: online=1 mem=1 capacity=6291456 big=292` prints on every watchdog tick, so for the 3 GiB
+seed the RAM block driver is fully healthy: the media is online, its backing store is present, the
+capacity is 6291456 blocks (3 GiB) and the big path holds 292 non-zero pages.
+
+The panel still loops on `disk1: device is not ready`, and the block list explains why:
+
+```
+BLK-TICK: disk0 size=3221225472
+BLK-TICK: disk1 size=3221225472
+BLK-TICK: disk1s1 size=3221225472
+```
+
+the same 3 GiB volume is published twice (disk0 and disk1) plus its partition.  `selectVolumeSeed`
+counts matches by UUID and requires **exactly one**:
+
+```c
+if (++matches != 1) { selected = false; break; }
+```
+
+so with two candidate media the Data volume is never selected, the mount fails, the services that
+need it fail, and the boot ends in the watchdogd critical-exit panic - the loop is the storage stack
+retrying a device that the volume selection refused.
+
+Next: print the UUID of each disk in the tick report (a string property) to confirm both carry the
+seed UUID, then either de-duplicate the publication or relax the selection to prefer the partition
+(`diskXs1`) when several media share the UUID.
