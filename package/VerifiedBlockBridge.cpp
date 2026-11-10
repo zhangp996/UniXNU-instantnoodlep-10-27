@@ -266,7 +266,7 @@ extern "C" int native_owner_watchdog_service(void);
 /* Draw one block at the top of the panel without the console: the panel's physical base comes
  * from the loader, and the MMU is on by the time this runs. The panic screen does not fit next to
  * the watchdog code, so the panel mark is the only channel that can report this step. */
-static void native_panel_mark(unsigned slot, unsigned color)
+extern "C" void native_panel_mark(unsigned slot, unsigned color)
 {
     extern void *ml_io_map(vm_offset_t paddr, vm_size_t size, unsigned int flags);
     static volatile uint32_t *panel;
