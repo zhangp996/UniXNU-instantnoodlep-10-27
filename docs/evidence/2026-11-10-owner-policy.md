@@ -164,3 +164,23 @@ it carries no `private/var` skeleton - and the guide's step 4 builds that skelet
 
 Linux has no writable APFS (apfsprogs provides `mkapfs` and `apfsck` only, and `fsapfsmount` is
 read-only), so a real Data seed has to come from a macOS host or the repository's macOS workflow.
+### The Data seed from the macOS runner carries the boot into userland
+
+The seed that `mkapfs` could not produce came from the repository's own macOS workflow: a
+`Data seed` run built `owner-data-32.cdr` with `scripts/prepare-owner-data-fixture.py` (32 MiB APFS,
+volume `36C34096-D837-44A1-9A9F-77F1807FA03B`, 39 files of the OS volume's initial `private/var`)
+and published it as an artifact. Packed with `packed_ramdisk.pack` (995,408 bytes) and handed to the
+payload with `--data-ramdisk`, it moved the boot two steps:
+
+| Boot | Panel |
+| --- | --- |
+| empty seed | `tzinit_17] exited ... exit status 2` |
+| real seed | `watchdogd[114] exited -- exit reason namespace 2 subcode 0x5 description: none` |
+
+`tzinit_17` passes with the real `private/var`, launchd keeps walking its service list, and the
+first failing service is now `watchdogd` at PID 114 - the boot is deep in userland. The Data mount
+itself reports success: `native_owner_data_prepare()` panics with *offline scratch Data mount
+failed* when it fails, and that panic never appeared.
+
+Note for the next step: this kernel panics on the first service that exits, so each boot names one
+failing service. `watchdogd` is the current one.
