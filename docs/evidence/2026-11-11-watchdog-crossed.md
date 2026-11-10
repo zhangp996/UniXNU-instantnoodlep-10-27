@@ -58,3 +58,26 @@ is set.  That needs no console and no panic screen, and the panel channel is pro
 
 Everything else from tonight stands: the watchdog backend keeps the boot alive past `watchdogd`, the
 panel draws from the kernel, and the machine survives minutes where the baseline died at one minute.
+## 04:00: the frame buffer maps; the console still does not draw
+
+bootCZ is the same configuration plus four panel marks inside `initialize_screen`: slot 4 colours by
+`boot_vinfo` (white when non-NULL, grey when NULL), slot 5 colours by `op` (yellow for
+`kPEAcquireScreen`), slot 6 marks entry to the deferred branch, slot 7 marks a successful
+`ml_io_map`.
+
+On hardware the panel shows grey, yellow, blue, magenta.  So:
+
+* `initialize_screen` reaches `kPEAcquireScreen` (yellow),
+* the deferred branch is entered, which means `deferred_fb_pa` was recorded by an earlier call with a
+  real video info (its white mark was overwritten by the later NULL call, which is the grey),
+* `ml_io_map` succeeds (magenta).
+
+The frame buffer is therefore mapped and `boot_vinfo` is set for the console, yet the panel keeps
+showing the loader page: no kernel text is drawn.  The remaining suspects are the tail of
+`initialize_screen` (`vc_probe`/`vc_init` on the synthesised `PE_Video`, including `v_physaddr` which
+the deferred record leaves at zero) and `disableConsoleOutput`, which the video path sets once it
+takes over.
+
+The next diagnostic is two more marks: one after `vc_probe` returns inside the `if (boot_vinfo)` block
+and one after the console is marked acquired.
+

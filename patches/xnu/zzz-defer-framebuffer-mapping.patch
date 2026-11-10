@@ -1,8 +1,8 @@
 diff --git a/osfmk/console/video_console.c b/osfmk/console/video_console.c
-index e62ece1..6999466 100644
+index 4c1edf1..3486f39 100644
 --- a/osfmk/console/video_console.c
 +++ b/osfmk/console/video_console.c
-@@ -118,6 +118,16 @@
+@@ -117,6 +117,16 @@
  
  struct vc_info vinfo;
  
@@ -19,11 +19,18 @@ index e62ece1..6999466 100644
  void noroot_icon_test(void);
  
  
-@@ -2803,6 +2813,29 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
+@@ -2801,6 +2811,37 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  	boolean_t graphics_now;
  	uint32_t delay;
  
++	/* Bring-up channel: the panel is drawn from the kernel already, so the console reports its
++	 * own progress there while the video console is still unproven. */
++	extern void native_panel_mark(unsigned slot, unsigned color);
++	native_panel_mark(4, (boot_vinfo != NULL) ? 0x00FFFFFFu : 0x00404040u);
++	native_panel_mark(5, (op == kPEAcquireScreen) ? 0x00FFFF00u : 0x00202020u);
++
 +	if ((boot_vinfo == NULL) && (deferred_fb_pa != 0) && (kernel_map != VM_MAP_NULL)) {
++		native_panel_mark(6, 0x000080FFu);
 +		static PE_Video deferred_video;
 +		vm_offset_t     virt;
 +
@@ -41,6 +48,7 @@ index e62ece1..6999466 100644
 +			boot_vinfo   = &deferred_video;
 +			deferred_fb_pa = 0;
 +			gc_graphics_boot = TRUE;
++			native_panel_mark(7, 0x00FF00FFu);
 +			kprintf("initialize_screen: frame buffer mapped at 0x%lx for 0x%lx\n",
 +			    (unsigned long)virt, (unsigned long)deferred_fb_len);
 +		}
@@ -49,7 +57,7 @@ index e62ece1..6999466 100644
  	if (boot_vinfo) {
  		struct vc_info new_vinfo = vinfo;
  		boolean_t makeMapping = FALSE;
-@@ -2853,6 +2887,20 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
+@@ -2851,6 +2892,20 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  			    new_vinfo.v_physaddr, new_vinfo.v_width, new_vinfo.v_height, new_vinfo.v_rowbytes, new_vinfo.v_type);       /* (BRINGUP) */
  		}
  
@@ -70,7 +78,7 @@ index e62ece1..6999466 100644
  		if (!newVideoVirt && !new_vinfo.v_physaddr) {                                                   /* Check to see if we have a framebuffer */
  			kprintf("initialize_screen: No video - forcing serial mode\n");         /* (BRINGUP) */
  			new_vinfo.v_depth = 0;                                          /* vc routines are nop */
-@@ -2860,6 +2908,10 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
+@@ -2858,6 +2913,10 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  			gc_graphics_boot = FALSE;                                       /* Say we are not in graphics mode */
  			disableConsoleOutput = FALSE;                                   /* Allow printfs to happen */
  			gc_acquired = TRUE;
