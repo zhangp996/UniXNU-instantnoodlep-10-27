@@ -229,3 +229,37 @@ shared_region: 0x... ((launchd)) check_np(...) vm_shared_region_start_address() 
 so `launchd`'s exec fails because the shared region (the dyld shared cache mapping) was never
 established.  That is now the wall in front, and it is independent of the disk: fix the shared
 region first, then the container size.
+
+## 05:50: the official grow works on macOS CI, but this driver reports the grown seed as not ready
+
+The macOS CI path is solved (the `macos-26` label is the one this account gets; `macos-14` is never
+assigned, and the workflow needed `submodules: recursive`, a `--gib '${GIB:-N}'` default, and
+`mkdir -p build`).  `seed-data-grow.py --gib 3` produced a packed seed with `logical` 3221225472 and
+6 extents, i.e. a container that really is 3 GiB.
+
+On hardware, that seed and the 8 GiB one both leave the board looping on
+
+```
+blockStorageDriver[108]: executeRequest: request failed to start!
+blockStorageDriver[108]: device is not ready.
+```
+
+while the original 32 MB seed and the 2 GiB-declared variant (32 MB container, 3 extents) both give a
+ready device: disk5 appears with the declared size and the boot reaches launchd and the services.
+So the difference is not the declared size - it is the grown seed itself (6 extents, and an APFS
+container whose metadata now lives across the device).
+
+Candidates for the next session, in order:
+
+1. check `NativeRamBlock`'s volume seed path for the grown seed: `native_ram_block_volume_seed` and
+   the `persist::windowBlocks(pages)` store open, which needs a window on the UFS store; a 3 GiB disk
+   has 786432 pages, so its bitmap alone is 96 KiB and the window must fit the real userdata
+   partition.  A refusal there only leaves the disk volatile, but a failure to publish the media
+   would explain a driver that never sees it ready.
+2. compare the extents: 3 (working) against 6 (not ready), and read the seed back with the packed
+   format parser to confirm the first and last pages.
+3. try a grow that keeps the container small but inside the declared device, to separate 'container
+   size' from 'seed identity'.
+
+Everything before this step still stands: watchdogd is passed, the console prints, and the boot
+reaches launchd with the 32 MB seed.
