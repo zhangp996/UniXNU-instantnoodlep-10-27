@@ -78,6 +78,35 @@ The ADT root compatible is what resolves the SoC at run time: the platform-exper
 it, matches `qcom,sm8250` in the table, and takes the kona host window, the GCC branches and the
 no-SMMU decision from that entry.
 
+## Device: the first storage result (2026-11-10 13:20)
+
+Image `bootZA` (kernel `6bc86152`, args `native-ufs-root=1 native-ufs-diagnostics=1 native-ufs-probe=10`).
+The personality had to be compiled in first: `KernelConfigTables.cpo` kept the flags of the first
+build (without `XNU_NATIVE_UFS`), so every earlier driver image carried the driver with no personality
+pointing at it - `build-xnu-4k-baseline.sh` now stamps `PERSONALITY_CFLAGS` and recompiles that object
+when the set changes. The kernel strings confirm it: `NativeUfsRoot` is present and the driver initializer is
+in `__mod_init_func`.
+
+The driver then reported on the panel:
+
+```
+NATIVE_UFS root check
+userdata first=3f13a8 last=1d197fa
+block0 magic f79c330c 8476b30b ext4magic=8c24 ext4blocks=405 3431726
+manifest status=1 windows=0
+```
+
+What that proves on the device: the controller hand-off was adopted (firmware request list stopped and
+replaced, NOP OUT accepted, the device woken and LUN 0 ready), the DMA buffer reached the controller, the
+GPT of LUN 0 parsed, the `userdata` entry matches board.toml exactly (`0x3f13a8` = 4133800 and
+`0x1d197fa` = 30513146), and block 0 read back. That is the UFS guide host-access, DMA/commands and
+block-read milestones in one run.
+
+`manifest status=1` is `no manifest magic` (RootLayout.h): the partition still holds Android data
+because this board has not written a userdata image, so the driver has no root windows to publish and
+`vfs_mountroot` still panics. The next step is `unixnu build userdata`: it needs the 6.83 GB IPSW
+(the OS and SystemOS disk images are not cached here), writes an ~8 GiB `userdata-root.img` with the
+`SHNGROOT` manifest, and prints the `fastboot flash userdata` command for the operator.
 ## Why the policy chain is not in this image
 
 `CONFIG_XNU_VERIFIED_ROOT_PROBE` stays off, so the driver compiles its unverified variant: it
