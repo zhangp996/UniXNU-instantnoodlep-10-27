@@ -8,5 +8,3 @@ zzz-root-unverified.patch
 zzz-qcom-usb-report.patch
 zzz-owner-report.patch
 zzz-owner-watchdog-override.patch
-zzz-bootstrap-exhausted-mark.patch
-zzz-exit-panic-init-only.patch

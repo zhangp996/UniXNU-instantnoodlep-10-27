@@ -23,13 +23,6 @@ extern "C" {
 // for the signed volume UUID.
 int native_ufs_block_authenticates(IOService *provider, const char *uuid, uint8_t *digest)
     __attribute__((weak));
-// Nothing in this build runs the boot progress layer, and the verified read path calls this weak
-// hook for every verified block.
-void boot_progress_poll(void);
-}
-
-void boot_progress_poll(void)
-{
 }
 
 // Ask the storage component whether the media behind a device carries the signed policy for its
