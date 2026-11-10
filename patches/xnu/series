@@ -8,3 +8,4 @@ zzz-root-unverified.patch
 zzz-qcom-usb-report.patch
 zzz-owner-report.patch
 zzz-owner-watchdog-override.patch
+zzz-fb-map-diagnostic.patch
