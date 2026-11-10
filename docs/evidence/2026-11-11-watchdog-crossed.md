@@ -263,3 +263,21 @@ Candidates for the next session, in order:
 
 Everything before this step still stands: watchdogd is passed, the console prints, and the boot
 reaches launchd with the 32 MB seed.
+
+## 06:20: tree state note for the next session
+
+The cached XNU tree was re-extracted during the seed experiments and is now inconsistent: the mockfs
+archive step (`archive-07-build-mockfs-fixture`) fails compiling `bsd/miscfs/mockfs/mockfs_fsnode.c`
+because the mockfs patches are not applied to that fresh copy yet.  Before the next kernel build:
+
+```sh
+rm -rf out/<device>/<profile>/<config>/tree/.cache/xnu-work
+python3 ./unixnu build kernel -D ../UniXNU-instantnoodlep
+```
+
+so the tree is extracted and patched from scratch (about 15-20 minutes).  The RamBlock diagnostic edit
+that was going to report `available()` fields was reverted, so the submodule is untouched.
+
+Night's final state: bootDD remains the best image (console printing, watchdog backend registered,
+2 GiB declared Data, boot reaching cfprefsd/apsd/livenessd); the macOS CI produces real grown seeds
+but this driver reports them as `device is not ready`.
