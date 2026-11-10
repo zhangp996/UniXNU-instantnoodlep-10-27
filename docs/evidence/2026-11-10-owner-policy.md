@@ -212,3 +212,22 @@ The USB console works and is the first real log channel: `QCOM XNU USB CDC ACM v
 `/dev/ttyACM0` or COMx, with two facts worth keeping - the host must not attach during early boot
 (it stalls the kernel at the next kprintf-heavy point), and the ring only carries the early boot
 because video console output after `lockdown_mode` no longer reaches it.
+### The USB console is what stalled the boot (2026-11-10, final experiment)
+
+Building the kernel without the console component, without `CONFIG_XNU_QCOM_USB_DEBUG` and without
+the console boot arguments changed the picture completely:
+
+| Host side | Result |
+| --- | --- |
+| a PC attached to the CDC device (usbser, or a reader holding the port) | the boot stops at the loader screen and never reaches userland |
+| no host attached at all | the boot reaches `watchdogd` in about one minute, every time |
+
+So every "silent stall at `lockdown_mode`" of the day was the console's control path (the host's
+SET_LINE_CODING / control traffic) meeting kprintf's transmit path. Two earlier conclusions have to
+be read with that in mind: the `zzz-exit-panic-init-only` patch was not proven harmful - those two
+boots ran with the console attached - and the UFS state after a power cycle was a red herring.
+
+The working configuration for bring-up is therefore: **no console in the image and nothing attached
+to the phone's USB port from the host**, which is `bootNC` - `-v serial=3 debug=0x14e
+-no_slto_panic amfi_get_out_of_my_way=1 native-ufs-root=1 native-ufs-diagnostics=1`. The console can
+come back once the host-facing control path no longer blocks the transmit path.
