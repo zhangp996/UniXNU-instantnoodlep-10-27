@@ -142,3 +142,25 @@ Step 4 was attempted on the Linux host instead of macOS:
 The configuration was reverted to the building set until that pin move is done: the boot still
 reaches `tzinit_17` (see above), the Data seed and its tools are ready in
 `out/<device>/<os profile>/<config>/data/`.
+### The Data volume mounts, and it is empty
+
+The driver pin moved: ShengUfs now builds from upstream `b11de87` (the revision that exports
+`native_ufs_store_write_cached`) with this port's three commits rebased on top - the SoC table, the
+unverified variant timers and the unverified publication - and the only conflict worth noting was
+the media reporting that upstream rewrote (`captureMissingMedia` now takes the window as well).
+`RamBlock` is selected again and `XNU_OWNER_DATA_MOUNT` is on with the seed from `mkapfs`.
+
+The panel:
+
+```
+tzinit_17] exited -- no exit reason available -- (signal 0, exit status 2)
+```
+
+`tzinit_17` moved from status 30 to status 2 (`ENOENT`): the Data volume is up and the helper now
+fails because the file it wants is not *in* it. The seed was made from an empty APFS container, so
+it carries no `private/var` skeleton - and the guide's step 4 builds that skeleton on macOS, where
+`hdiutil` attach gives a writable APFS mount and `make-data-seed.py` copies the OS volume's
+`private/var` into it before packing.
+
+Linux has no writable APFS (apfsprogs provides `mkapfs` and `apfsck` only, and `fsapfsmount` is
+read-only), so a real Data seed has to come from a macOS host or the repository's macOS workflow.
