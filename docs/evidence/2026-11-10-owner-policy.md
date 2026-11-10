@@ -288,3 +288,20 @@ Adding the policy object also proved fragile: with it linked, several boots stop
 early-boot start-up (`lockdown_mode` is the final `STARTUP(EARLY_BOOT, RANK_LAST)` entry) with no
 further output, while the same kernel without it boots to `watchdogd`. Any further attempt should
 keep the kernel size stable and prefer the existing bridge object.
+### What the upstream component repositories added (2026-11-10, 23:15)
+
+Sixteen component repositories were cloned and searched.  Only `UniXNU/UniXNU-sheng` carries the
+watchdog work, and its `package/BootWatchdogPolicy.c` is the same file already integrated, with
+`scripts/check-boot-watchdog-policy.py` fixing the exact sequence: open the plist with
+`O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW` at 0644, write it, `fchown` 0/0, `fchmod` 0644, `fsync`, verify
+with `fstat64` (root-owned regular file, mode 0644, size equal to the body), then create the empty
+`disabled.migrated` marker with `O_CREAT|O_EXCL|O_NOFOLLOW`.  The device build writes the same two
+files and the marker, so the write side matches the reference and the consumer side is what differs.
+
+The remaining documented mechanism is the launchd **cache**, not the disabled database:
+`package/BootDiagExport.c` captures `/System/Library/xpc/launchd.plist` and
+`/private/var/ngpu/xpc/launchd.plist`, and the OS series already carries
+`zzy-native-gpu-addon-mount`, described as mounting "GPU addon content and launch jobs" as a
+read-only union.  That is how a port on this iOS generation changes what launchd loads: a cache
+plist placed where the union makes it visible.  Reproducing it means building that cache and the
+union mount, which is a piece of work of its own, not a one-line change.
