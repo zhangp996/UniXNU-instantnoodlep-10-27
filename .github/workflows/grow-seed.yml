@@ -4,6 +4,8 @@ name: Grow the Data seed
 # macOS. This job grows the packed seed this port boots with and publishes the result.
 
 on:
+  push:
+    branches: [seed-grow]
   workflow_dispatch:
     inputs:
       gib:
