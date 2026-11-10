@@ -107,6 +107,21 @@ because this board has not written a userdata image, so the driver has no root w
 `vfs_mountroot` still panics. The next step is `unixnu build userdata`: it needs the 6.83 GB IPSW
 (the OS and SystemOS disk images are not cached here), writes an ~8 GiB `userdata-root.img` with the
 `SHNGROOT` manifest, and prints the `fastboot flash userdata` command for the operator.
+## The userdata image (2026-11-10 13:29)
+
+`python3 ./unixnu build userdata -D ../UniXNU-instantnoodlep` built the partition image the driver needs:
+
+| Item | Value |
+| --- | --- |
+| image | `userdata-root.img`, 9,382,658,048 bytes, sha256 `fd43ee7035ce185ce4215ac93fdc006fd784a54b3b7442e21457c226cbe03093` |
+| OS window | 6,077,580,800 bytes at `0x100000`, sha256 `e5634d04a8ac35f024845f583394e0a35deb26a04cb0c00286a8674e25a9a4f2` |
+| SystemOS window | 3,303,014,400 bytes at `0x16a600000`, sha256 `b4908cde41d23e6bc05e6af51a2c9eeb00cf0f863a6a18b1600c96a3fd70414f` |
+| partition | `userdata`, 108,049,805,312 bytes |
+| flash | `fastboot flash userdata instantnoodlep-artifacts/userdata-root.img` |
+
+The digest matches the image UniXNU's marble-milacy port recorded (`fd43ee70`) byte for byte: same IPSW,
+same layout, same two windows. The copy on the Windows side is byte-identical to the one in the build tree,
+which is what `fastboot` sees, since Windows cannot read the WSL filesystem.
 ## Why the policy chain is not in this image
 
 `CONFIG_XNU_VERIFIED_ROOT_PROBE` stays off, so the driver compiles its unverified variant: it

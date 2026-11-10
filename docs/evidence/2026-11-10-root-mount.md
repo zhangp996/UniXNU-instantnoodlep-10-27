@@ -55,3 +55,38 @@ Integrated, not yet enumerating:
 The console's poll worker starts in `bsd_autoconf()`, before the launchd attempt, so the report image
 states on the panel why the controller hand-off was refused (phase, error, core result, PHY/VBUS
 ownership, hardware parameters). No `VID_1209:316D` device appears on the host yet.
+## Console status on the panel
+
+`bootZK` carried `qcom-usb-report=1`, so `qcom_usb_board_check()` panicked with the module status in
+`bsd_autoconf()`:
+
+```
+QCOM USB DEBUG report
+phase=3 error=0 core=0 qcom=0 restore=0 dma_mode=16 diag=0
+vbus=1/0 phy=1/0 applied=1 hwparams0=4020400a width=64
+dma_pa=c395000 iova=90000000 line=64 freq=19200000
+poll=49272 events=0 io_failed=0 dropped=0
+buf=4194304/0 high=88 over=0 contended=0
+```
+
+`phase=3` is `QCOM_USB_DEBUG_ACTIVE`: the controller hand-off, the private translated DMA window at
+the SM8250 IOVA, and the PHY/VBUS ownership all succeeded, and the kernel had already queued 88
+bytes for the host. The same boot enumerated on the host as
+`USB\VID_1209&PID_316D\QCOMXNUUSBDEBUG` (COM12/COM14), so the device side is done.
+
+## What the host side still needs
+
+- Windows `usbser` cannot open the port: `Open()` fails with `A device attached to the system is not
+  functioning`, i.e. its CDC class requests are not answered the way Windows expects. Opening is
+  also the point where a killed reader leaves the port locked (`Access to the port is denied`).
+- Passing the device to WSL with `usbipd` works mechanically (a fastboot-mode phone was visible in
+  WSL as `18d1:d00d`), and WSL already has `fastboot`, `adb` and `cdc_acm`.
+- Two usbipd details cost several attempts: `bind --force` unbinds the host driver immediately, so
+  the following `attach --hardware-id` cannot find the device - attach by **busid** instead; and the
+  busid is the first column of `usbipd list` (`1-1`), not the `VID:PID` column.
+- Any `fastboot` command run inside WSL needs `wsl -u root` (no udev rules for the phone), which is
+  how `bootZL` was sent over the passthrough.
+
+Once a reader is attached, `usbipd attach --wsl --busid 1-1 --auto-attach` keeps it attached across
+the panic-time re-enumeration, and `/dev/ttyACM0` receives the module's replay (the 88 buffered
+bytes) plus live output.
