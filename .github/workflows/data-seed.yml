@@ -85,16 +85,17 @@ jobs:
 
       - name: Disable the failing services in the seed
         # docs/zh/devices/merlinx-gytis283123: the macOS-generated Data seed disables watchdogd
-        # through the launchd disabled plist. The kernel this port builds panics on the first
-        # service that exits, so each disabled service is one more boot of information.
+        # through the launchd disabled plist. The seed must carry root-owned files: launchd runs as
+        # root, and a database written by the runner user is not honoured. Attach with owners on and
+        # chown the database tree back to root:wheel.
         run: |
           set -o pipefail
           SEED="$PWD/build/owner-data-fixture/owner-data-32.cdr"
           MP="$RUNNER_TEMP/seed-mount"
           mkdir -p "$MP"
-          hdiutil attach "$SEED" -nobrowse -owners off -mountpoint "$MP"
-          mkdir -p "$MP/db/com.apple.xpc.launchd"
-          cat > "$MP/db/com.apple.xpc.launchd/disabled.plist" <<'PLIST'
+          hdiutil attach "$SEED" -nobrowse -mountpoint "$MP"
+          sudo mkdir -p "$MP/db/com.apple.xpc.launchd"
+          cat > "$RUNNER_TEMP/disabled.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -104,8 +105,11 @@ jobs:
           </dict>
           </plist>
           PLIST
-          cp "$MP/db/com.apple.xpc.launchd/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.501.plist"
-          ls -l "$MP/db/com.apple.xpc.launchd"
+          sudo cp "$RUNNER_TEMP/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.plist"
+          sudo cp "$RUNNER_TEMP/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.501.plist"
+          sudo chown -R 0:0 "$MP/db/com.apple.xpc.launchd"
+          sudo chmod 644 "$MP/db/com.apple.xpc.launchd/disabled.plist"
+          ls -ln "$MP/db/com.apple.xpc.launchd"
           hdiutil detach "$MP"
 
       - name: Publish the seed
