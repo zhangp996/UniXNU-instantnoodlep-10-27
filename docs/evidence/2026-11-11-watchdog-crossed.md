@@ -398,3 +398,36 @@ Notes for the next session:
   the loop starts, or keep a copy in a global the tick report can print,
 * the 32 MB seed still gives a complete boot to the service graph, so it remains the fallback while
   the grown-seed mount is fixed.
+
+## 07:00: the 3 GiB seed runs on the sparse path; watchdogd still exits
+
+Raising the big-path threshold from 2 GiB to 4 GiB puts the 3 GiB seed on the sparse path, which has
+a volatile write mode.  The panel then reports
+
+```
+RWSTATE: online=1 mem=1 capacity=6291456 big=0
+```
+
+and the `device is not ready` loop is gone: the APFS mount no longer has its writes refused.  The
+volume UUID `E553E004-A6C6-4992-B474-25EB0F160524` appears on `disk5s1` in the block list, i.e. the
+grown Data volume is published and selected.
+
+The boot still ends in the critical-exit panic, now at an early pid:
+
+```
+pid 98 exited -- exit reason namespace 2 subcode 0x5, description none
+coredump (watchdogd, pid 98): failed to open /private/var/cores/watchdogd.core: error 2
+panic(cpu 0 ...): watchdogd[98] exited -- exit reason namespace 2 subcode 0x5
+```
+
+`/private/var/cores` returning ENOENT suggests `/private/var` is still not usable when watchdogd runs,
+so the next question is whether the Data volume finished mounting before launchd started the
+services (the earlier `OwnerData` mount-complete line is not visible in this boot's tail).
+
+Sequence to check next:
+
+1. print the mount-complete line for the Data volume into the tick report (the kernel knows
+   `native_owner_data_stage`), so the panel always shows whether `/private/var` is up;
+2. if the mount completes late, start the watchdog backend earlier (it is prepared from the same
+   hook that runs after the Data prepare, so its timing follows);
+3. if the mount never completes, the sparse write path needs the same treatment the big path got.
