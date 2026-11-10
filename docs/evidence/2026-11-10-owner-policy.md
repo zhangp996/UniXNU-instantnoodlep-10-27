@@ -115,3 +115,30 @@ That is the Data volume: `tzinit` reads its zone from the data filesystem, and t
 image carries only the two signed windows (OS and SystemOS), with no Data volume, no
 `XNU_OWNER_DATA_MOUNT` and no `--data-ramdisk` seed. The boot has therefore left the storage path
 behind and reached the point where the port needs its data filesystem.
+### The Data volume needs RamBlock and the newer ShengUfs store API
+
+Following the userdata guide's step 4, a Data volume is a *packed ramdisk seed* handed to the
+payload: `--data-ramdisk FILE`, `DBRDISK1` format (`packed_ramdisk.pack`, raw image at most
+256 MiB), and `CONFIG_XNU_OWNER_DATA_MOUNT` mounts it at `/private/var`.
+
+The userdata image itself already matches the guide exactly - `SHNGROOT` manifest, OS at
+`0x100000`, SystemOS at `0x16a600000`, both 1 MiB aligned, `image_bytes` 9,382,658,048 - so steps
+1-3 needed no change.
+
+Step 4 was attempted on the Linux host instead of macOS:
+
+- `mkapfs` (apfsprogs) created a 128 MiB APFS container with volume `Data`,
+  UUID `AE5E54BB-7228-466F-8E12-D7B157BFB4DE` (`mkapfs` refuses 32 MiB: "small containers are not
+  supported"; 128 MiB works);
+- `packed_ramdisk.pack` turned it into a 73,840 byte `.dbr` seed;
+- with `XNU_OWNER_DATA_MOUNT` the kernel needs the RAM block driver, so `RamBlock` was added to the
+  catalogue selection and `XNU_NATIVE_RAM_BLOCK` enabled. That link then failed on
+  `native_ufs_store_write_cached`: the pinned ShengUfs (`1694886` plus this port's commits) exports
+  `native_ufs_store_open/read/write/sync` but not the cached write the pinned RamBlock expects.
+  Upstream ShengUfs `main` (b11de87) does have it, so the fix is to move the pin and rebase this
+  port's driver patches onto that revision - the same commit also dropped the `sheng-` prefix on the
+  boot arguments, so the board's `native-ufs-*` names stay valid.
+
+The configuration was reverted to the building set until that pin move is done: the boot still
+reaches `tzinit_17` (see above), the Data seed and its tools are ready in
+`out/<device>/<os profile>/<config>/data/`.
