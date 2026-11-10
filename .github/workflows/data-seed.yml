@@ -1,0 +1,88 @@
+name: Data seed
+
+# Builds only the macOS-only input this port still needs: the writable APFS Data seed taken from
+# the OS volume's initial /private/var. The kernel build needs the KonaUfs catalogue entry that
+# lives in this port's UniXNU fork, which the runner cannot read, so this workflow deliberately
+# stops after the seed and publishes it.
+on:
+  workflow_dispatch:
+    inputs:
+      unixnu_repository:
+        description: UniXNU repository as owner/name
+        required: true
+        default: unixnu/UniXNU
+      unixnu_ref:
+        description: UniXNU ref
+        required: true
+        default: main
+      device_repository:
+        description: Device repository as owner/name (empty uses this repository)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  seed:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      DEVICE_DIR: ${{ github.workspace }}/device
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check out UniXNU at the workspace root
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.unixnu_repository }}
+          ref: ${{ inputs.unixnu_ref }}
+          submodules: false
+          persist-credentials: false
+
+      - name: Check out the device repository
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ inputs.device_repository || github.repository }}
+          path: device
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install host tools
+        run: brew install lzfse
+
+      - name: Fetch the OS member of the IPSW
+        run: |
+          set -o pipefail
+          ./unixnu ipsw fetch -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/ipsw.log" || true
+          ./unixnu ipsw fetch OS -D "$DEVICE_DIR" 2>&1 | tee "$RUNNER_TEMP/os.log"
+          ls -l out/ipsw/*/*.dmg | tee "$RUNNER_TEMP/dmgs.log"
+
+      - name: Prepare the Data seed
+        run: |
+          set -o pipefail
+          OSDMG=$(ls -S out/ipsw/*/*.dmg | head -1)
+          echo "OSDMG=$OSDMG"
+          MP="$PWD/.cache/firmware/target-volumes/os-mount"
+          mkdir -p "$MP"
+          hdiutil attach "$OSDMG" -nobrowse -owners off -mountpoint "$MP" 2>&1 | tee "$RUNNER_TEMP/attach.log"
+          python3 scripts/prepare-owner-data-fixture.py 2>&1 | tee "$RUNNER_TEMP/seed.log"
+          hdiutil detach "$MP" 2>&1 || true
+          ls -l build/owner-data-fixture/ | tee -a "$RUNNER_TEMP/seed.log"
+
+      - name: Publish the seed
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: data-seed
+          path: |
+            build/owner-data-fixture/**
+            ${{ runner.temp }}/*.log
+          if-no-files-found: warn
