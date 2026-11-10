@@ -153,3 +153,32 @@ Grow the Data seed.  The porting guide's `seed-data-grow` path exists for exactl
 profile's data size option controls it; 32 MB cannot hold the launchd database, cores, and the
 services' first writes.  Once Data has real room, the ENOSPC/low-disk storm should stop and the
 critical-exit panic at pid 121 should be re-tested against a healthy filesystem.
+
+## 04:45: a 2 GiB Data declaration carries the boot much further
+
+The packed seed header (`DBRDISK1`) stores the declared disk size, so the 32 MB seed can be declared
+as 2 GiB without changing its content; the RAM block driver then presents a sparse device of that
+size.  `bootDC` is that change.
+
+The panel now shows a boot that goes far beyond the previous wall:
+
+```
+fs_tx_enter_internal: disk5s1 cfprefsd: ENOSPC ...
+fs_tx_enter_internal: disk5s1 apsd: ENOSPC ...
+Process[166] crashed: livenessd. Too many corpses being created.
+pid 143 exited -- exit reason namespace 2 subcode 0x5
+panic(cpu 0 caller ...): watchdogd[143] exited
+```
+
+Compare with the previous image, which stopped at `containermanagerd_system` (pid 121) on disk1s1:
+`cfprefsd`, `apsd` and `livenessd` were never reached before.  So the larger declaration works and the
+service graph starts for real.
+
+The remaining ENOSPC is now on **disk5s1**, a different volume from the seed's disk1s1 - most likely
+the persistent overlay (or another mounted store) whose size is independent of the seed header.
+`free_blocks 5249` with `num_blocks 6010` requests also suggests an APFS transaction that needs more
+contiguous space than the volume can give.
+
+Next: identify what disk5 is and give it room, or drop the persist overlay for bring-up, then re-test
+whether the ENOSPC storm - and therefore the repeated service exits that end in the watchdogd
+critical-exit panic - disappears.
