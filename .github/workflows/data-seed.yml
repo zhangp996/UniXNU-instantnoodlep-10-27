@@ -83,6 +83,31 @@ jobs:
           hdiutil detach "$MP" 2>&1 || true
           ls -l build/owner-data-fixture/ | tee -a "$RUNNER_TEMP/seed.log"
 
+      - name: Disable the failing services in the seed
+        # docs/zh/devices/merlinx-gytis283123: the macOS-generated Data seed disables watchdogd
+        # through the launchd disabled plist. The kernel this port builds panics on the first
+        # service that exits, so each disabled service is one more boot of information.
+        run: |
+          set -o pipefail
+          SEED="$PWD/build/owner-data-fixture/owner-data-32.cdr"
+          MP="$RUNNER_TEMP/seed-mount"
+          mkdir -p "$MP"
+          hdiutil attach "$SEED" -nobrowse -owners off -mountpoint "$MP"
+          mkdir -p "$MP/db/com.apple.xpc.launchd"
+          cat > "$MP/db/com.apple.xpc.launchd/disabled.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.watchdogd</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          cp "$MP/db/com.apple.xpc.launchd/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.501.plist"
+          ls -l "$MP/db/com.apple.xpc.launchd"
+          hdiutil detach "$MP"
+
       - name: Publish the seed
         if: always()
         uses: actions/upload-artifact@v5
