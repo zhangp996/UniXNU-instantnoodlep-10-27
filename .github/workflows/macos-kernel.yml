@@ -85,7 +85,7 @@ jobs:
         with:
           repository: ${{ inputs.unixnu_repository }}
           ref: ${{ inputs.unixnu_ref }}
-          submodules: recursive
+          submodules: false
           persist-credentials: false
 
       - name: Check out the SoC repository beside the device repository
