@@ -98,7 +98,9 @@ jobs:
           sudo hdiutil attach "$OSDMG" -nobrowse -mountpoint "$OSMP" -owners on 2>&1 | tee "$RUNNER_TEMP/os-attach.log"
           sudo hdiutil create -size 32m -layout NONE -fs APFS -volname OwnerData -type UDTO "$RAW" 2>&1 | tee "$RUNNER_TEMP/seed-create.log"
           sudo hdiutil attach "$RAW" -nobrowse -mountpoint "$SEEDMP" -owners on 2>&1 | tee "$RUNNER_TEMP/seed-attach.log"
-          sudo rsync -aH "$OSMP/private/var/" "$SEEDMP/"
+          # The seed is 32 MiB; the OS volume also carries the staged system apps that no Data
+          # volume holds, which is exactly what prepare-owner-data-fixture.py skips as well.
+          sudo rsync -aH --exclude staged_system_apps "$OSMP/private/var/" "$SEEDMP/"
           sudo mkdir -p "$SEEDMP/keybags" "$SEEDMP/mobile/tmp" "$SEEDMP/tmp" "$SEEDMP/run" "$SEEDMP/containers/Bundle" "$SEEDMP/containers/Data/System" "$SEEDMP/containers/Shared/SystemGroup" "$SEEDMP/containers/Temp" "$SEEDMP/db/com.apple.xpc.launchd"
           sudo chmod 1777 "$SEEDMP/tmp"
           cat > "$RUNNER_TEMP/disabled.plist" <<'PLIST'
