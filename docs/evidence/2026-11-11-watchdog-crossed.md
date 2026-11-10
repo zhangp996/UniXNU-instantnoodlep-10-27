@@ -81,3 +81,42 @@ takes over.
 The next diagnostic is two more marks: one after `vc_probe` returns inside the `if (boot_vinfo)` block
 and one after the console is marked acquired.
 
+
+## 04:20: the console prints, and the boot reaches launchd's exec
+
+Two community findings closed the visibility problem in one step:
+
+1. DarwinBoot hands the GOP frame buffer over **without** the low-bit 'physical' marker, so
+   `makeMapping` in `initialize_screen` decides the buffer is already mapped.  uke's patch adds
+   `|| (newVideoVirt < VM_MIN_KERNEL_ADDRESS)` to that test.  In this port the deferred mapping
+   already produces a kernel virtual address, so the equivalent fix is the one already in place:
+   the deferred branch maps with `ml_io_map` and sets `boot_vinfo` to the mapped video info.
+2. **kprintf is silent in graphics boot** until the console is switched to text.  uke switches it in
+   `vcattach()` with `initialize_screen(NULL, kPETextScreen)` when `gc_graphics_boot` is set.  With
+   that added, the panel shows the full kernel log.
+
+## What the panel now shows (bootDB)
+
+```
+apfs_log_op_with_proc: disk1s1 mounting volume OwnerData, requested by: Init (pid 1)
+apfs_log_op_with_proc: disk1s1 mount-complete volume OwnerData
+RAM_WATCHDOG registered matched started: original IOWatchdog/client; software deadline backend
+owner watchdog override ready
+load_init_program: attempting to load /usr/appleinternal/sbin/launchd.development
+load_init_program: attempting to load /sbin/launchd
+shared_region: 0x60550bc3fe98c61d ((launchd)) check_np(0x16f522bb0) vm_shared_region_start_address() failed
+shared_region: 0x60550bc3fe98c61d ((launchd)) check_np(0x16f522150) vm_shared_region_start_address() failed
+```
+
+So the Data volume mounts, the watchdog backend registers with the original protocol, the launchd
+job policy is written, and `load_init_program` reaches `/sbin/launchd` - which then fails in the
+shared region check.  That is the next wall, and it is a known one: the shared region (dyld shared
+cache) has to be established before PID 1 can exec, which is what the dyld cache carrier component
+is for.  The failure means `vm_shared_region_start_address()` returned zero, i.e. the shared region
+was never initialised for this boot.
+
+## Reproduce
+
+`bootDB.img` (`c5b9c491`): bootBW baseline + community RamWatchdog (with `ram-system-watchdog=1`) +
+deferred frame buffer mapping with `ml_io_map` + the text-console switch.  Everything else from the
+night stands; the panel is now a real console, which makes every next step observable.
