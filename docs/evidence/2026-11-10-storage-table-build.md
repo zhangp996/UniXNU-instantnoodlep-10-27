@@ -50,8 +50,8 @@ python3 ./unixnu build kernel -D ../UniXNU-instantnoodlep
 - `build/sheng-ufs/compile-command.json` contains `-I .../tree/soc/include`.
 - `NativeUfs.o` contains both `qcom,sm8250-ufshc` and `qcom,sm8250` (the controller and SoC
   identities of the table entry).
-- `build/sheng-ufs/libShengUfs.a` sha256 `5b9d398e1c633572c9263ebed7526a3a5a5d6410c99420c04f7f93adf9b8d5fb`,
-  517404 bytes.
+- `build/sheng-ufs/libShengUfs.a` sha256 `1b7fa8d9b94fa23d1381a0e830a1747a733ad24eb10fdb55da971b1e66170ab8`,
+  521152 bytes.
 - `kernel/kernel.macho` sha256 `a8c5d42b046ea416eb998276e4d00ad0843f12899fb71ab574c9ad9644433ec3`,
   byte-identical to the kernel in the booting `bootX.img`: the storage route changes no code that
   this configuration links.
