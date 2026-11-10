@@ -99,3 +99,19 @@ boot manifest hash and the data volume, none of which this port supplies yet:
 `XNU_OWNER_BOOT_MANIFEST` (`offline-owner-boot-manifest`, "publishes the owner boot manifest hash
 from the root and cache devices") is the next documented switch, and `--data-ramdisk` / a Data
 volume are the other two inputs the payload step knows about.
+### The boot manifest unblocked mount_os
+
+With `XNU_OWNER_BOOT_MANIFEST` (`offline-owner-boot-manifest`) the panel moved on:
+
+```
+tzinit_17] exited -- no exit reason available -- (signal 0, exit status 30)
+```
+
+`mount_os` no longer fails, so the boot manifest hash it needed is now published from the root and
+cache devices. launchd is walking its early service list and the first failure is now `tzinit_17`,
+the timezone initialisation helper, with status 30.
+
+That is the Data volume: `tzinit` reads its zone from the data filesystem, and this port's userdata
+image carries only the two signed windows (OS and SystemOS), with no Data volume, no
+`XNU_OWNER_DATA_MOUNT` and no `--data-ramdisk` seed. The boot has therefore left the storage path
+behind and reached the point where the port needs its data filesystem.
