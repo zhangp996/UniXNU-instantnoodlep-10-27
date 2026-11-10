@@ -431,3 +431,27 @@ Sequence to check next:
 2. if the mount completes late, start the watchdog backend earlier (it is prepared from the same
    hook that runs after the Data prepare, so its timing follows);
 3. if the mount never completes, the sparse write path needs the same treatment the big path got.
+
+## 07:10: the 3 GiB Data volume mounts (dataStage=4) and the service graph starts
+
+`RWSTATE: online=1 mem=1 capacity=6291456 big=0 dataStage=4` on every tick, with
+`BLK-TICK: disk5s1 size=3221225472 uuid=E553E004-A6C6-4992-B474-25EB0F160524` in the same list:
+
+* `dataStage=4` is the Data prepare success stage, so `/private/var` is mounted;
+* `big=0` with `capacity=6291456` confirms the 3 GiB seed runs on the sparse path (writes allowed);
+* the volume UUID is the one the configuration expects;
+* `device is not ready` no longer appears.
+
+The panel also shows `Process[176] crashed: livenessd. Too many corpses being created.`, i.e. launchd
+is starting services and some of them crash - the same class of failure this port saw with the 32 MB
+seed, but now on a 3 GiB writable Data volume.
+
+Two changes made this work: the partition-only volume selection (whole media are skipped, so the
+exactly-one rule matches the seed partition) and raising the sparse/big threshold from 2 GiB to 4 GiB
+(the big path has no volatile write mode before the persistent store attaches, which is what produced
+the endless `device is not ready` loop).  Upstream keeps seeds below 2 GiB for exactly this reason
+(`docs/zh/devices/mondrian-mzyxsl.md:267`).
+
+Next: the crashing services.  With Data writable the earlier ENOSPC cascade should be gone, so the
+crashes must have another cause - their exit reasons and any `too many corpses` context are the
+next thing to capture.

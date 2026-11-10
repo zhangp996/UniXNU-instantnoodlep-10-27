@@ -49,9 +49,11 @@ static void ram_watchdog_block_report(void)
             printf("BLK-TICK: %s size=%llu uuid=%.36s\n", name->getCStringNoCopy(),
                    size ? size->unsigned64BitValue() : 0,
                    uuid ? uuid->getCStringNoCopy() : "-");
-            printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu\n",
+            extern volatile int native_owner_data_stage;
+            printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu dataStage=%d\n",
                    native_ram_block_state[0], native_ram_block_state[1],
-                   native_ram_block_state[2], native_ram_block_state[3]);
+                   native_ram_block_state[2], native_ram_block_state[3],
+                   (int)native_owner_data_stage);
         }
     }
     OSSafeReleaseNULL(iterator);
