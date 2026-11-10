@@ -37,7 +37,7 @@ jobs:
           mkdir -p build
           SEED=$GITHUB_WORKSPACE/data/owner-data-32.dbr
           test -f $SEED
-          python3 scripts/seed-data-grow.py --gib "${GIB:-8}" "$SEED" $GITHUB_WORKSPACE/owner-data-grow.dbr 2>&1 | tee $RUNNER_TEMP/grow.log
+          python3 scripts/seed-data-grow.py --gib "${GIB:-3}" "$SEED" $GITHUB_WORKSPACE/owner-data-grow.dbr 2>&1 | tee $RUNNER_TEMP/grow.log
           ls -l $GITHUB_WORKSPACE/owner-data-grow.dbr
 
       - name: Publish the grown seed
