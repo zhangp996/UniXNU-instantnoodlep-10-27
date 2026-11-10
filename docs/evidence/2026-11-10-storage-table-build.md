@@ -24,10 +24,10 @@ architecture list in its order and appends `component:ShengUfs`, `component:Virt
 
 | Repository | Commit |
 | --- | --- |
-| UniXNU | `3d7a87f` |
-| UniXNU-sm8250-common | `2321a83` |
-| ShengUfs | `1165a34` |
-| UniXNU-instantnoodlep | `PENDING` |
+| UniXNU | `3d7a87f4a9e935d0e25f1be44918016c29ed3d64` |
+| UniXNU-sm8250-common | `2321a836f0140d2549072967e189da1160b61e05` |
+| ShengUfs | `1165a34b37af15edaae04c90f24f797942e8d575` |
+| UniXNU-instantnoodlep | `9fd5dc7251bcfa753fd15a56d8ba0929d2667895` |
 
 Both sources are local working trees, pinned in the Git-ignored `local.toml` of the device
 repository (format: `local.toml.example`); `feeds.toml` keeps the published revisions and
