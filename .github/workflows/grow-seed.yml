@@ -1,0 +1,45 @@
+name: Grow the Data seed
+
+# The official seed-data-grow.py needs hdiutil and diskutil apfs resizeContainer, which only exist on
+# macOS. This job grows the packed seed this port boots with and publishes the result.
+
+on:
+  workflow_dispatch:
+    inputs:
+      gib:
+        description: 'Container size in GiB (3-1024)'
+        required: false
+        default: '8'
+
+jobs:
+  grow:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Check out the UniXNU tools
+        uses: actions/checkout@v4
+        with:
+          repository: unixnu/UniXNU
+          path: tools
+          submodules: false
+
+      - name: Grow the seed
+        working-directory: tools
+        env:
+          GIB: ${{ github.event.inputs.gib }}
+        run: |
+          set -euo pipefail
+          SEED=$GITHUB_WORKSPACE/data/owner-data-32.dbr
+          test -f $SEED
+          python3 scripts/seed-data-grow.py --gib $GIB $SEED $GITHUB_WORKSPACE/owner-data-grow.dbr 2>&1 | tee $RUNNER_TEMP/grow.log
+          ls -l $GITHUB_WORKSPACE/owner-data-grow.dbr
+
+      - name: Publish the grown seed
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-seed-grow
+          path: owner-data-grow.dbr
+
