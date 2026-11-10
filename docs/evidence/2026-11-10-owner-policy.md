@@ -68,3 +68,34 @@ its APFS volume superblock, yet the dyld cache is still not found, so the System
 fails or never starts. The next step is to observe that path: the SystemOS volume identity is the
 first suspect, since it was derived from the APFS superblock rather than taken from a mounted
 volume, and the `offline-owner-systemos-mount` patch reports only through kernel state.
+## launchd runs: the shared cache is reachable (2026-11-10, evening)
+
+`XNU_OWNER_CACHE_CARRIER` (`offline-owner-cache-carrier`) and `XNU_OWNER_UNION_SYSTEMOS` were the
+missing pair. The panel after both were enabled:
+
+```
+mount_os exited -- no exit reason available -- (signal 0, exit status 66)
+```
+
+The dyld cache message is gone: `launchd` loaded, so `/usr/lib/libSystem.B.dylib` was found through
+the carrier the kernel selected, and the boot is now in userland. The first userland failure is
+`mount_os` - the helper that mounts the SystemOS cryptex - with status 66 (`EX_NOINPUT`).
+
+The diagnostics used to get here:
+
+- `qcom_owner_report()` (`package/VerifiedBlockBridge.cpp`, called from `kern_exit.c` through
+  `patches/xnu/zzz-owner-report.patch`) panics with `native_owner_cache_*` and the `IOMedia` UUIDs
+  when `native-owner-report=1`. It showed `stage=6 status=0 mount=0 auth=1 dev=/dev/disk1s1` and
+  confirmed both signed volume identities: `disk1s1` is `8846FE78-2910-4297-AF97-D59BB6F8FC16`
+  (SystemOS) and `disk3s1` is `04769D26-2CA0-4825-B443-E2E5F88300F2` (OS root) - so the UUID derived
+  from the SystemOS APFS volume superblock was right.
+- That report must not stay on the command line: it panics before the initproc exit message, which
+  hid the very result it was meant to explain.
+
+### Next
+
+`mount_os` exiting with 66 is the first userland question. Its inputs are the cryptex volume, the
+boot manifest hash and the data volume, none of which this port supplies yet:
+`XNU_OWNER_BOOT_MANIFEST` (`offline-owner-boot-manifest`, "publishes the owner boot manifest hash
+from the root and cache devices") is the next documented switch, and `--data-ramdisk` / a Data
+volume are the other two inputs the payload step knows about.

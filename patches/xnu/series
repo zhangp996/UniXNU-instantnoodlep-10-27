@@ -6,3 +6,4 @@ zzz-qcom-usb-debug-console.patch
 zzz-qcom-usb-debug-worker.patch
 zzz-root-unverified.patch
 zzz-qcom-usb-report.patch
+zzz-owner-report.patch

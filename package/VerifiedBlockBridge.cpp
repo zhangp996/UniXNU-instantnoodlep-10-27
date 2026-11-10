@@ -14,6 +14,7 @@
 #include <libkern/c++/OSNumber.h>
 #include <libkern/c++/OSString.h>
 #include <libkern/crypto/sha2.h>
+#include <kern/debug.h>
 #include <sys/param.h>
 #include <sys/types.h>
 
@@ -180,4 +181,44 @@ extern "C" int native_verified_block_volume_device(const char *uuid, dev_t *devi
     *device = candidate;
     strlcpy(path, candidatePath, size);
     return 1;
+}
+
+// One-shot report for the owner cache mount: the kernel asks
+// native_verified_block_volume_device() for the SystemOS volume, and this says whether that lookup
+// failed, which media the registry holds, and how far the mount got. Panics so the panel shows it.
+extern "C" void qcom_owner_report(void);
+extern "C" int PE_parse_boot_argn(const char *arg_string, void *arg_ptr, int max_arg);
+
+extern "C" void qcom_owner_report(void)
+{
+    int report = 0;
+    if (!PE_parse_boot_argn("native-owner-report", &report, sizeof(report)) || report != 1) {
+        return;
+    }
+    extern volatile int native_owner_cache_stage;
+    extern volatile int native_owner_cache_status;
+    extern volatile int native_owner_cache_mount_status;
+    extern volatile int native_owner_cache_authorized;
+    extern char native_owner_cache_device_path[64];
+    char media[448];
+    size_t used = 0;
+    OSDictionary *matching = IOService::serviceMatching("IOMedia");
+    OSIterator *iterator = matching ? IOService::getMatchingServices(matching) : nullptr;
+    unsigned count = 0;
+    while (iterator && used + 80 < sizeof(media) && count++ < 5) {
+        IOService *entry = OSDynamicCast(IOService, iterator->getNextObject());
+        if (!entry) {
+            break;
+        }
+        OSString *name = OSDynamicCast(OSString, entry->getProperty(kIOBSDNameKey));
+        OSString *uuid = OSDynamicCast(OSString, entry->getProperty("UUID"));
+        used += snprintf(media + used, sizeof(media) - used, "\n%s %s",
+                         name ? name->getCStringNoCopy() : "-",
+                         uuid ? uuid->getCStringNoCopy() : "-");
+    }
+    OSSafeReleaseNULL(iterator);
+    OSSafeReleaseNULL(matching);
+    panic("OWNER CACHE REPORT stage=%d status=%d mount=%d auth=%d dev=%.24s%s",
+          native_owner_cache_stage, native_owner_cache_status, native_owner_cache_mount_status,
+          native_owner_cache_authorized, native_owner_cache_device_path, media);
 }
