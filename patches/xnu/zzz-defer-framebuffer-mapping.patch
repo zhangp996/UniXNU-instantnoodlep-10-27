@@ -1,3 +1,5 @@
+diff --git a/osfmk/console/video_console.c b/osfmk/console/video_console.c
+index e62ece1..6999466 100644
 --- a/osfmk/console/video_console.c
 +++ b/osfmk/console/video_console.c
 @@ -118,6 +118,16 @@
@@ -17,16 +19,17 @@
  void noroot_icon_test(void);
  
  
-@@ -2803,6 +2813,28 @@
+@@ -2803,6 +2813,29 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  	boolean_t graphics_now;
  	uint32_t delay;
  
-+	if ((boot_vinfo == NULL) && (deferred_fb_pa != 0) && (kernel_map != VM_MAP_NULL) &&
-+	    (startup_phase >= STARTUP_SUB_KMEM)) {
++	if ((boot_vinfo == NULL) && (deferred_fb_pa != 0) && (kernel_map != VM_MAP_NULL)) {
 +		static PE_Video deferred_video;
 +		vm_offset_t     virt;
 +
-+		virt = ml_io_map_unmappable(deferred_fb_pa, deferred_fb_len, VM_WIMG_WCOMB);
++		/* ml_io_map_unmappable returns 0 at this stage on this board while ml_io_map succeeds, which is
++		 * what the board's own panel drawing uses; the console takes the same path. */
++		virt = ml_io_map(deferred_fb_pa, deferred_fb_len);
 +		if (virt != 0) {
 +			deferred_video.v_baseAddr = virt;
 +			deferred_video.v_rowBytes = deferred_fb_rowbytes;
@@ -46,7 +49,7 @@
  	if (boot_vinfo) {
  		struct vc_info new_vinfo = vinfo;
  		boolean_t makeMapping = FALSE;
-@@ -2853,6 +2885,20 @@
+@@ -2853,6 +2887,20 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  			    new_vinfo.v_physaddr, new_vinfo.v_width, new_vinfo.v_height, new_vinfo.v_rowbytes, new_vinfo.v_type);       /* (BRINGUP) */
  		}
  
@@ -67,7 +70,7 @@
  		if (!newVideoVirt && !new_vinfo.v_physaddr) {                                                   /* Check to see if we have a framebuffer */
  			kprintf("initialize_screen: No video - forcing serial mode\n");         /* (BRINGUP) */
  			new_vinfo.v_depth = 0;                                          /* vc routines are nop */
-@@ -2860,6 +2906,10 @@
+@@ -2860,6 +2908,10 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
  			gc_graphics_boot = FALSE;                                       /* Say we are not in graphics mode */
  			disableConsoleOutput = FALSE;                                   /* Allow printfs to happen */
  			gc_acquired = TRUE;

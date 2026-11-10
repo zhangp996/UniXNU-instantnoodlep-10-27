@@ -37,3 +37,24 @@ job is running, now that drawing from the kernel is proven to work.
 
 Artifacts: bootCQ (watchdog, red block), bootCR (watchdog with its argument, green block),
 bootCT (first heartbeat, row fills), bootCU (moving dot, the one that keeps running).
+
+## 03:40: what the console attempt showed
+
+The deferred framebuffer mapping never runs.  Two edits were tried on the way to that conclusion:
+
+1. `ml_io_map_unmappable` was replaced by `ml_io_map` (two arguments on this kernel; three does not
+   compile), because the board's own panel drawing already maps the same physical base with it;
+2. the `startup_phase >= STARTUP_SUB_KMEM` guard was dropped, since `kPEAcquireScreen` runs right
+   after the EARLY_BOOT start-ups and KMEM is a later phase, so the guard could never be true.
+
+Neither produced a line on the panel or a map: `bootCV` and `bootCW` show only the watchdog's green
+block and the moving cyan dot, so `initialize_screen`'s deferred branch is still not entered -
+`deferred_fb_pa` is probably still zero, i.e. the first half of the patch (the branch that records
+the panel base when `initialize_screen` is called with a real `boot_vinfo`) is not taken either.
+
+The next diagnostic is a panel mark inside `initialize_screen` itself: one colour when it runs with a
+non-NULL `boot_vinfo`, another when it runs for `kPEAcquireScreen`, and a third when `deferred_fb_pa`
+is set.  That needs no console and no panic screen, and the panel channel is proven to work.
+
+Everything else from tonight stands: the watchdog backend keeps the boot alive past `watchdogd`, the
+panel draws from the kernel, and the machine survives minutes where the baseline died at one minute.
