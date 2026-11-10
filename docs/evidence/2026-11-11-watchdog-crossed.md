@@ -120,3 +120,36 @@ was never initialised for this boot.
 `bootDB.img` (`c5b9c491`): bootBW baseline + community RamWatchdog (with `ram-system-watchdog=1`) +
 deferred frame buffer mapping with `ml_io_map` + the text-console switch.  Everything else from the
 night stands; the panel is now a real console, which makes every next step observable.
+
+## 04:25: watchdogd still exits, but the console names the reason: the Data volume is 32 MB
+
+With the console printing, the boot up to the panic is readable end to end:
+
+```
+apfs_log_op_with_proc: disk1s1 mount-complete volume OwnerData
+RAM_WATCHDOG registered matched started: original IOWatchdog/client; software deadline backend
+load_init_program: attempting to load /sbin/launchd
+fs_tx_enter_internal:27549: disk1s1 containermanagerd_system: ENOSPC: ttype INSERT ...
+apfs_lowdisk_check_volume:285: disk1s1 sending lowdisk notification ...
+pid 121 exited -- exit reason namespace 2 subcode 0x5, description none
+coredump (watchdogd, pid 121): failed to open /private/var/cores/watchdogd.core: error 2
+panic(cpu 0 caller ...): watchdogd[121] exited -- exit reason namespace 2 subcode 0x5
+```
+
+And the space statistics on the same panel:
+
+```
+spaceman_fxc_print_stats:473: disk1 dev 0 sfree 7801/8192 ... range 391:7801 95.22%
+```
+
+8192 blocks of 4096 bytes is **32 MB**: the seed Data volume is far too small for a real userland.
+`containermanagerd_system` runs out of space during its first transaction, the volume raises a
+low-disk notification, and `watchdogd` exits shortly after - this time not because the watchdog
+service is missing (it registered), but because the system it depends on is out of room.
+
+## Next step
+
+Grow the Data seed.  The porting guide's `seed-data-grow` path exists for exactly this, and the OS
+profile's data size option controls it; 32 MB cannot hold the launchd database, cores, and the
+services' first writes.  Once Data has real room, the ENOSPC/low-disk storm should stop and the
+critical-exit panic at pid 121 should be re-tested against a healthy filesystem.
