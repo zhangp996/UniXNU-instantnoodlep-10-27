@@ -257,6 +257,42 @@ extern "C" int PE_parse_boot_argn(const char *arg_string, void *arg_ptr, int max
 
 
 
+/* The community RamWatchdog backend (mouse233/unixnu-fuxi, vendored under vendor-ram-watchdog)
+ * publishes a real IOWatchdog service so the original watchdogd can open and pet it instead of
+ * breaking out of its IOServiceOpen failure path and tripping the critical-exit panic. */
+extern "C" int fuxi_ram_watchdog_prepare(void);
+extern "C" int native_owner_watchdog_service(void);
+
+/* Draw one block at the top of the panel without the console: the panel's physical base comes
+ * from the loader, and the MMU is on by the time this runs. The panic screen does not fit next to
+ * the watchdog code, so the panel mark is the only channel that can report this step. */
+static void native_panel_mark(unsigned slot, unsigned color)
+{
+    extern void *ml_io_map(vm_offset_t paddr, vm_size_t size, unsigned int flags);
+    static volatile uint32_t *panel;
+    if (!panel) {
+        panel = (volatile uint32_t *)ml_io_map(0x9C000000, 1080u * 480u * 4u, 0x00000040u);
+    }
+    if (!panel || slot >= 24) {
+        return;
+    }
+    for (unsigned y = 0; y < 24; y++) {
+        for (unsigned x = 0; x < 24; x++) {
+            panel[(y + 48) * 1080u + slot * 32u + 8u + x] = color;
+        }
+    }
+}
+
+extern "C" int native_owner_watchdog_service(void)
+{
+    int error = fuxi_ram_watchdog_prepare();
+    native_panel_mark(1, error ? 0x00FF0000u : 0x0000FF00u);
+    if (error) {
+        panic("ram watchdog prepare failed: %d", error);
+    }
+    return 0;
+}
+
 extern "C" void qcom_owner_report(void)
 {
     /* native-exit-report=1 turns the accumulated service exits into one readable stop, so the
@@ -355,6 +391,7 @@ extern "C" kauth_cred_t vfs_context_ucred(struct vfs_context *);
 // ("A real empty migration marker selects the qualified modern override loader").
 extern "C" int native_owner_watchdog_override(void)
 {
+    native_owner_watchdog_service();
     static const char body[] =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"

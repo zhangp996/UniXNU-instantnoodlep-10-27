@@ -8,7 +8,7 @@ import struct
 import subprocess
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__import__('os').environ.get('RAM_WATCHDOG_ROOT') or Path(__file__).resolve().parents[1])
 sys.path.insert(0, str(ROOT / 'kits/NativePrelink'))
 from native_prelink import macho, backed_offset, exports, unserialize_xml
 
@@ -72,7 +72,7 @@ public:
 static_assert(sizeof(IOWatchdog)==0xf8,"Original watchdog storage");
 '''
 (out/'OriginalWatchdogABI.h').write_text(header)
-source = ROOT/'kits/sheng/RamWatchdog.cpp'; obj = out/'RamWatchdog.o'
+source = Path(__import__('os').environ.get('RAM_WATCHDOG_SOURCE') or ROOT/'kits/sheng/RamWatchdog.cpp'); obj = out/'RamWatchdog.o'
 recipe = json.loads((ROOT/'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json').read_text().strip().rstrip(','))
 command=[]; i=0; arguments=recipe['arguments']
 while i<len(arguments):
@@ -86,7 +86,8 @@ while i<len(arguments):
     i+=1
 command+=['-Wall','-Wextra','-Werror','-Wno-unused-parameter','-Wno-c99-designator',
           '-Wno-reorder-init-list','-Wno-deprecated-enum-enum-conversion','-Wno-unnecessary-virtual-specifier',
-          '-I',str(out),'-I',str(ROOT/'.cache/xnu-work/osfmk')]
+          '-I',str(out),'-I',str(ROOT/'.cache/xnu-work/osfmk'),
+          '-Wno-missing-designated-field-initializers', '-Wno-deprecated-declarations']
 (out/'compile-command.json').write_text(json.dumps(command,indent=2)+'\n')
 subprocess.run(command,cwd=recipe['directory'],check=True)
 compiled=obj.read_bytes(); image=macho(compiled)
@@ -123,7 +124,7 @@ asm.write_text(''.join(f'.globl {name}\n.set {name}, {va+slide:#x}\n' for name,v
 sdk=subprocess.check_output(['xcrun','--sdk','iphoneos','--show-sdk-path'],text=True).strip()
 subprocess.run(['xcrun','clang','-target','arm64-apple-ios17.0','-isysroot',sdk,'-c',str(asm),'-o',str(out/'original-bindings.o')],check=True)
 late=out/'RamWatchdog.late.o'
-subprocess.run(['llvm-objcopy','--remove-section=__DATA,__mod_init_func','--globalize-symbol=__GLOBAL__sub_I_RamWatchdog.cpp',str(obj),str(late)],check=True)
+subprocess.run([sys.executable, str(Path(__file__).resolve().parent / 'macho-surgery.py'), str(obj), str(late), '__GLOBAL__sub_I_RamWatchdog.cpp'], check=True)
 for b in [compiled,late.read_bytes()]:
     section=next(s for g in macho(b)['segments'] for s in g['sections'] if s['name']=='__text')
     if b is compiled: original_text=b[section['fileoff']:section['fileoff']+section['size']]
