@@ -137,6 +137,30 @@ jobs:
           echo "== ownership:" | tee "$RUNNER_TEMP/seed-owners.log"
           ls -ln "$SEEDMP" | tee -a "$RUNNER_TEMP/seed-owners.log"
           ls -ln "$SEEDMP/db/com.apple.xpc.launchd" | tee -a "$RUNNER_TEMP/seed-owners.log"
+          # The OS series mounts /private/var/ngpu/daemons read-only over /System/Library/LaunchDaemons
+          # (zzy-native-gpu-addon-mount, boot-arg sheng-gpu-addon=1). A job plist there shadows the
+          # sealed one, which is how this generation of the port changes what launchd starts.
+          sudo mkdir -p "$SEEDMP/ngpu/daemons"
+          cat > "$RUNNER_TEMP/watchdogd.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>Label</key>
+            <string>com.apple.watchdogd</string>
+            <key>Disabled</key>
+            <true/>
+            <key>ProgramArguments</key>
+            <array>
+              <string>/usr/libexec/watchdogd</string>
+            </array>
+          </dict>
+          </plist>
+          PLIST
+          sudo cp "$RUNNER_TEMP/watchdogd.plist" "$SEEDMP/ngpu/daemons/com.apple.watchdogd.plist"
+          sudo chown -R 0:0 "$SEEDMP/ngpu"
+          sudo chmod 644 "$SEEDMP/ngpu/daemons/com.apple.watchdogd.plist"
+          ls -ln "$SEEDMP/ngpu/daemons" | tee -a "$RUNNER_TEMP/seed-owners.log"
           sudo hdiutil detach "$SEEDMP"
           sudo hdiutil detach "$OSMP" || true
           ls -l build/owner-data-fixture/
