@@ -200,3 +200,32 @@ running `seed-data-grow.py --gib 8` on any Mac.
 
 With a real 8 GiB container the ENOSPC storm should disappear, and the service exits that end in the
 watchdogd critical-exit panic can then be judged on their own merits.
+
+## 05:00: the block device map, and the wall that is now in front
+
+`bootDD` prints every IOMedia with its size and UUID:
+
+```
+BLK: disk1 size=33554432   uuid=E553E004-A6C6-4992-B474-25EB0F160524
+BLK: disk2 size=67108864   uuid=5811b9f7-...
+BLK: disk3 size=33554432   uuid=8846FE78-...
+BLK: disk4 size=67108864   uuid=992523ff-...
+BLK: disk5 size=2147483648 uuid=2E2E1D80-7E05-4D95-9F2F-5B64E1A63C04
+BLK: disk6 size=3038101400
+```
+
+So `disk5` is this image's Data: the device really is 2 GiB (the declared size works), while the
+APFS container inside it is still 8192 blocks - `spaceman_fxc_print_stats: disk5 dev 0 sfree
+7801/8192` - which is exactly the 32 MB seed.  The ENOSPC storm comes from services writing to that
+container, so growing it is still the fix and still needs macOS.
+
+On this image the boot does not reach the services at all: the panel stops at
+
+```
+load_init_program: attempting to load /sbin/launchd
+shared_region: 0x... ((launchd)) check_np(...) vm_shared_region_start_address() failed
+```
+
+so `launchd`'s exec fails because the shared region (the dyld shared cache mapping) was never
+established.  That is now the wall in front, and it is independent of the disk: fix the shared
+region first, then the container size.

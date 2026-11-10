@@ -261,6 +261,30 @@ extern "C" int PE_parse_boot_argn(const char *arg_string, void *arg_ptr, int max
  * publishes a real IOWatchdog service so the original watchdogd can open and pet it instead of
  * breaking out of its IOServiceOpen failure path and tripping the critical-exit panic. */
 extern "C" int fuxi_ram_watchdog_prepare(void);
+/* One line per block device on the panel console: the bring-up needs to know which disk the service
+ * writes land on, because the ENOSPC storm names a disk number rather than a volume. */
+static void native_block_device_report(void)
+{
+    OSDictionary *matching = IOService::serviceMatching("IOMedia");
+    OSIterator *iterator = matching ? IOService::getMatchingServices(matching) : nullptr;
+    while (iterator) {
+        IOService *entry = OSDynamicCast(IOService, iterator->getNextObject());
+        if (!entry) {
+            break;
+        }
+        OSString *name = OSDynamicCast(OSString, entry->getProperty(kIOBSDNameKey));
+        OSNumber *size = OSDynamicCast(OSNumber, entry->getProperty("Size"));
+        OSString *uuid = OSDynamicCast(OSString, entry->getProperty("UUID"));
+        if (name) {
+            printf("BLK: %s size=%llu uuid=%.36s\n", name->getCStringNoCopy(),
+                   size ? size->unsigned64BitValue() : 0,
+                   uuid ? uuid->getCStringNoCopy() : "-");
+        }
+    }
+    OSSafeReleaseNULL(iterator);
+    OSSafeReleaseNULL(matching);
+}
+
 extern "C" int native_owner_watchdog_service(void);
 
 /* Draw one block at the top of the panel without the console: the panel's physical base comes
@@ -392,6 +416,7 @@ extern "C" kauth_cred_t vfs_context_ucred(struct vfs_context *);
 extern "C" int native_owner_watchdog_override(void)
 {
     native_owner_watchdog_service();
+    native_block_device_report();
     static const char body[] =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
