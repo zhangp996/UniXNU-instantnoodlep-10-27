@@ -309,3 +309,36 @@ Two things follow:
 
 The block-device diagnostic stays in the driver for now; it is a local edit to the RamBlock
 submodule and must be reverted before any commit there.
+
+## 06:20: userdata flash fixed the root manifest; the 3 GiB seed still stalls the storage stack
+
+`fastboot -S 256M flash userdata userdata-root.sparse.img` finished (35/35 chunks, 247 s).  After that
+the `UFS ROOT FAILURE: root manifest rejected` panic is gone, so the root manifest is back on the
+device - the panic had been caused by the Android boots wiping the userdata partition this port's
+manifest lives in.
+
+The next wall is the one seen before: with the 3 GiB seed the panel loops on
+
+```
+blockStorageDriver[102]: executeRequest: request failed to start!
+blockStorageDriver[102]: device is not ready.
+```
+
+and the USB console stops re-enumerating after a replug, so the kernel's storage path is wedged
+rather than merely slow.  The RamBlock `RWBLK-DIAG` line that would report `online`, `isBig`,
+`capacity` and `nonzero` never became visible because the loop floods the console and the serial
+ring could not be read afterwards.
+
+Next session, in order:
+
+1. power-cycle the board so the storage stack and console come back clean;
+2. drive the diagnostic to a readable place: either print it once into the panic screen path, or
+   make `available()` cache its answer and print the first failure with a unique prefix that survives
+   the flood (for example print the line only when `ok` is false, and also store the values in a
+   global the block-device report can print later);
+3. compare the `>2 GiB` path (`big.*`) against the `<=2 GiB` path: the 2 GiB-declared seed is ready
+   and the 3 GiB grown one is not, and the docs say the typed provider switches to storing only the
+   non-zero pages above 2 GiB, so that switch is where the difference must be.
+
+Working images: bootDD (32 MB seed, reaches launchd and the services) and the 32 MB seed itself;
+bootDG (3 GiB seed + RamBlock diagnostic) is the one that stalls.
