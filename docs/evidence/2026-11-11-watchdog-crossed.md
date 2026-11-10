@@ -281,3 +281,31 @@ that was going to report `available()` fields was reverted, so the submodule is 
 Night's final state: bootDD remains the best image (console printing, watchdog backend registered,
 2 GiB declared Data, boot reaching cfprefsd/apsd/livenessd); the macOS CI produces real grown seeds
 but this driver reports them as `device is not ready`.
+
+## 06:35: the 3 GiB seed is accepted; the panic is about the root manifest
+
+With the block-device diagnostic in place the 3 GiB seed panics with a much more useful message than
+the earlier loop:
+
+```
+mnt:3776: disk0 device_handle block size 4096 block count 786432
+apfs_extract_root_hash_arm:3396: could not retrieve root hash (...): No such file or directory (2)
+panic(cpu 0 caller 0xfffffff00bdd8410): UFS ROOT FAILURE: root manifest rejected
+```
+
+786432 blocks is exactly 3 GiB, so the grown seed **is** accepted through the >2 GiB path and the
+earlier `blockStorageDriver ... device is not ready` loop was the consequence of the new disk taking
+disk0 and the root publication failing behind it.  The real failure is in root publication:
+`apfs_extract_root_hash_arm` cannot retrieve the root hash (ENOENT), so the manifest that the verified
+root needs is rejected and the kernel panics.
+
+Two things follow:
+
+1. the RamBlock `available()` diagnostic never printed `RWBLK-DIAG`, which fits: the panic happens in
+   root selection before the Data seed is consulted, so the Data disk had not been asked yet;
+2. the next investigation is `apfs_extract_root_hash_arm` (ShengUfs/VerifiedRoot): why the root hash
+   cannot be read for this image, and whether the grown Data disk changes the APFS volume layout that
+   the extraction scans (disk numbering moved from disk1/disk5 to disk0).
+
+The block-device diagnostic stays in the driver for now; it is a local edit to the RamBlock
+submodule and must be reverted before any commit there.
