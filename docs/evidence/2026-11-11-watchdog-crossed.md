@@ -182,3 +182,21 @@ contiguous space than the volume can give.
 Next: identify what disk5 is and give it room, or drop the persist overlay for bring-up, then re-test
 whether the ENOSPC storm - and therefore the repeated service exits that end in the watchdogd
 critical-exit panic - disappears.
+
+## 05:30: the official seed grow needs macOS, and CI will not start
+
+The official tool is `scripts/seed-data-grow.py --gib N BASE.dbr OUT.dbr` (docs/zh/guide/userdata.md:71):
+it attaches a sparse raw image, runs `diskutil apfs resizeContainer`, and packs the result again; the
+accepted range is 3-1024 GiB.  requirements.md lists it among the macOS-only steps, so it cannot run
+on this Linux host.  Declaring a larger `logical` in the DBRDISK1 header (bootDC) presents a larger
+sparse device but leaves the APFS container at 32 MB, which is why ENOSPC simply moved to disk5s1.
+
+A workflow was added to the device repository (`seed-grow` branch, `grow-seed.yml`) that checks out
+unixnu/UniXNU and runs the tool on a `macos-14` runner, but GitHub cancels the job before assigning a
+runner (`runner: (none)`, zero steps, conclusion cancelled).  That is an account-level Actions policy
+for macOS runners, not a workflow bug: the repository is public and the YAML is accepted (the run
+appears), so the next move is either allowing macOS runners in the account's Actions settings, or
+running `seed-data-grow.py --gib 8` on any Mac.
+
+With a real 8 GiB container the ENOSPC storm should disappear, and the service exits that end in the
+watchdogd critical-exit panic can then be judged on their own merits.
