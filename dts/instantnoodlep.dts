@@ -10,3 +10,16 @@
         reg = <0x0 0x80000000 0x2 0x00000000>;
     };
 };
+
+// The SoC description ships the UFS host and its QMP PHY disabled; ShengUfs is selected, so the
+// board enables both. The driver adopts the controller the firmware left running and takes its
+// windows from the SoC's ufs-soc-table.h, so the nodes describe the hardware for the platform
+// expert rather than programming it.
+&ufs {
+    status = "okay";
+};
+
+&ufsphy {
+    status = "okay";
+};
+

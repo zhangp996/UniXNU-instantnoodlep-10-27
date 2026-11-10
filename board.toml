@@ -68,7 +68,9 @@ dram_size = "0x200000000"
 # debug=0x14e, -no_slto_panic and amfi_get_out_of_my_way=1 come from the reference
 # port for this board: AMFI panics with "No PMGR?" until a PMGR provider exists, and
 # the spinlock-timeout panic has to be off while the timer path is still unverified.
-kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "amfi_get_out_of_my_way=1"]
+# native-ufs-root=1 starts the selected storage component's root path once the kernel is up: it
+# adopts the controller the firmware left running and publishes the userdata windows as an IOMedia.
+kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "amfi_get_out_of_my_way=1", "native-ufs-root=1"]
 
 [payload.adt]
 # Panic region: XNU's DT panic path (CONFIG_XNU_DT_PANIC_REGION) reads
