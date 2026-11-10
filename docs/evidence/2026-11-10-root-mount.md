@@ -90,3 +90,25 @@ bytes for the host. The same boot enumerated on the host as
 Once a reader is attached, `usbipd attach --wsl --busid 1-1 --auto-attach` keeps it attached across
 the panic-time re-enumeration, and `/dev/ttyACM0` receives the module's replay (the 88 buffered
 bytes) plus live output.
+### End of the first console day
+
+The remaining gap is only the reader. What was established:
+
+- the WSL kernel has `CONFIG_USBIP_VHCI_HCD=y` and the `vhci_hcd` platform driver exists, but no
+  distribution package provides the `usbip` client; usbipd ships a static one at
+  `C:/Program Files/usbipd-win/WSL/usbip` and it runs from `/usr/local/bin` inside WSL;
+- `usbipd attach --wsl` needs the WSL VM to be running (it exits with *no WSL 2 distribution
+  running* otherwise), and its own WSL-side attach did not land: the `vhci` ports stayed at state
+  `004` (`VDEV_ST_NULL`) and `usbip list -r 127.0.0.1` reported *no exportable devices*;
+- the window is short because the kernel panics about ten seconds after the console enumerates, and
+  the panic takes the controller down with it, so the device disappears mid-capture.
+
+Two ways forward, both clean:
+
+1. finish the boot (owner-signed policies, then the dyld cache) so the kernel lives long enough for
+   a reader to attach - the console then works as intended, and the reader recipe is known:
+   keep a WSL process alive, `usbipd bind --busid 1-1 --force` while the device is present,
+   `usbip attach -r 127.0.0.1 -b 1-1` as root in WSL, then read `/dev/ttyACM0`;
+2. make the Windows path work instead: the module answers CDC class requests the way `AppleUSBACM`
+   expects, and Windows' `usbser` refuses them. Binding the interface with WinUSB and reading the
+   bulk IN endpoint directly (libusb) bypasses the class requests entirely.
