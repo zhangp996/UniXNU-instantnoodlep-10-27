@@ -231,3 +231,15 @@ The working configuration for bring-up is therefore: **no console in the image a
 to the phone's USB port from the host**, which is `bootNC` - `-v serial=3 debug=0x14e
 -no_slto_panic amfi_get_out_of_my_way=1 native-ufs-root=1 native-ufs-diagnostics=1`. The console can
 come back once the host-facing control path no longer blocks the transmit path.
+### The payload container size is load-bearing (2026-11-10, 20:40)
+
+Shrinking `[payload] size_mib` to reduce the boot image was tried and reverted: with 128 MiB and
+136 MiB the kernel boots and then panics with `offline scratch Data mount failed: 2` (ENOENT), while
+160 MiB - the value the working boots use - mounts the same seed at the same volume UUID. The packed
+Data ramdisk is present in every one of those images (its `DBRDISK1` header sits early in the file),
+so the loss is in how the kernel locates the seed, not in how the image is packed. Until the
+`PackedRAMDisk` address rule is understood, `size_mib = 160` is part of the working configuration and
+must not be lowered.
+
+The handoff stalls seen around the same time are a device state problem, not an image problem: the
+same image that stalls one minute boots to `watchdogd` on the next power cycle.
