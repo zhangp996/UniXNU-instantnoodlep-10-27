@@ -20,8 +20,8 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
 archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
             "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
             "build-software-aes-bindings.py", "build-mockfs-fixture.py", "build-libpthread-kernel.py",
-            "component:ShengUfs", "component:VirtioMmioBlock", "component:VerifiedRoot",
-            "component:QcomXnuUsbDebug"]
+            "component:ShengUfs", "build-verified-block-bridge.py",
+            "component:VirtioMmioBlock", "component:VerifiedRoot", "component:QcomXnuUsbDebug"]
 defconfig = "instantnoodlep_defconfig"
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]
 patch_series = ["arch:patches/xnu/series", "soc:patches/xnu/series", "device:patches/xnu/prereq-series", "os:patches/xnu/series", "device:patches/xnu/series"]
@@ -58,7 +58,7 @@ windows = [
 volume = "OP8PRO"
 timeout = 60
 # boot_a is 96 MiB (sde11: 98304 KiB); the payload must fit with the boot shim and DTB.
-size_mib = 88
+size_mib = 160
 loader = "firmware"
 # The panel is this board's only console: patch the panic screen into the payload
 # copy of the kernel. entry_probe_reset_delay + entry_probe_reset_after = "<symbol>"
@@ -72,7 +72,7 @@ dram_size = "0x200000000"
 # native-ufs-root=1 starts the selected storage component's root path once the kernel is up: it
 # adopts the controller the firmware left running and publishes the userdata windows as an IOMedia.
 kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "amfi_get_out_of_my_way=1",
-               "native-ufs-root=1", "native-ufs-diagnostics=1", "native-ufs-allow-unverified=1", "root-unverified=1",
+               "native-ufs-root=1", "native-ufs-diagnostics=1",
                "qcom-usb-debug=1", "qcom-usb-ctl=1"]
 
 [payload.adt]
