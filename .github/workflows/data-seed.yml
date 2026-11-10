@@ -83,18 +83,24 @@ jobs:
           hdiutil detach "$MP" 2>&1 || true
           ls -l build/owner-data-fixture/ | tee -a "$RUNNER_TEMP/seed.log"
 
-      - name: Disable the failing services in the seed
-        # docs/zh/devices/merlinx-gytis283123: the macOS-generated Data seed disables watchdogd
-        # through the launchd disabled plist. The seed must carry root-owned files: launchd runs as
-        # root, and a database written by the runner user is not honoured. Attach with owners on and
-        # chown the database tree back to root:wheel.
+      - name: Rebuild the seed with owners enabled and the failing services disabled
+        # The fixture image is created with ownership ignored, so a plist written on the runner is
+        # owned by uid 501 and launchd, which runs as root, ignores it. Rebuild the same tree on an
+        # owners-enabled image, as root, so /private/var keeps the IPSW's ownership and the launchd
+        # disabled database is root:wheel.
         run: |
           set -o pipefail
-          SEED="$PWD/build/owner-data-fixture/owner-data-32.cdr"
-          MP="$RUNNER_TEMP/seed-mount"
-          mkdir -p "$MP"
-          hdiutil attach "$SEED" -nobrowse -mountpoint "$MP"
-          sudo mkdir -p "$MP/db/com.apple.xpc.launchd"
+          OSDMG=$(ls -S out/ipsw/*/*.dmg | head -1)
+          OSMP="$RUNNER_TEMP/os-mount"
+          SEEDMP="$RUNNER_TEMP/seed-mount"
+          RAW="$RUNNER_TEMP/owner-data-owners.cdr"
+          mkdir -p "$OSMP" "$SEEDMP"
+          sudo hdiutil attach "$OSDMG" -nobrowse -mountpoint "$OSMP" -owners on 2>&1 | tee "$RUNNER_TEMP/os-attach.log"
+          sudo hdiutil create -size 32m -layout NONE -fs APFS -volname OwnerData -type UDTO "$RAW" 2>&1 | tee "$RUNNER_TEMP/seed-create.log"
+          sudo hdiutil attach "$RAW" -nobrowse -mountpoint "$SEEDMP" -owners on 2>&1 | tee "$RUNNER_TEMP/seed-attach.log"
+          sudo rsync -aH "$OSMP/private/var/" "$SEEDMP/"
+          sudo mkdir -p "$SEEDMP/keybags" "$SEEDMP/mobile/tmp" "$SEEDMP/tmp" "$SEEDMP/run" "$SEEDMP/containers/Bundle" "$SEEDMP/containers/Data/System" "$SEEDMP/containers/Shared/SystemGroup" "$SEEDMP/containers/Temp" "$SEEDMP/db/com.apple.xpc.launchd"
+          sudo chmod 1777 "$SEEDMP/tmp"
           cat > "$RUNNER_TEMP/disabled.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -105,12 +111,19 @@ jobs:
           </dict>
           </plist>
           PLIST
-          sudo cp "$RUNNER_TEMP/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.plist"
-          sudo cp "$RUNNER_TEMP/disabled.plist" "$MP/db/com.apple.xpc.launchd/disabled.501.plist"
-          sudo chown -R 0:0 "$MP/db/com.apple.xpc.launchd"
-          sudo chmod 644 "$MP/db/com.apple.xpc.launchd/disabled.plist"
-          ls -ln "$MP/db/com.apple.xpc.launchd"
-          hdiutil detach "$MP"
+          sudo cp "$RUNNER_TEMP/disabled.plist" "$SEEDMP/db/com.apple.xpc.launchd/disabled.plist"
+          sudo cp "$RUNNER_TEMP/disabled.plist" "$SEEDMP/db/com.apple.xpc.launchd/disabled.501.plist"
+          sudo chown -R 0:0 "$SEEDMP/db" "$SEEDMP/keybags" "$SEEDMP/tmp" "$SEEDMP/run" "$SEEDMP/containers"
+          sudo chmod 644 "$SEEDMP/db/com.apple.xpc.launchd/disabled.plist"
+          echo "== ownership:" | tee "$RUNNER_TEMP/seed-owners.log"
+          ls -ln "$SEEDMP" | tee -a "$RUNNER_TEMP/seed-owners.log"
+          ls -ln "$SEEDMP/db/com.apple.xpc.launchd" | tee -a "$RUNNER_TEMP/seed-owners.log"
+          sudo hdiutil detach "$SEEDMP"
+          sudo hdiutil detach "$OSMP" || true
+          sudo cp "$RAW" build/owner-data-fixture/owner-data-32.cdr
+          sudo chown "$(id -u):$(id -g)" build/owner-data-fixture/owner-data-32.cdr
+          ls -l build/owner-data-fixture/
+
 
       - name: Publish the seed
         if: always()
