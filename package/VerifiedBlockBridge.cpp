@@ -285,6 +285,13 @@ static void native_block_device_report(void)
     OSSafeReleaseNULL(matching);
 }
 
+/* One panel line per exiting process: the service graph is only debuggable if the exits and their
+ * reasons are visible, and printf from the exit path is what the rest of the console uses. */
+extern "C" void native_exit_observe(const char *comm, int pid, int code, int ns, long long sub)
+{
+    printf("XNU-EXIT: %s pid=%d code=%d ns=%d sub=0x%llx\n", comm ? comm : "?", pid, code, ns, sub);
+}
+
 extern "C" int native_owner_watchdog_service(void);
 
 /* Draw one block at the top of the panel without the console: the panel's physical base comes

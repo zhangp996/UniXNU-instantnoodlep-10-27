@@ -455,3 +455,35 @@ the endless `device is not ready` loop).  Upstream keeps seeds below 2 GiB for e
 Next: the crashing services.  With Data writable the earlier ENOSPC cascade should be gone, so the
 crashes must have another cause - their exit reasons and any `too many corpses` context are the
 next thing to capture.
+
+## 07:20: every service exits with the same code - a systemic dyld/shared-region failure
+
+The exit observation hook prints one line per process, and the pattern is unambiguous:
+
+```
+XNU-EXIT: chronod          pid=230 code=9 ns=1 sub=0x4
+XNU-EXIT: containermanager pid=213 code=9 ns=1 sub=0x4
+XNU-EXIT: contextstored    pid=222 code=9 ns=1 sub=0x4
+XNU-EXIT: nfcd             pid=197 code=9 ns=1 sub=0x4
+XNU-EXIT: ptpd             pid=207 code=9 ns=1 sub=0x4
+XNU-EXIT: securityd        pid=151 code=9 ns=1 sub=0x4
+XNU-EXIT: watchdogd        pid=99  code=5 ns=2 sub=0x5
+```
+
+Everything except watchdogd exits with the **same** status (9, namespace 1 subcode 4), so this is not
+per-service breakage: the binaries cannot run at all.  That matches the shared region failure the
+console reported earlier:
+
+```
+shared_region: ... check_np(...) vm_shared_region_start_address() failed
+```
+
+`vm_shared_region_start_address` returns `KERN_INVALID_ADDRESS` when the shared region has no mapping
+(`sr_first_mapping == -1` in `vm_shared_region.c`), i.e. the dyld shared cache was never mapped into
+the shared region.  Without it dyld cannot start any image, which is exactly what a uniform exit code
+across every job looks like.  watchdogd's different code (namespace 2) is its own breakpoint path.
+
+Next: establish the shared region before PID 1 and the services run.  The port carries a dyld cache
+carrier component for this; the things to check are whether it is selected in the configuration and
+whether it publishes the cache in a way `vm_shared_region` accepts (region created, first mapping
+recorded) before launchd starts spawning jobs.
