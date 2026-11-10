@@ -34,6 +34,7 @@ jobs:
           GIB: ${{ github.event.inputs.gib }}
         run: |
           set -euo pipefail
+          mkdir -p build
           SEED=$GITHUB_WORKSPACE/data/owner-data-32.dbr
           test -f $SEED
           python3 scripts/seed-data-grow.py --gib "${GIB:-8}" "$SEED" $GITHUB_WORKSPACE/owner-data-grow.dbr 2>&1 | tee $RUNNER_TEMP/grow.log
