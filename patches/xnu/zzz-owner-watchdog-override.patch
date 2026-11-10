@@ -1,22 +1,17 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
-index 6f23b0d..11aaa62 100644
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -8196,6 +8196,18 @@ load_init_program(proc_t p)
+@@ -8196,6 +8196,14 @@
  	int data_error = native_owner_data_prepare(p, (user_addr_t)scratch_addr);
  	boot_progress_stage("Data mount returned");
  	if (data_error) panic("offline scratch Data mount failed: %d", data_error);
 +	{
-+		/* The port's launchd override.  docs/zh/devices/sm-t970 records the same step as an
-+		 * explicit temporary original-launchd watchdog-only override installed by the kernel
-+		 * right after a successful volatile Data mount: the kernel writes it as root, so the
-+		 * database carries root:wheel no matter how the seed image was built.  The result is a
-+		 * named stop, because a silent failure only shows up as watchdogd starting anyway.
-+		 */
++		/* The launchd disabled database and its migration marker, written by the kernel as root
++		 * right after the volatile Data mount; see package/VerifiedBlockBridge.cpp. */
 +		extern int native_owner_watchdog_override(void);
 +		int watchdog_error = native_owner_watchdog_override();
 +		if (watchdog_error) panic("owner watchdog override failed: %d", watchdog_error);
-+		printf("owner watchdog override installed\n");
++		printf("owner watchdog override ready\n");
 +	}
  #if defined(XNU_BOOT_PROGRESS) && XNU_BOOT_PROGRESS
  	extern int sheng_boot_watchdog_policy(void *, uint64_t);

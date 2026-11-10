@@ -257,61 +257,53 @@ extern "C" void qcom_owner_heartbeat(void)
     }
 }
 
-
-// Writes the launchd disabled database into the Data volume the boot just mounted, as the kernel
-// (and therefore as root).  docs/zh/devices/sm-t970: "installs an explicit temporary
-// original-launchd watchdog-only override after successful volatile Data mount ... exclusive
-// nofollow creation, root metadata and full write/fsync/close before migration marker".  Doing it
-// here keeps the seed image untouched and avoids the ownership problem a host-built seed has.
 #include <sys/errno.h>
-#include <sys/mount.h>
-#include <sys/vm.h>
 #include <sys/fcntl.h>
+#include <sys/mount.h>
 #include <sys/uio.h>
+#include <sys/vm.h>
 #include <sys/vnode.h>
 #include <sys/vnode_if.h>
 
-// The exported kernel headers do not carry kern/vfs_context.h; these two entry points are part of
-// the kernel the archive is linked into, and struct vfs_context is the very type vfs_context_t
-// names, so a direct declaration keeps the build independent of that private header.
+// The exported kernel headers do not carry kern/vfs_context.h; these entry points belong to the
+// kernel this archive is linked into, and struct vfs_context is the type vfs_context_t names.
 struct vfs_context;
 extern "C" struct vfs_context *vfs_context_current(void);
 extern "C" kauth_cred_t vfs_context_ucred(struct vfs_context *);
 
+// The launchd disabled database for the bring-up stashes, written by the kernel while the boot
+// thread is still root right after the volatile Data mount.  docs/zh/devices/sm-t970 records this
+// step, and UniXNU-sheng package/BootWatchdogPolicy.c shows the part that decides whether launchd
+// honours it: the database only takes effect together with an empty "disabled.migrated" marker
+// ("A real empty migration marker selects the qualified modern override loader").
 extern "C" int native_owner_watchdog_override(void)
 {
-    static const char body_text[] =
+    static const char body[] =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
         "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-        "<plist version=\"1.0\">\n"
-        "<dict>\n"
-        "  <key>com.apple.watchdogd</key>\n"
-        "  <true/>\n"
-        "</dict>\n"
-        "</plist>\n";
-    static const char *const dir = "/private/var/db/com.apple.xpc.launchd";
-    static const char *const paths[] = {
+        "<plist version=\"1.0\"><dict>"
+        "<key>com.apple.watchdogd</key><true/>"
+        "</dict></plist>\n";
+    static const char *const files[] = {
         "/private/var/db/com.apple.xpc.launchd/disabled.plist",
         "/private/var/db/com.apple.xpc.launchd/disabled.501.plist",
     };
+    static const char marker[] = "/private/var/db/com.apple.xpc.launchd/disabled.migrated";
     vfs_context_t ctx = vfs_context_current();
-    vnode_t dvp = NULLVP;
     vnode_t vp = NULLVP;
+    vnode_t dvp = NULLVP;
 
-    /* Distinct codes so the caller's panic names the step that stopped the override. */
-    int error = vnode_lookup(dir, 0, &dvp, ctx);
+    int error = vnode_lookup("/private/var/db/com.apple.xpc.launchd", 0, &dvp, ctx);
     if (error) {
         return 1000 + error;
     }
     vnode_put(dvp);
-
-    int written = 0;
-    for (size_t i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
-        error = vnode_open(paths[i], FWRITE | O_CREAT | O_TRUNC, 0644, 0, &vp, ctx);
+    for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+        error = vnode_open(files[i], FWRITE | O_CREAT | O_TRUNC, 0644, 0, &vp, ctx);
         if (error) {
             return 2000 + error;
         }
-        error = vn_rdwr(UIO_WRITE, vp, (caddr_t)(uintptr_t)body_text, (int)(sizeof(body_text) - 1), 0,
+        error = vn_rdwr(UIO_WRITE, vp, (caddr_t)(uintptr_t)body, (int)(sizeof(body) - 1), 0,
                         UIO_SYSSPACE, IO_NODELOCKED, vfs_context_ucred(ctx), NULL, current_proc());
         if (error) {
             (void)vnode_close(vp, FWRITE, ctx);
@@ -320,33 +312,15 @@ extern "C" int native_owner_watchdog_override(void)
         (void)VNOP_FSYNC(vp, MNT_WAIT, ctx);
         (void)vnode_close(vp, FWRITE, ctx);
         vp = NULLVP;
-        written++;
     }
-
-    /* owner-watchdog-probe=1 turns the result into a readable stop: how many files were written,
-     * how many bytes read back and the head of the first one.  It is what tells a launchd question
-     * apart from a write that never landed. */
-    int probe = 0;
-    if (PE_parse_boot_argn("owner-watchdog-probe", &probe, sizeof(probe)) && probe == 1) {
-        char head[41] = {0};
-        int resid = 0;
-        int read = -1;
-        if (vnode_open(paths[0], FREAD, 0644, 0, &vp, ctx) == 0) {
-            read = vn_rdwr(UIO_READ, vp, head, (int)sizeof(head) - 1, 0, UIO_SYSSPACE, IO_NODELOCKED,
-                           vfs_context_ucred(ctx), &resid, current_proc());
-            (void)vnode_close(vp, FREAD, ctx);
-            vp = NULLVP;
-        }
-        /* scripts/check-launchd-watchdog-policy.py shows the original launchd consulting
-         * "%s/disabled.migrated" before it reads "%s/disabled.plist", so the marker decides
-         * whether the database is honoured at all. */
-        vnode_t mvp = NULLVP;
-        int marker = vnode_lookup("/private/var/db/com.apple.xpc.launchd/disabled.migrated", 0, &mvp, ctx);
-        if (marker == 0) {
-            vnode_put(mvp);
-        }
-        panic("owner watchdog override probe: files %d read %d bytes %d marker %d head [%s]",
-              written, read, (int)sizeof(head) - 1 - resid, marker, head);
+    error = vnode_open(marker, FWRITE | O_CREAT | O_EXCL, 0644, 0, &vp, ctx);
+    if (error == EEXIST) {
+        return 0;
     }
-    return written == 2 ? 0 : 4000;
+    if (error) {
+        return 4000 + error;
+    }
+    (void)VNOP_FSYNC(vp, MNT_WAIT, ctx);
+    (void)vnode_close(vp, FWRITE, ctx);
+    return 0;
 }

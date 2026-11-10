@@ -263,3 +263,28 @@ runtime, built by `scripts/build-sheng-source-storage.py`), which the asteroids 
 running "the process capture and the watchdog launch policy"; the same official checker calls its
 subject "the original launchd override loader **and job gate**", so the gate is the part a file alone
 does not reach on this iPadOS build.  That component is not part of this device repository.
+### watchdogd, final state of the night (2026-11-10, 22:55)
+
+What the hardware showed, in order:
+
+| Attempt | Written by | Content | Result |
+| --- | --- | --- | --- |
+| kernel VFS writer | kernel (root) | `disabled.plist`, `disabled.501.plist` | files read back correctly, `watchdogd` still starts |
+| same, plus probe | kernel | plus read-back and marker lookup | `files 2 read 0 bytes 40 marker 2` - correct content, no migration marker |
+| sheng `BootWatchdogPolicy.c` | kernel | plist, marker, `disable-watchdogd` | the argument alone stopped the boot at the end of early boot (three boots) |
+| sheng file, policy always on | kernel | plist and marker, no argument | boot stopped at the same place |
+| bridge writer with marker | kernel (root) | plist, `disabled.501.plist` and empty `disabled.migrated` | boots, `watchdogd` still starts |
+
+So on this iPadOS 17.4 build neither the disabled database alone nor the database plus an empty
+`disabled.migrated` marker keeps `watchdogd` out of the boot. The write side is proven: the files
+exist with the intended bytes, created by the kernel as root with `fsync`, and the probe read them
+back. What is missing is the consumer side: sheng's own source comments call the marker the thing
+that "selects the qualified modern override loader", and `package/BootProcessWorker.c` in
+`zhangp996/UniXNU-sheng` is only 35 lines and carries no launchd logic, so the loader - and the job
+gate the official `scripts/check-launchd-watchdog-policy.py` names in its docstring - lives somewhere
+this checkout does not have.
+
+Adding the policy object also proved fragile: with it linked, several boots stopped at the last
+early-boot start-up (`lockdown_mode` is the final `STARTUP(EARLY_BOOT, RANK_LAST)` entry) with no
+further output, while the same kernel without it boots to `watchdogd`. Any further attempt should
+keep the kernel size stable and prefer the existing bridge object.

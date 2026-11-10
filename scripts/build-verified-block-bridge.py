@@ -55,4 +55,3 @@ if result.returncode:
     raise SystemExit('the bridge must compile with the kernel own flags')
 subprocess.run(['llvm-ar', 'r', str(archive), str(object_file)], check=True)
 print(archive)
-
