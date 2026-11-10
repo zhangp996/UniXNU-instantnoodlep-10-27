@@ -371,3 +371,30 @@ retrying a device that the volume selection refused.
 Next: print the UUID of each disk in the tick report (a string property) to confirm both carry the
 seed UUID, then either de-duplicate the publication or relax the selection to prefer the partition
 (`diskXs1`) when several media share the UUID.
+
+## 06:50: launchd runs and finishes its early boot
+
+With the 3 GiB seed, the partition-only selection and the diagnostics in place, the panel shows the
+first userland boot in this port's history:
+
+```
+com.apple.xpc.launchd ... (tzinit) <Notice>: Doing boot task
+[System Event] [Subsystem: launchd] [Event: finish-restore] Doing boot task
+... (finish-demo-restore) (sysstatuscheck) (prng_seedctl) (launchd_cache_loader)
+... (workload-properties-init) (init-exclavekit)
+com.apple.xpc.launchd[1] ... [Event: boot] Early boot complete. Continuing system boot.
+```
+
+So `launchd` executes, runs its boot tasks and completes early boot.  The storage driver still
+loops on `disk1: device is not ready` alongside it, which means the Data volume (`/private/var`) is
+not mounted, but launchd itself is alive and progressing.
+
+Notes for the next session:
+
+* the loop names `disk1`, the whole media, while the seed volume is `disk1s1`; the mount path that
+  asks for the whole disk is the thing to find (`native_owner_data_prepare` and the volume seed
+  callers),
+* `SEL-DIAG` output scrolled out of the visible area; next time print it only on failure and after
+  the loop starts, or keep a copy in a global the tick report can print,
+* the 32 MB seed still gives a complete boot to the service graph, so it remains the fallback while
+  the grown-seed mount is fixed.

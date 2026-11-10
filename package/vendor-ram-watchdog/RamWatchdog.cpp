@@ -45,8 +45,10 @@ static void ram_watchdog_block_report(void)
         OSNumber *size = OSDynamicCast(OSNumber, entry->getProperty("Size"));
         if (name) {
             extern volatile uint64_t native_ram_block_state[4];
-            printf("BLK-TICK: %s size=%llu\n", name->getCStringNoCopy(),
-                   size ? size->unsigned64BitValue() : 0);
+            OSString *uuid = OSDynamicCast(OSString, entry->getProperty("UUID"));
+            printf("BLK-TICK: %s size=%llu uuid=%.36s\n", name->getCStringNoCopy(),
+                   size ? size->unsigned64BitValue() : 0,
+                   uuid ? uuid->getCStringNoCopy() : "-");
             printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu\n",
                    native_ram_block_state[0], native_ram_block_state[1],
                    native_ram_block_state[2], native_ram_block_state[3]);
