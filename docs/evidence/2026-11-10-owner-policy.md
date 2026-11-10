@@ -305,3 +305,21 @@ The remaining documented mechanism is the launchd **cache**, not the disabled da
 read-only union.  That is how a port on this iOS generation changes what launchd loads: a cache
 plist placed where the union makes it visible.  Reproducing it means building that cache and the
 union mount, which is a piece of work of its own, not a one-line change.
+### The launchd job union moved the wall from watchdogd to memory (2026-11-10, 23:20)
+
+With the Data seed carrying `/private/var/ngpu/daemons/com.apple.watchdogd.plist` (Label plus
+`Disabled=true`, root:wheel) and the boot argument `sheng-gpu-addon=1` - which makes the OS series'
+`native_gpu_addon_mount` bind-mount that directory read-only over `/System/Library/LaunchDaemons` -
+the first panic is no longer `watchdogd`: the board reaches launchd and then stops in
+
+`memorystatus jetsam_thread: no victim! available pages: 3035 @kern_memorystatus.c:4203`
+
+so the boot got past the service that used to end it every time.  Two candidates remain for what
+happens next: the job shadowing worked and the boot now dies of genuine memory pressure (about
+12 MB of pages left when jetsam looked for a victim), or the shadow file was ignored and
+`watchdogd` simply did not get the chance to exit first.
+
+The record from sm-t970 describes the same line ("memorystatus no-victim (available3060pages),
+rather than prior cache EACCES") and is explicit that it is not proof of a full mapping or of
+launchd's main process, so the next step is to read the launchd service list rather than infer it:
+the console ring on a boot that reaches this point, or a launch-job report, would settle it.
