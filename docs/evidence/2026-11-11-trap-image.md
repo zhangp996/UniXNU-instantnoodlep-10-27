@@ -2378,3 +2378,29 @@ accessors see (`native_legacy_surface_width`/`_allocation`, bound to the origina
 Built image: `bootEU.img` sha `1900a5445581cc3e359d8475394e97db82c4cbeda6b548c35fb2d87b4dac123e`.  The device was not
 attached when it finished, so the next boot will show whether the component's copy succeeds - and if it does, the
 family retires the swap inside its own context and `swap_wait_gated` should stop timing out.
+
+## 02:30: the component copy is now one check away from running
+
+The board probe's `native_legacy_prepare_scanout()` stub used to return `false` for the whole port, which is why the
+component's copy - and with it `finishTransfer()`, `retireSwap()` and `completeCurrentSwap()` - never ran.  It now
+returns `true`, and the boot shows the component reaching its own copy:
+
+```
+DISPLAY: accessor width=1080 alloc=10342400 desc=0xfffffff65d56acf8 descLen=10342400
+DISPLAY: present copied 2376 rows x 4320 bytes (frame 1)
+DISPLAY: transfer rc=0xe00002c2 source=0xfffffff65d715000 bytes=0     <- kIOReturnBadArgument
+```
+
+`kIOReturnBadArgument` is emitted only by the two `native_legacy_copy_layout()` failures in `kickOnce()`.  Its checks
+are `stride >= width*4`, `allocation >= stride*height`, `descriptorBytes >= allocation`, plus pointer/stride
+alignment.  Width, allocation and descriptor length are all correct (1080, 10342400, 10342400, stride 4352), so the
+remaining candidate is **height**: the component obtains it from the bound original `native_legacy_surface_height()`,
+and the probe's own geometry print reads `2376x0` - the second value is what the surface reports through that path.
+
+The current image (`bootEU.img` sha `ce2f7eb15441c57de5e4ceef53aef02e0ddd42da18277084a309543c20062c40`) prints
+`native_legacy_surface_width/height/allocation` together at the swap, so the next boot that reaches the compositor
+names the failing value directly.  The last attempt panicked before the swap, so that print is still outstanding.
+
+If height is 0, the fix is to have the adopted default surface report its geometry through the original accessor
+(e.g. publish it as a real IOSurface entry in the root, which is what the family's temp surface should already be),
+and the component's copy - and therefore the family's own swap retirement - should follow.
