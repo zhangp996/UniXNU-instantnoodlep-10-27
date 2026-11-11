@@ -1405,3 +1405,43 @@ that creates one: that remains the user-client external method (the 2022 two-arg
 
 Housekeeping: an untracked copy of this board's probe had been left in the main checkout's `package/`; it was
 removed, and `git status` there is back to its previous state (only the submodule states that were already there).
+
+## 04:10: the sibling port shows the working architecture (GFander/UniXNU-kebab)
+
+`github.com/GFander/UniXNU-kebab` (OnePlus 8T, same SM8250 class, same "the bootloader's framebuffer is scanned
+out by the panel" situation) solves this area completely differently from the path this board has been on.  Its
+display patch (`patches/xnu-8796-kebab/0093-kebab-display.patch`) adds two native kernel files:
+
+* `iokit/Kernel/arm/KebabSurface.cpp/.h` (~1,370 lines) - **a built-in IOSurface**: a native
+  `IOCoreSurfaceRoot` service plus a user client that speaks the ABI `IOSurface.framework` expects, with its own
+  selector table:
+
+  ```
+  sel 13 limits (struct out 0x18, u16 at +0x16 = ABI version)
+  sel 0  create: scalar [parent id], struct in = serialized property dictionary, struct out = lock result
+  sel 4  lookup by id; sel 34 lookup by mach port; sel 35 create mach port
+  sel 9  set value; sel 10 update non-bulk value cache; sel 11 remove value
+  sel 27 set bulk attachments (0x1b)
+  traps 0/1 use-count +/-; 2 lock; 3 unlock; 4/5 release
+  ```
+
+  Every surface is wired kernel memory mapped into each task that creates or looks it up, with the lock result
+  telling the library where the pixels, the shared state page and the timestamps are;
+
+* `iokit/Kernel/arm/KebabFramebuffer.cpp` - an `IOMobileFramebuffer` (AppleCLCD) that CPU-copies CoreAnimation's
+  swaps into the bootloader framebuffer and drives vsync from a 60 Hz timer.  `SwapEnd` queues the swap record and
+  the vsync timer presents it; `SwapWait(6)` waits with a bounded timeout.
+
+Its header comment states the reason plainly: "Apple's IOSurface kext is closed", so the port provides the name,
+the service and the selectors itself.  The display is presented as the iPhone X identity userland expects
+(1125x2436 at 3x) while the panel, canvas and default surface stay at the bootloader's 1080x2400.
+
+**What this means for this board:** the route we have been on - original prelinked `IOMobileGraphicsFamily` plus the
+closed IOSurface factory - is the harder of the two, and the reference records admit the default-surface adapter
+was never proven on hardware.  The sibling's route replaces both closed pieces and its documentation reports a
+working GUI.  Porting `KebabSurface` as this board's surface provider, and either keeping the original family for
+the framebuffer side or porting `KebabFramebuffer` as well, is the proven path.
+
+Kept for reference: the patch was fetched to `/root/kebab_0093.patch` (81 KB) and the repository's ABI records
+(`docs/standardization-run-20261029/abi/IOSurfaceRootUserClient.json`, `IOCoreSurfaceRoot.json`) describe the same
+service from the contract side.
