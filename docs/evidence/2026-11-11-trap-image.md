@@ -1239,3 +1239,20 @@ Everything before that is verified on hardware: the family loads through the doc
 class registers with the original identity, the display publishes over the firmware framebuffer on an
 `AppleARMIODevice` nub the family accepts, the userland client maps it (`s_map_display_type`, `IOMFB: driver
 commit`), and the remaining failure is exactly "no default surface".
+
+## 02:05: the first call into the IOSurfaceRoot factory names its first parameter
+
+The probe called vtable slot 141 on the IOSurfaceRoot service with `(this, props, null, 0, &out)`:
+
+```
+DISPLAY: create_surface 1080x480 stride 4320 via vt[141]=0xfffffff004baa11c
+panic(cpu 0 caller 0xfffffff00c0043b0): zone_require failed: address in unexpected zone id 545
+  (iokit.OSDictionary) (addr: 0xfffffff9e069cf88, expected: proc_task) @zalloc.c:1434
+```
+
+The kernel tried to release the pointer in a `proc_task` zone, so the factory's first argument after
+`this` is a task (or proc), not the property dictionary.  The prologue agrees: `x1` is saved early, `x4` is the
+out-parameter that is cleared first, `w3` is a flag whose non-zero value jumps to the error return, and `x2` is
+untouched until later.
+
+The next call therefore passes `current_task()` first and the dictionary second.
