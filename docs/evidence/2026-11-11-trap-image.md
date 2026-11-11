@@ -304,3 +304,20 @@ kern_return_t result = IOKitBSDInit();
 and `CONFIG_XNU_NATIVE_LEGACY_DISPLAY` is not in `configs/instantnoodlep_defconfig`, so the call is compiled
 out.  No patch work is needed on this board; what remains is the configuration flag, the late archive that
 defines `native_legacy_display_late_probe` (the board recipe), and the `offline-legacy-*` arguments.
+
+## 19:00: what the payload page covers, and the argument budget
+
+`/zh/concepts/payload` does not describe the display work, but it documents the delivery path for the third
+piece - the `offline-legacy-*` arguments:
+
+* the command line written into `EFI/UniXNU/unixnu.toml` is `[payload] kernel_args` (board.toml) merged
+  with `--kernel-arg NAME=VALUE`, and DarwinBoot copies it verbatim into `boot_args`;
+* each argument matches `[A-Za-z0-9_.\-]+` with an optional `=value` from `[A-Za-z0-9_.,\-]+`, and the
+  merged line must stay within **1000 bytes** (DarwinBoot's buffer is 1024);
+* the payload carries only the kernel, ADT, trust cache and Data seed - a display provider is linked into
+  the kernel archive, not shipped as a payload file.
+
+Measured on this board: the current line is 10 arguments / 171 bytes; adding the eight reference display
+arguments (`offline-legacy-register`, `-gop`, `-unit-scale=2`, `-pm`, `-validate`, `-transfer`,
+`-cpu-present`, `-phase=4`) gives 370 bytes, so the budget is not a constraint for the display step - the
+reference board's 60-argument line would be, and only a subset is needed here.
