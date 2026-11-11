@@ -2868,3 +2868,22 @@ display driver itself registers correctly, and no swap is ever submitted on thes
 CrashLogProbe.c is in place but not compiled: the next two edits are adding it to `bsd_sources` in
 scripts/build-sheng-source-storage.py and calling `uke_crash_log_start()` at the end of
 `sheng_boot_watchdog_policy()`, then booting with `sheng-crashlog=1`.
+## 08:45: where the crash-report probe has to be wired
+
+scripts/build-boot-progress.py builds **one** object (BootProgress.o) and its docstring is explicit:
+
+> The renderer is UniXNU-sheng's package/BootProgress.c ... Only that object is built: sheng's four companion
+> probes cover its watchdog policy, file export and ADSP bring-up and are **not part of this port**.
+
+so package/CrashLogProbe.c (copied here from uke) is not built by any current step.  The wiring that matches this
+board is:
+
+1. extend scripts/build-boot-progress.py to compile package/CrashLogProbe.c with the same record (it already builds
+   BootProgress.o into build/boot-progress and archives it), prefixing `-DUKE_SOURCE_STORAGE_LOG` if the full-report
+   buffer should be kalloc'd rather than static;
+2. call `uke_crash_log_start()` from the boot-progress entry (or from `sheng_boot_watchdog_policy()` if that object
+   is in the same archive);
+3. boot with `sheng-crashlog=1` and read the backboardd/SpringBoard reports on the serial console.
+
+The probe itself needs no changes: it takes its own boot argument and starts its worker thread after 60 s, printing
+into msgbuf, which the serial console already carries.
