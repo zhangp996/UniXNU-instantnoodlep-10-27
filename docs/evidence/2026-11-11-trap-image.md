@@ -775,3 +775,37 @@ So the next piece of work is ours to write, in the board probe:
 The phone is on the panic screen from the previous run (`OSMetaClass::~OSMetaClass` with a null `this`), its
 serial console is gone and neither `fastboot` nor `adb` sees it, so no further device measurement is possible
 until it is rebooted by hand.
+
+## 22:10: the published display panics about two minutes in, deterministically
+
+Re-running the relaxed-guard image (the one that boots with `display-scale` published) reproduces the same
+crash every time, about two minutes after hand-off:
+
+```
+AFB: default surface: No Default FB Surface found. Return error
+IOMFB: swap_wait_gated: CommandMake didn't happen even after 5 seconds. Seems system in bad state, cancelling swaps
+DISPLAY: unimplemented legacy slot 345 (...), returning
+panic(cpu 0 caller 0xfffffff00c00b2d0): Kernel data abort.
+  at pc 0xfffffff00be80944 (OSMetaClass::~OSMetaClass + 0x1c)
+  lr 0xfffffff00bfe4684 (NativeLegacyDisplay::MetaClass::~MetaClass), far 0x0
+```
+
+The two capture windows show the same shape: no SpringBoard trap at all before the panic (the crash takes the
+machine down first), only `watchdogd+0xab0c` and `SessionSyncEngine+0x1d4f8`.
+
+So the display is real and the compositor uses it - `AFB` asks for the default framebuffer surface, `IOMFB`
+waits for a command that never comes and cancels the swap - but because the backend never supplies that surface,
+the family ends up tearing down a null object.  The wall is exactly the one from the previous section:
+
+* the component's `NATIVE_LEGACY_DEFAULT_SURFACE` branch calls `installDefaultSurface(width, height)`, which no
+  source in the tree implements;
+* the device records of the 26-series boards describe the required body: create a BGRA surface through the
+  original IOSurfaceRoot factory, check allocation and geometry, transfer the reference into the family's
+  default-surface field;
+* the kernel's `IOSurface` class is not exposed as headers in the target SDK, so the board has to reach it the
+  same way the display family does - through the original bindings - and the family's own
+  `create_default_fb_surface` (`startHardware` calls it as a void slot) is the reference for what to build.
+
+Until that body exists, the choices are: keep the display published and accept the panic roughly two minutes in
+(useful, because the panel proves the stack is using the service), or revert to the pre-publication image, which
+does not panic but leaves SpringBoard crash-looping on the missing CADisplay.
