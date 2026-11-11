@@ -12,6 +12,7 @@
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSDictionary.h>
 #include <libkern/c++/OSString.h>
+#include <libkern/c++/OSSerialize.h>
 #include <libkern/c++/OSMetaClass.h>
 #include <libkern/c++/OSKext.h>
 #include <kern/task.h>
@@ -183,6 +184,49 @@ create_surface(uint32_t width, uint32_t height, uint32_t stride)
 		printf("DISPLAY: create_surface class=%s size=0x%x\n", out->getMetaClass()->getClassName(),
 		    (unsigned)out->getMetaClass()->getClassSize());
 	}
+	IOUserClient *client = OSDynamicCast(IOUserClient, out);
+	if (client) {
+		/* Selector 0 creates a surface: scalarInput carries the parent id, structureInput the
+		 * serialized property dictionary, structureOutput the lock result (0xa68 bytes) that tells
+		 * the caller where the pixels and the shared state page are. */
+		/* Hand-written XML plist: the user client unserializes either XML or binary. */
+		char blob[768];
+		int blob_len = snprintf(blob, sizeof(blob),
+		    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+		    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
+		    "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+		    "<plist version=\"1.0\"><dict>"
+		    "<key>IOSurfaceWidth</key><integer>%u</integer>"
+		    "<key>IOSurfaceHeight</key><integer>%u</integer>"
+		    "<key>IOSurfaceBytesPerRow</key><integer>%u</integer>"
+		    "<key>IOSurfacePixelFormat</key><integer>%u</integer>"
+		    "<key>IOSurfaceAllocSize</key><integer>%u</integer>"
+		    "</dict></plist>",
+		    width, height, stride, pixel_format, alloc);
+		bool serialized = blob_len > 0 && blob_len < (int)sizeof(blob);
+		uint64_t parent_id = 0;
+		uint8_t lock_result[0xa68] = {};
+		IOExternalMethodArguments args = {};
+		args.selector = 0;
+		args.scalarInput = &parent_id;
+		args.scalarInputCount = 1;
+		args.structureInput = serialized ? blob : nullptr;
+		args.structureInputSize = serialized ? (uint32_t)blob_len : 0;
+		args.structureOutput = lock_result;
+		args.structureOutputSize = sizeof(lock_result);
+		IOUserClient2022 *client2022 = (IOUserClient2022 *)client;
+		IOReturn rc = client2022->externalMethod(0, (IOExternalMethodArgumentsOpaque *)&args);
+		uint32_t *words = (uint32_t *)lock_result;
+		printf("DISPLAY: create sel0 rc=0x%x serialized=%d len=%u out=%08x %08x %08x %08x %08x %08x\n",
+		    (unsigned)rc, serialized ? 1 : 0, (unsigned)blob_len,
+		    words[0], words[1], words[2], words[3], words[4], words[5]);
+		if (rc == kIOReturnSuccess) {
+			for (unsigned i = 0; i < 16; i++) {
+				printf("DISPLAY:   lock[%02u]=0x%llx\n", i, (unsigned long long)((uint64_t *)lock_result)[i]);
+			}
+		}
+
+	}
 	return out;
 }
 
@@ -263,6 +307,14 @@ publish_display(void)
 		printf("DISPLAY: display attach=%d start=%d\n", dispAttached, dispStarted);
 		if (dispStarted) {
 			scan_display_fields(display);
+			/* Try the surface path here as well: the family's own error arrives about two minutes in
+			 * and the boot may not reach slot 345, so exercise the factory while the display is up. */
+			static bool surface_tried;
+			if (!surface_tried) {
+				surface_tried = true;
+				create_surface((uint32_t)video.v_width, (uint32_t)video.v_height,
+				    (uint32_t)video.v_rowBytes);
+			}
 		}
 	}
 	if (memory) memory->release();

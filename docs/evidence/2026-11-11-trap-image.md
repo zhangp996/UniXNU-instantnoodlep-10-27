@@ -1503,3 +1503,41 @@ sel 0 create: scalar [parent id], struct in = serialized property dictionary, st
 so the probe now calls selector 0 with one scalar (parent id 0), a hand-written XML plist
 (`IOSurfaceWidth/Height/BytesPerRow/PixelFormat/AllocSize`) as the structure input, and a 0xa68-byte lock-result
 buffer as the structure output, then logs the first words of the result.
+
+## 05:00: selector 0 answers BadArgument even with the documented layout
+
+```
+DISPLAY: create_surface 1080x480 stride 4320 via vt[141]=0xfffffff004baa11c task=...
+DISPLAY: create_surface result=0 out=0xfffffff748328180
+DISPLAY: create_surface class=IOSurfaceRootUserClient size=0x138
+DISPLAY: create sel0 rc=0xe00002c2 serialized=1 len=447 out=00000000 ...
+```
+
+The XML descriptor is accepted as a structure input (447 bytes), the 2022 virtual dispatch runs, and the answer is
+still `kIOReturnBadArgument`.  The sibling's selector table was recorded against iOS 16.7 (XNU 8796.141.3,
+iPhone10,3 20H392); this board's client comes from iPadOS 17.7.11 (21H461), so its dispatch counts and order differ.
+The next measurement is a small argument matrix on selector 0 (0..3 scalars, with and without structure in/out),
+which is safe because a mismatched count answers BadArgument rather than crashing.
+
+### Where the work stands after this session
+
+Verified on hardware today:
+
+1. the display family loads through the documented `offline-mobile-graphics-load` flow (no hand-rolled load);
+2. the owned class registers with the original identity (base 0x18a0, full ancestry);
+3. the display publishes over the firmware framebuffer on an `AppleARMIODevice` nub, attaches to `/arm-io` and
+   starts; the userland client maps it (`s_map_display_type`, `IOMFB: driver commit`);
+4. the family's default-surface lookup is traced to `this + 0xD8` -> slot 174;
+5. `IOSurfaceRoot` is audited: class 0x4a0, vtable 0xfffffff005d3b2b8, nine own slots, slot 141 =
+   `createUserClient(task, dictionary, flag, &client)`, returning `IOSurfaceRootUserClient` (0x138);
+6. a 2022 user client must be driven through the two-argument virtual `externalMethod(selector, opaque)`; the
+   five-argument one panics by design;
+7. the remaining failure is exactly the missing default surface, and the panic two minutes in is its consequence.
+
+Open, in order of cost:
+
+* the selector/argument matrix on the original client (one boot, bounded);
+* or the sibling architecture: a built-in `KebabSurface`-style service replacing Apple's closed IOSurface (its
+  sources are kept in `docs/evidence/reference/`), which requires deciding whether the closed
+  `IOMobileGraphicsFamily` stays;
+* the storage side of the same boot: `vm_swap_create_file failed` and the one-off "disk3s1 is not readable".
