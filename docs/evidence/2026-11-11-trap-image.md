@@ -3381,3 +3381,30 @@ So one of the two additions this round disturbs the family's start path:
 Both are isolatable with boot arguments on the next boot (`accel_stub=0` disables the stub; the presenter init can be
 gated the same way).  The finding that matters is that the start failure appeared exactly when these two were added,
 so the display's start path is sensitive to what is published before it.
+
+## 20:30: comparison with UniXNU/UniXNU (the framework) - is the framework the problem?
+
+Comparing this checkout against a fresh clone of `UniXNU/UniXNU`:
+
+| area | upstream | local | verdict |
+| --- | --- | --- | --- |
+| `patches/xnu` (this XNU version's series) | - | - | **identical** - the kernel patch set is not stale |
+| `patches/xnu-12377` | 5 patches we lack | 5 differ | iPadOS 27 only; irrelevant to 17.7.11 |
+| `patches/mesa` | 4 newer turnip patches | older | GPU/turnip only; this board has no GPU stack |
+| `scripts/` | 368 files | 385 files, 27 differ | local carries 24 device-specific additions (owner policy, storage bindings, SoC headers); misses 7 upstream files |
+
+The seven upstream scripts this checkout lacks:
+
+* `absent-service/` (absentd.c + build.py),
+* **`macho-self-bind-weak-imports.py`** - the proper tool for binding weak imports, i.e. exactly the problem that
+  this session hacked around with a probe-side symbol alias,
+* `data/ioaccelerator-base-abi-26C5035r.json` - an IOAccelerator ABI for 26C5035r (not this OS),
+* `macos-boot-shims/apfs_boot_util.c`, `make-macos-data-seed.py` - macOS paths.
+
+`scripts/build-arm-driver.py` differs because this checkout carries board-specific additions (SoC include path, the
+verified-root split, NativeUfs bindings) - not because it is stale.
+
+**Conclusion**: for this board's iPadOS 17.7.11 kernel the framework is in sync where it matters (`patches/xnu`
+identical), and the differences are device-local additions plus iOS 26/27 and GPU material.  The framework is not
+what keeps SpringBoard in its loop; the missing pieces are the device-side services discussed earlier (a real GPU
+backend and the userland-facing services SpringBoard expects).
