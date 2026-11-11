@@ -2246,3 +2246,39 @@ Session state:
 
 Images on disk for the next run: `bootEU.img` (newest, slot-312 attempt) and `kernel_small.bin.old` (the previous
 firmware, for a quick revert).
+
+## 01:05: what the official documentation says, and why slot 312 cannot be driven from outside
+
+**The documentation does cover this**, in `docs/porting/display.md`:
+
+> 4. Check swap completion and IOSurface lifetime before enabling GPU presentation
+> ... In GPU handoff, track the pending frame by `NGPSwap.sequence` and return `NGPComplete` with that sequence
+> after copying. Retain the source frame and IOSurface until the swap completes, and complete the corresponding
+> error path on timeout or failure.
+> **Expected result:** XNU publishes the display, presents frames and completes swaps.
+
+and it states the reference's own limit plainly:
+
+> A captured 300-second boot completed three swaps without a kernel panic and displayed the Apple logo.
+> Home-screen startup remains unverified; capture the display-server and SpringBoard wait chains before treating a
+> stationary logo as a framebuffer transfer failure.
+
+So the contract (retain until completion, complete by sequence, handle timeout) is documented; the mechanism inside
+the original family is not, which is why the uke and kebab ports each complete swaps in their own display component.
+
+**Two experiments on the completion path this round:**
+
+* calling `completeCurrentSwap` (slot 312) inline from the swap-validation hook executes but does not wake the
+  waiting client - the wait is armed after the hook returns, so it misses the completion;
+* calling it from a kernel thread 30 ms later also executes (`DISPLAY: delayed completion via slot 312`) and the
+  `swap_wait_gated` timeout disappears - but the call then faults inside the family
+  (`pc=0xfffffff00579d2f8, lr=0xfffffff00579cf6c`, i.e. `completeCurrentSwap` calling into slot 313's code) because it
+  runs outside the work loop with stale argument registers.
+
+Conclusion: the completion has to happen **inside the family's own swap context**, which means either driving the
+command gate at `fb+0x1608` with a proper request, or taking over `SwapEnd`/`SwapWait` in the component the way
+uke does.
+
+The component is rebuildable: `tree/build/native-legacy-display/compile-command.json` holds the full clang-24
+command line that produced `NativeLegacyDisplay.o`, so a component change can be compiled and re-archived without
+the device builder script.
