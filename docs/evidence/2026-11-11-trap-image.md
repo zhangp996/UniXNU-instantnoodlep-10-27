@@ -1859,3 +1859,29 @@ surface's own fields at `+0x60/+0x64/+0x68/+0x80/+0x90` plus its descriptor and 
 (`instantnoodlep-artifacts/bootEU.img`, sha
 `6c7da76279acf5aec88b9e904dedb386741739e4b9b86cf53f664b289a893303`) and will show whether the adopted temporary
 surface is laid out the way those accessors expect.
+
+## 08:15: the compositor's surface geometry, measured
+
+The GOP-copy build printed the surface's real numbers at the first accepted swap:
+
+```
+DISPLAY: swap accepted=1 reason=0 request=... surface=0xfffffff362938bf0 req_surfaces=...,0,0,0
+DISPLAY: surface geom 480x0 stride=4352 fmt=42475241 alloc=2088960 desc=0xfffffff362487268 region=0
+DISPLAY: present surface=... 480x0 stride=4352 fmt=42475241 alloc=2088960 console=0 base=0x9c000001 1080x480 rb=4320
+DISPLAY: transfer rc=0xe00002d8 ... bytes=0
+```
+
+Reading it correctly:
+
+* `alloc = 2088960 = 4352 * 480`, `stride = 4352 = 1088 * 4`, `fmt = 0x42475241` ('BGRA'), so the compositor's
+  surface really is **1088x480 BGRA**;
+* the words this probe read at `+0x60`/`+0x64` are **height (480) then 0**, not width/height - so the width lives
+  elsewhere (or only in the stride) and the component, which uses the bound original accessors, likewise ends up
+  with a zero dimension and therefore copies nothing (`bytes=0`, `kIOReturnCannotWire`).
+
+The probe now derives the width from the stride (`stride / 4`), logs the eight words at `+0x50..+0x6c`, and copies
+`min(height, console height)` rows of `min(stride, rowBytes)` bytes into the GOP framebuffer.  Next boot will either
+put the compositor's frame on the panel or name the exact width field.
+
+Image: `instantnoodlep-artifacts/bootEU.img`, sha
+`0af6c29b09851ecabb3fd5d6547a98cbf07b7e54fddc9e39342cf43083198a42`.

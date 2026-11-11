@@ -449,6 +449,79 @@ extern "C" void native_legacy_swap_stage(unsigned stage)
 		printf("DISPLAY: swap stage %u\n", stage);
 	}
 }
+/* Present one surface on the firmware framebuffer: map the surface's pixel descriptor and copy the rows
+ * into the GOP memory, the way the sibling port does on the compositor's own thread. */
+static void
+present_surface(void *surface)
+{
+	static unsigned presents;
+	if (!surface) {
+		return;
+	}
+	uint32_t width = 0, height = 0, stride = 0, format = 0;
+	uint64_t allocation = 0;
+	void *descriptor = nullptr;
+	/* Measured layout: +0x60 holds the height (480 for this panel's compositor surface), +0x68 the
+	 * stride (4352 = 1088 * 4) and +0x90 the allocation (4352 * 480).  The width is derived from the
+	 * stride; the words around the block are logged so the exact field can be pinned next time. */
+	uint32_t words[8] = {};
+	for (unsigned i = 0; i < 8; i++) {
+		memcpy(&words[i], (unsigned char *)surface + 0x50 + 4 * i, 4);
+	}
+	memcpy(&height, (unsigned char *)surface + 0x60, 4);
+	memcpy(&stride, (unsigned char *)surface + 0x68, 4);
+	printf("DISPLAY: surface words +50 %08x %08x %08x %08x %08x %08x %08x %08x\n",
+	    words[0], words[1], words[2], words[3], words[4], words[5], words[6], words[7]);
+	if (stride >= 4) {
+		width = stride / 4;
+	}
+	memcpy(&format, (unsigned char *)surface + 0x80, 4);
+	memcpy(&allocation, (unsigned char *)surface + 0x90, 8);
+	memcpy(&descriptor, (unsigned char *)surface + 0x30, 8);
+	PE_Video video = {};
+	IOReturn console_rc = PE_current_console(&video);
+	printf("DISPLAY: present surface=%p %ux%u stride=%u fmt=%08x alloc=%llu desc=%p console=%d base=0x%llx %lux%lu rb=%lu\n",
+	    surface, width, height, stride, format, (unsigned long long)allocation, descriptor,
+	    (int)console_rc, (unsigned long long)video.v_baseAddr, (unsigned long)video.v_width,
+	    (unsigned long)video.v_height, (unsigned long)video.v_rowBytes);
+	if (console_rc || !video.v_baseAddr || !width || !height || !stride || !descriptor) {
+		return;
+	}
+	IOMemoryDescriptor *source = (IOMemoryDescriptor *)descriptor;
+	IOMemoryMap *source_map = source->map(kIOMapDefaultCache | kIOMapAnywhere);
+	if (!source_map) {
+		printf("DISPLAY: present: surface map failed\n");
+		return;
+	}
+	uint64_t fb_phys = (uint64_t)video.v_baseAddr & ~0xFFFULL;
+	uint64_t fb_off = (uint64_t)video.v_baseAddr - fb_phys;
+	IOByteCount fb_bytes = (IOByteCount)(fb_off + (uint64_t)video.v_rowBytes * video.v_height);
+	IOMemoryDescriptor *fb_desc = IOMemoryDescriptor::withPhysicalAddress((IOPhysicalAddress)fb_phys,
+	    fb_bytes, kIODirectionOutIn);
+	IOMemoryMap *fb_map = fb_desc ? fb_desc->map(kIOMapDefaultCache | kIOMapAnywhere) : nullptr;
+	if (!fb_map) {
+		printf("DISPLAY: present: framebuffer map failed\n");
+		source_map->release();
+		if (fb_desc) {
+			fb_desc->release();
+		}
+		return;
+	}
+	unsigned char *src = (unsigned char *)source_map->getVirtualAddress();
+	unsigned char *dst = (unsigned char *)fb_map->getVirtualAddress() + fb_off;
+	uint32_t rows = height < video.v_height ? height : (uint32_t)video.v_height;
+	uint32_t cols = stride < video.v_rowBytes ? stride : (uint32_t)video.v_rowBytes;
+	for (uint32_t row = 0; row < rows; row++) {
+		memcpy(dst + (uint64_t)row * video.v_rowBytes, src + (uint64_t)row * stride, cols);
+	}
+	if (presents++ < 3) {
+		printf("DISPLAY: present copied %u rows x %u bytes (frame %u)\n", rows, cols, presents);
+	}
+	fb_map->release();
+	fb_desc->release();
+	source_map->release();
+}
+
 extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned reason, const void *request,
     const void *surface)
 {
@@ -477,6 +550,9 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 		    (unsigned long long)surfaces[2], (unsigned long long)surfaces[3]);
 		printf("DISPLAY: surface geom %ux%u stride=%u fmt=%08x alloc=%llu desc=%p region=%p\n",
 		    sw, sh, sstride, sfmt, (unsigned long long)salloc, sdesc, sregion);
+		if (accepted && surface) {
+			present_surface((void *)surface);
+		}
 	}
 }
 
