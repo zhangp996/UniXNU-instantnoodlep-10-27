@@ -94,6 +94,7 @@ while idx < len(bsd['arguments']):
 probe_command += ['-Wno-error', '-I', str(ROOT / '.cache/xnu-work/osfmk')]
 subprocess.run(probe_command, cwd=bsd['directory'], check=True, timeout=300)
 
+
 archive = OUT / 'libBootProgress.a'
 archive.unlink(missing_ok=True)
 subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj), str(probe_obj)], check=True, timeout=30)

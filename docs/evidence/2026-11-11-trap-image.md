@@ -2977,3 +2977,25 @@ The boot confirms the old window is back:
 so the kernel draws in the top 480 rows again and the hand-off page (Apple logo plus the loader text) covers the
 panel as it did before this session's firmware work.  The kernel still carries this session's diagnostics (slot 345
 fix, crash-report probe, corpse cap 64, lw_corpses=0, sheng-crashlog=1); none of them change what the screen shows.
+
+## 10:55: ui-trace port attempt - sources compile, build integration still open
+
+Firmware switched back to the full-panel one (kernel_small.bin = kernel_small.fullpanel, sha 44007625...), image
+rebuilt as bootEU.img 0aa8600d...
+
+Porting sheng's userland stack capture (Enlixk/UniXNU-sheng) reached a clear point:
+
+* the sources are copied into package/: BootProcessProbe.c, BootProcessWorker.c, BootUiTraceProbe.c,
+  BootLatencyTrace.c and the headers BootUiTraceCore.h, BootUiTraceDetails.h, BootSpringBoardProfile.h,
+  BootLatencyTrace.h, BootLatencyStore.h;
+* **all three probes compile cleanly with the osfmk record** (startup.o.json), because they are Mach-side code
+  (task/thread/pmap).  The BSD record fails as expected;
+* the build step still fails on a header the compiler cannot see when the sources are compiled from the assembled
+  kit directory (BootLatencyTrace.c needs BootLatencyStore.h from the same directory), so the include path for the kit
+  directory must be added for these objects - the standalone compile with `-I package` worked, the build script's
+  command must carry the same include;
+* wiring was reverted so the kernel builds again (exit 0): the crash-report probe stays linked, the ui-trace call is
+  removed until its objects are in the archive.
+
+Next: add `-I <kit dir>` to the trace compile command in scripts/build-boot-progress.py, add the four objects to
+libBootProgress.a, call `boot_process_start()` from boot_progress_init(), and boot with `sheng-log=1 boot-ui-trace=1`.
