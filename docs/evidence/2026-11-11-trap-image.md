@@ -2191,3 +2191,32 @@ So the kernel console, the display geometry and the adopted default surface are 
 
 Image: `instantnoodlep-artifacts/bootEU.img`, sha
 `881755292e6845c57bb319c7452d16375abfacc9918ca3b6de0a143ed3e83ea4`.
+
+## 00:35: full panel down to the copy - 2376 rows written to the frame buffer
+
+The same boot that reports `1080x2376` for the console also carries the display stack to full size:
+
+```
+DISPLAY: swap accepted=1 reason=0 request=... surface=0xfffffff62fd18120 req_surfaces=...,0,0,0
+DISPLAY: surface geom 2376x0 stride=4352 fmt=42475241 alloc=10342400 desc=...
+DISPLAY: surface words +50 163ef840 fffffff7 00000438 00000000 00000948 00000000 00001100 00000000
+DISPLAY: present surface=... 1080x2376 stride=4352 fmt=42475241 alloc=10342400
+DISPLAY: present copied 2376 rows x 4320 bytes (frame 1)
+```
+
+* the surface words are now `+0x58 = 0x438 (1080)`, `+0x60 = 0x948 (2376)`, `+0x68 = 0x1100 (4352)`, i.e. the
+  layout the earlier scan had guessed, confirmed at panel size;
+* `alloc = 10342400 = 4352 * 2376`;
+* and the probe's copy writes **2376 rows of 4320 bytes** - the whole panel - on the first compositor swap.
+
+So the path is complete end to end: firmware hands the panel over, the kernel console and the display both run at
+1080x2376, the compositor renders a full-size surface, and this board's CPU copy fills the panel with it.
+
+What is left is not geometry:
+
+1. the component's own transfer still fails (`rc=0xe00002d8` kIOReturnCannotWire with `bytes=0`), so the family's
+   `swap_wait_gated` never sees its CommandWake and abandons the swap after five seconds;
+2. that abandonment reaches abstract slot 345, and a moment later the familiar
+   `OSMetaClass::~OSMetaClass` data abort follows.
+
+Fixing the completion (or making the component's copy see the geometry) should remove both.
