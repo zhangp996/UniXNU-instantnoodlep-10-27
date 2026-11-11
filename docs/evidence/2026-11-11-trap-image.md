@@ -498,3 +498,39 @@ console: instantnoodlep-artifacts/console-bootEW.log (453 lines, same three trap
 The defconfig switch and the eight `offline-legacy-*` arguments are reverted after the run so a clean
 checkout still builds; the tree keeps the generated header, objects, archive and report.  Re-enabling is:
 audit -> builder -> board probe compile -> archive -> `unixnu defconfig` -> `build kernel`.
+
+## 20:00: the family is prelinked but never registers its classes
+
+The first on-device runs of the probe narrowed the display problem to the original kext's registration:
+
+```
+DISPLAY: probe entered (registered=0)
+DISPLAY: GOP console 0x9c000001 1080x480 depth=32 stride=4320
+DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=0 mobilefb=0
+DISPLAY: bound parent meta=0xfffffff006b35940 raw=0 0 0 0
+DISPLAY: registered family meta=0 name=- size=0x0
+DISPLAY: meta[0] NativeLegacyDisplay size=0x1ae0 super=
+DISPLAY: meta[1]  size=0x0 super=-
+```
+
+* `original-bindings.S` binds `__ZN25IOMobileFramebufferLegacy10gMetaClassE` to `0xfffffff006b35940`,
+  and the kernel really exports that absolute symbol, so the binding is right.
+* The object behind it is **all zeros** at runtime, and `OSMetaClass::getMetaClassWithName("IOMobileFramebufferLegacy")`
+  returns null even from a kernel thread that retries 5 s after `offline-legacy-start` (`DISPLAY: retry after 5 s`
+  runs before the same zeros), so this is not an ordering race with IOKit.
+* The prelink report shows the family is completely included: it appears in `components` (30), in
+  `codeless_components` (none), in `module_entrypoints` with kmod_info/start/stop addresses, and its four
+  extents (`__TEXT` 0xfffffff0045f5780+0x9708, `__TEXT_EXEC` 0xfffffff00576c000+0x36f74, `__DATA_CONST`
+  0xfffffff005f33840+0x63c0, `__DATA` 0xfffffff006b2e6c0+0x1f2c8) cover the metaclass address
+  `0xfffffff006b35940`.
+
+So the image carries the family's code and data, but the kext's classes are never registered, which means XNU
+does not load that prelinked kext - the metaclass is filled by its static initialiser at load time and stays
+zero otherwise.  The next measurement is the prelink's `__PRELINK_INFO` entry for the family against a
+candidate the reference tooling accepts (`scripts/probe-native-legacy-display.py` loads
+`build/xnu-prelink/native-owner-legacy-display-<profile>-candidate`), i.e. whether `emit_prelink.py` writes the
+`_PrelinkExecutable*` keys XNU needs for this bundle.
+
+The probe itself is now a working instrument: it prints the GOP mode, the allocation, the bound parent
+metaclass, the registered family metaclass and the whole metaclass chain.  Console:
+`docs/evidence/logs/2026-11-11-bootEX-console.log`, `...bootEY...`, `...bootEZ...`.

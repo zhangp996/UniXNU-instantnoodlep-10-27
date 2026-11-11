@@ -17,12 +17,12 @@ extern "C" kmod_info_t g_kernel_kmod_info;
 extern "C" void native_legacy_display_static_init(void) __asm__("__GLOBAL__sub_I_NativeLegacyDisplay.cpp");
 extern "C" IOService *native_legacy_display_allocate(void);
 
-void native_legacy_display_probe(void);
-void native_legacy_display_late_probe(void);
+extern "C" void native_legacy_display_probe(void);
+extern "C" void native_legacy_display_late_probe(void);
 
 /* --- functional entries ------------------------------------------------- */
 
-void
+extern "C" void
 native_legacy_display_probe(void)
 {
 	static bool registered;
@@ -66,14 +66,47 @@ native_legacy_display_probe(void)
 	    (unsigned)display->getMetaClass()->getClassSize(),
 	    display->metaCast("IOMobileFramebufferLegacy") ? 1 : 0,
 	    display->metaCast("IOMobileFramebuffer") ? 1 : 0);
+	{
+		extern char boundParentMeta[] __asm__("__ZN25IOMobileFramebufferLegacy10gMetaClassE");
+		const uint64_t *raw = (const uint64_t *)(void *)boundParentMeta;
+		printf("DISPLAY: bound parent meta=%p raw=%llx %llx %llx %llx\n", (void *)raw,
+		    (unsigned long long)raw[0], (unsigned long long)raw[1],
+		    (unsigned long long)raw[2], (unsigned long long)raw[3]);
+		const OSSymbol *name = OSSymbol::withCString("IOMobileFramebufferLegacy");
+		const OSMetaClass *registered = name ? OSMetaClass::getMetaClassWithName(name) : nullptr;
+		printf("DISPLAY: registered family meta=%p name=%s size=0x%x\n", (void *)registered,
+		    registered ? registered->getClassName() : "-",
+		    registered ? (unsigned)registered->getClassSize() : 0);
+		if (name) name->release();
+	}
+	{
+		const OSMetaClass *mc = display->getMetaClass();
+		for (int depth = 0; mc && depth < 8; ++depth) {
+			printf("DISPLAY: meta[%d] %s size=0x%x super=%s\n", depth,
+			    mc->getClassName(), (unsigned)mc->getClassSize(),
+			    mc->getSuperClass() ? mc->getSuperClass()->getClassName() : "-");
+			mc = mc->getSuperClass();
+		}
+	}
 }
 
-void
+static void
+display_retry(void *, wait_result_t)
+{
+	/* The original family's classes are not registered yet when offline-legacy-start runs at
+	 * bsd_autoconf; retry once the rest of IOKit has settled. */
+	IOSleep(5000);
+	printf("DISPLAY: retry after 5 s\n");
+	native_legacy_display_probe();
+}
+
+extern "C" void
 native_legacy_display_late_probe(void)
 {
-	/* Runs after IOKitBSDInit (offline-legacy-start).  The first step is the same probe; the
-	 * service publication follows once the object is known to be the original class. */
-	native_legacy_display_probe();
+	thread_t thread = nullptr;
+	if (kernel_thread_start(display_retry, nullptr, &thread) == KERN_SUCCESS) {
+		thread_deallocate(thread);
+	}
 }
 
 /* --- diagnostics the component asks for ---------------------------------- */
@@ -93,6 +126,7 @@ extern "C" void native_legacy_transfer_observed(IOReturn, const void *, uint64_t
 extern "C" void native_legacy_copy_timing_observed(uint64_t, uint64_t) {}
 extern "C" void native_legacy_frame_observed(unsigned, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) {}
 extern "C" void native_legacy_frame_colors_observed(const uint32_t *, const uint64_t *, uint64_t) {}
+extern "C" void native_legacy_vsync_observed(unsigned, unsigned) {}
 extern "C" void native_legacy_surface_rejected(uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, uint64_t, uint64_t) {}
 
 /* A slot the owned backend does not implement must not be reached silently. */
