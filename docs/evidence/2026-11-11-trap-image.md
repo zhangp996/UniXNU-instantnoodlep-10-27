@@ -934,3 +934,56 @@ default-surface field.
 So the page is not an answer to the current wall, but it does point at the tidy way to retire one of our probe's
 responsibilities later: declare `display-scale`/`display-rotation` in the entry's `[entry.chosen]` (or in the ADT
 generator) instead of writing them from `native_legacy_gop_mapping_observed`.
+
+## 23:15: the arch patches already carry the load-and-register flow
+
+`offline-component-load-probes.patch` (the second row of the patch reference's owner-root table) contains the
+mobile-graphics machinery this board re-implemented by hand:
+
+```c
+static void native_mobile_graphics_load_probe(void) {
+    int enabled = 0;
+    if (!PE_parse_boot_argn("offline-mobile-graphics-load", &enabled, sizeof(enabled)) || !enabled) return;
+    native_mobile_graphics_load_status = OSKextLoadKextWithIdentifier("com.apple.iokit.IOMobileGraphicsFamily");
+#if defined(XNU_NATIVE_LEGACY_DISPLAY) && XNU_NATIVE_LEGACY_DISPLAY
+    int legacy_register = 0;
+    if (native_mobile_graphics_load_status == 0 &&
+        PE_parse_boot_argn("offline-legacy-register", &legacy_register, ...) && legacy_register) {
+        extern void native_legacy_display_probe(void);
+        native_legacy_display_probe();
+    }
+#endif
+    int client_probe = 0;
+    if (native_mobile_graphics_load_status == 0 &&
+        PE_parse_boot_argn("offline-mobile-graphics-client", &client_probe, ...) && client_probe) {
+        extern void native_mobile_graphics_client_probe(void);
+        native_mobile_graphics_client_probe();
+    }
+}
+```
+
+(it runs from `bsd_init()` right after `vfsinit()`, and the same patch's `IOUserClient.cpp` hunk defines
+`native_mobile_graphics_client_probe()`: it checks that `IOMobileFramebuffer`, `IOMobileFramebufferService` and
+`IOMobileFramebufferLegacy` exist as classes, allocates `IOMobileFramebufferUserClient`, calls `init()` and then
+`externalMethod` with selectors 90, 0x80000000 and ~0, and finally calls `native_legacy_display_probe()` again.)
+
+So the official path is boot arguments, not code:
+
+| argument | effect |
+| --- | --- |
+| `offline-mobile-graphics-load=1` | loads the family at `bsd_init`, after `vfsinit` |
+| `offline-legacy-register=1` (with `XNU_NATIVE_LEGACY_DISPLAY`) | calls the board's `native_legacy_display_probe()` right after the load |
+| `offline-mobile-graphics-client=1` | runs the client probe (user client allocation and the selector-90 call) and calls the board entry again |
+
+There is still nothing about the default surface: no `IOSurface` call, no `create_default_fb_surface`, no field
+transfer anywhere in the patch series.  But this changes two things for us:
+
+1. our probe's hand-rolled `OSKext::loadKextWithIdentifier` and five-second retry thread duplicate
+   `offline-mobile-graphics-load`; the intended flow loads the family and calls the entry **once**, synchronously,
+   after `vfsinit` (i.e. later than `bsd_autoconf`, which is where `offline-legacy-start` runs it now);
+2. the client probe shows the selector the platform uses on the framebuffer user client (90, then 0x80000000, then
+   ~0), which is worth watching when the default-surface path is exercised.
+
+Boot arguments for the next run therefore become:
+`offline-mobile-graphics-load=1 offline-legacy-register=1 offline-legacy-gop=1 offline-legacy-unit-scale=2
+offline-legacy-phase=4` (the rest of the display set unchanged).
