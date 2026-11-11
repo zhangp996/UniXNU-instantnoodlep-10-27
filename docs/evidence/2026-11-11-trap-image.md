@@ -458,3 +458,43 @@ class; the diagnostics are no-ops; `native_legacy_backend_guard` panics with the
 returning; the GPU trace and Adreno fence hooks report "no GPU".  It compiles with the kernel's own recorded
 command line (197,024 bytes) and joins the late archive, which is now 605,832 bytes
 (sha256 `c1632378...`).
+
+## 19:50: the display pipeline links, boots and runs on the phone
+
+With the board probe in the archive the kernel links (previous attempt stopped on twenty undefined
+symbols, then on three: the two entries needed C linkage and `native_legacy_vsync_observed` was missing).
+`bootEU.img` `04c4377c...` (payload `8f79cb36...`) boots and prints:
+
+```
+DISPLAY: probe entered (registered=0)
+DISPLAY: GOP console 0x9c000001 1080x480 depth=32 stride=4320
+DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=0 mobilefb=0
+```
+
+What that says:
+
+* The entry the `offline-legacy-start` patch calls after `IOKitBSDInit` really runs, and the metaclass
+  registration (`preModLoad` -> static init -> `postModLoad`) returns zero.
+* `PE_current_console` hands over the port's 480-row window (1080x480, stride 4320, base with the tag
+  bit set) rather than the full 1440x3168 panel - the same 2 MiB hand-off the boot chain has used since
+  2026-11-10.  The reference's QEMU fixture sees 800x600.
+* `native_legacy_display_allocate()` returns an object, but it is **not** the original class:
+  `metaCast("IOMobileFramebufferLegacy")` and `metaCast("IOMobileFramebuffer")` both return zero and its
+  metaclass size is 0x1ae0, where the reference records 0x18a0 with `parent_match` 1.  Nothing is
+  published, so the userland side is unchanged: `watchdogd`, `liveactivitiesd` and `SpringBoard` trap at
+  exactly the same addresses as before this change.
+
+So the link and the boot-thread entry are proven; the open problem is now concrete: give the owned class
+the original IOMobileFramebuffer identity (the parent metaclass from the prelinked
+`com.apple.iokit.IOMobileGraphicsFamily`) and publish the service.
+
+```
+kernel: linked with XNU_NATIVE_LEGACY_DISPLAY=1, late archive 605,832 bytes sha256 c1632378...
+kernel.macho differs from the 4f0dea31 build (the archive is force-loaded)
+payload 8f79cb36..., bootEU.img 04c4377c..., 183,005,184 bytes
+console: instantnoodlep-artifacts/console-bootEW.log (453 lines, same three traps as before)
+```
+
+The defconfig switch and the eight `offline-legacy-*` arguments are reverted after the run so a clean
+checkout still builds; the tree keeps the generated header, objects, archive and report.  Re-enabling is:
+audit -> builder -> board probe compile -> archive -> `unixnu defconfig` -> `build kernel`.
