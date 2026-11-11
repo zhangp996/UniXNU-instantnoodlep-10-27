@@ -1314,3 +1314,33 @@ Two possibilities remain, and they are cheap to tell apart on the next boot:
 
 Either way the missing piece is unchanged: an IOSurface must be created (now via the `IOSurfaceRootUserClient`
 whose factory slot is verified) and installed where slot 174 can find it.
+
+## 03:05: the prelink page's binding report is the documented vtable map
+
+`/zh/concepts/prelink` does not describe the display surface, but it documents the two facts this work has been
+standing on and one tool we had been reproducing by hand:
+
+* "范围保留原始虚拟地址，slide 后原始代码中的指针仍然有效" - why absolute bindings into an original component keep
+  working;
+* "输出保留原始组件代码不变" - the original class layout and vtable are the ones in the kernelcache;
+* the report next to `kernel.macho` carries `bindings` ("导入位置和 slide 后的目标"), `components`,
+  `instruction_inventory` and `module_entrypoints`.
+
+The report is machine-readable: this build has 69,294 bindings.  Filtering the ones whose site falls inside the
+`IOSurfaceRoot` vtable (`0xfffffff005d3b2b8`) returns all 168 slots with their targets, and filtering those whose
+target lands in IOSurface.kext's own `__TEXT` returns exactly the nine methods of the class:
+
+```
+slot   0 -> 0xfffffff004ba8c64     slot  21 -> 0xfffffff004ba8ea8
+slot   1 -> 0xfffffff004ba8d68     slot  85 -> 0xfffffff004ba90ac
+slot   7 -> 0xfffffff004ba8dac     slot  86 -> 0xfffffff004ba90bc
+slot  14 -> 0xfffffff004ba8fe8     slot  87 -> 0xfffffff004ba9e20
+                                   slot 141 -> 0xfffffff004baa11c
+```
+
+which is the same set the disassembly scan produced, including the factory slot 141 this board has already called
+successfully.  So the documented route to a class's vtable map is the prelink report, not a byte scan.
+
+What the page (and the rest of the documentation) still does not contain: the meaning of each slot, the argument
+structures, the family's `+0xD8` field, and the fact that slot 141 is `createUserClient(task, dictionary, flag,
+&client)`.  Those belong to the board's own record, which is where they are now.
