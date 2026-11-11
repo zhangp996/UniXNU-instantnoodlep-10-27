@@ -96,6 +96,7 @@ unique_chip_id = "required"
 # The whole-device-tree tables ([adt] below) are what the ADT generator turns
 # into root nodes; [payload.adt] only carries the handoff scalars above.
 [adt.chosen.u32]
+"amfi-only-platform-code" = 0   # bring-up: let the cryptex binaries run
 embedded-panic-log-size = "0x80000"
 
 [adt.pram.u64s]

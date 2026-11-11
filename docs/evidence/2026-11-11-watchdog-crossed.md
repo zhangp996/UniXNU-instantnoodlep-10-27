@@ -887,3 +887,33 @@ Next, in order:
    log can answer once the exec path is printed;
 2. give AMFI a trust cache that covers the cryptex binaries, as the docs require for kexts;
 3. or, for bring-up, relax the platform-only policy and see whether the storm stops.
+
+
+## 17:00: turning off the platform-only policy ends the SIGKILL storm
+
+The device repo now overrides the OS profile's ADT value:
+
+```toml
+[adt.chosen.u32]
+"amfi-only-platform-code" = 0   # bring-up: let the cryptex binaries run
+```
+
+On hardware this is decisive:
+
+```
+before:  amfid, keybagd, securityd, ptpd, timed, logd_helper, biomesharer, containermanager ...
+         SIGKILLed, cs=0x1 (not platform)
+after:   the same jobs exit 0, cs=0x22002301 (platform), no SIGKILL at all
+```
+
+A later window on the new image shows ten clean exits, five SIGTRAPs (SpringBoard and
+liveactivitiesd) and no kills, plus jobs that only appear when the system gets further:
+`com.apple.datami`, `mtmergeprops`, `DumpPanic`.
+
+So the services were never broken: under `amfi-only-platform-code = 1` the cryptex binaries were
+not platform code, and whatever enforces that policy cleared them.  With the policy relaxed the same
+binaries carry the platform flags and run.
+
+That leaves two things to finish: the SpringBoard/liveactivitiesd SIGTRAP, and - for a release-quality
+image - a trust cache that covers the cryptex binaries so the platform-only policy can be turned back
+on.
