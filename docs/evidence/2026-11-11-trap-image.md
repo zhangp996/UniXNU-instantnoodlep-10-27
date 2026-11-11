@@ -1644,3 +1644,15 @@ compositor's own thread.  That is how they got the system UI on the panel for th
 So the remaining work on this board is the same shape: accept that the original layer loop will not see the full
 frame, capture the id from the record, resolve it through the original lookup, and copy to the framebuffer - while
 finding what tears the class down when the display has no presentation to complete.
+
+## 06:15: the surface accessors the component already asks for
+
+The display component calls `native_legacy_surface_{descriptor,width,height,stride,allocation,format,planes}`
+when it handles a swap's surface, and `native_legacy_swap_validation_observed(accepted, reason, request, surface)`
+on every validation.  Both were stubs on this board, so even a surface that reached the component could not be
+read.  The probe now implements the accessors on the original IOSurface layout from uke's audit (descriptor
++0x30, width +0x60, height +0x64, stride +0x68, format +0x80, allocation +0x90, one plane) and logs the first six
+validations together with the request's four surface pointers at +2624.
+
+This is also the half of own-present that needs no new binding: the component's copy path can only work once these
+accessors answer, and the validation log tells which layers the compositor actually submits.
