@@ -3117,3 +3117,33 @@ sheng's other display arguments this board lacks: `sheng-fb-gpu=1`, `sheng-fb-bg
 `sheng-backlight=1`, `sheng-disable-watchdogd=1`.
 
 Image with `sheng-vsync=120 sheng-vsync-fixed=1` added: bootEU.img 262d376c..., waiting for the device.
+## 13:40: careful comparison of the two upstream repositories
+
+**They are different kinds of repository, so the direct diff is framework versus device:**
+
+* `UniXNU/UniXNU` is the framework: `build/`, `profiles/`, `components.toml`, `devices.toml`, shared `drivers/`,
+  `kits/`, `patches/` (59 xnu patches in this checkout) and `docs/`;
+* `UniXNU/UniXNU-sheng` is a **device repository** (`board.toml`, `configs`, `dts`, `package`, `patches`, `hal`),
+  i.e. the sibling of `UniXNU-instantnoodlep`, not of the framework.
+
+**Device-repository comparison that matters for this wall:**
+
+| item | sheng | instantnoodlep (ours) |
+| --- | --- | --- |
+| package files | 167 | 55 |
+| display sources | LegacyDisplayProbe.cpp, BootProgressDisplay.h, DisplayTimingProbe.cpp, MobileDisplayProviderProbe.cpp, DisplayEnvironmentDiagnostic.cpp, OfflineGOP{Composition,Presentation,Resources}.mm, OriginalRenderBoxPresentation.mm | LegacyDisplayProbe.cpp, BootProgressDisplay.h |
+| display kernel args | the same offline-legacy-* set, **plus sheng-vsync=120 sheng-vsync-fixed=1, sheng-dpu-scanout=2, sheng-backlight=1, sheng-fb-gpu=1, sheng-fb-bgra=1, sheng-disable-watchdogd=1** | offline-legacy-* only (sheng-vsync added today) |
+| hardware stack | Adreno740 GPU driver, DPU timing probe, GMU/SMMU components | no GPU driver, no DPU driver |
+
+**The .mm files are not the difference.**  Each one carries `int main()` and its header states the scope:
+`OriginalRenderBoxPresentation.mm` says 'Actual original RenderBox -> GPU format composition -> original display swaps.
+Explicit offline qualification only; **no substitute system desktop**', and MobileDisplayProviderProbe.cpp says 'This
+does not publish a display, render, or replace a system display list'.  They are offline qualification harnesses.
+
+So sheng's **kernel** display path is the same architecture as this board's: LegacyDisplayProbe.cpp with
+offline-legacy-* arguments.  What they have that this board does not is the **refresh tick argument** (added here
+today), a working GPU + DPU scanout stack on their SoC, backlight/power knobs, and their userland watchdog work.
+
+Implication: on SM8250 the only presentation available is still the CPU copy this port already does at 1080x2376; the
+missing link to SpringBoard is the refresh/complete protocol the display exposes to the system, which is what
+\`sheng-vsync\` and the swap path control.
