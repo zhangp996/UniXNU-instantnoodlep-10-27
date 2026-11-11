@@ -831,3 +831,32 @@ so the killer is the job manager: launchd itself or watchdogd's service monitori
 Next: log launchd's own reason.  The console already carries `com.apple.xpc.launchd` notices, so the
 cheapest next step is to raise launchd's log level (boot argument) and read the same console during a
 kill, looking for the job state that triggers the termination.
+
+
+## 16:40: a system-wide SIGKILL storm, and the killed services are not platform binaries
+
+A longer late capture shows far more than the first seven services:
+
+```
+XNU-EXIT: usermanagerd     pid=88  code=9 cs=0x1
+XNU-EXIT: securityd        pid=106 code=9 cs=0x1
+XNU-EXIT: DumpPanic        pid=48  code=9 cs=0x1
+XNU-EXIT: logd_helper      pid=89  code=9 cs=0x1
+XNU-EXIT: biomesyncd       pid=100 code=9 cs=0x1
+XNU-EXIT: ptpd             pid=69  code=9 cs=0x1
+XNU-EXIT: bluetoothd       pid=81  code=9 cs=0x1
+XNU-EXIT: timed            pid=59  code=9 cs=0x1
+XNU-EXIT: driverkitd       pid=66  code=9 cs=0x1
+XNU-EXIT: mediaserverd     pid=29  code=9 cs=0x1
+XNU-EXIT: containermanager pid=64  code=9 cs=0x1
+XNU-EXIT: SpringBoard      pid=112 code=5 ns=2 sub=0x5 cs=0x22002301
+```
+
+So the kills are not a property of a few daemons: nearly every job that starts is SIGKILLed, while
+SpringBoard alone dies of SIGTRAP and is the only one carrying the platform flags (0x22002301).
+
+The uniform `cs=0x1` is itself a finding: these binaries are not being treated as platform code, so
+whatever enforces the platform-binary policy (and whatever kills jobs that fail it) sees them as
+ordinary ad-hoc processes.  That is consistent with a system-wide event - jetsam, a launchd-wide
+cleanup, or a watchdog sweep - rather than per-service bugs, and it makes the code-signing/platform
+flag the next thing to explain.
