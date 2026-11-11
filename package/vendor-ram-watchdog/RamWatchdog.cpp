@@ -159,7 +159,11 @@ class RamWatchdog : public IOWatchdog {
             self->armed = 0;
             return;
         }
-        if (__atomic_load_n(&self->armed, __ATOMIC_ACQUIRE)) self->schedule();
+        /* Re-arming from inside the callback is what keeps the heartbeat alive, but it must stop: the
+         * service graph runs for minutes and the repeated thread_call_invoke path is where this
+         * board crashed (pc = thread_call_invoke + 0x94).  Sixty beats are enough for the panel
+         * heartbeat; after that the backend stays registered and silent. */
+        if (beat < 60 && __atomic_load_n(&self->armed, __ATOMIC_ACQUIRE)) self->schedule();
     }
     void schedule() {
         uint64_t next;

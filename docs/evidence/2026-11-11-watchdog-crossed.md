@@ -691,3 +691,30 @@ $s.Open()
 
 This also explains why the late-boot log never arrived even though the tee worked: the module had a
 16 KiB buffer and a queue, and with no DTR it never submitted the transfer that would drain them.
+
+## 15:55: the late-boot crash is a NULL dereference inside thread_call_invoke
+
+The panel ends with
+
+```
+panic(cpu 0 caller ...): Kernel data abort at pc 0xfffffff00b8d91d8, lr 0xfffffff00b8d91bc
+esr: 0x96000005   far: 0x0000000000000000
+```
+
+and `llvm-nm` puts `0xfffffff00b8d91d8` at `_thread_call_invoke + 0x94`.  `far = 0` means the faulting
+address was NULL, so something dereferences a null pointer inside the callout machinery.
+
+The watchdog backend is the obvious first suspect, but its timer is a normal
+`thread_call_allocate(expired, this)` and the crash persists with the timer capped at sixty beats,
+so the failure is in the thread_call subsystem itself rather than in the re-arm rate.  That matters
+far beyond the console: XNU's own periodic work rides the same machinery, and a broken thread_call
+would also explain services failing uniformly with status 9.
+
+Next, in order:
+
+1. run one boot with the watchdog backend **not selected** (no `ram-system-watchdog=1`) and see
+   whether `thread_call_invoke` still faults - that separates 'our timer' from 'the subsystem';
+2. if it still faults, inspect how this port's platform timer feeds the callout thread (the ARM
+   generic timer, `machine_routines` and the timer interrupt path);
+3. symbolise any further faulting PC the same way (`llvm-nm --numeric-sort` on `kernel.macho`),
+   which has been the fastest way to name a crash all night.
