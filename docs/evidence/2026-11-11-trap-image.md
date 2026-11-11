@@ -1608,3 +1608,39 @@ issue of the class object rather than the surface path.
 Next: find who tears the metaclass down (the family's `stop`/`free` path versus our retained object), and
 whether the uke port's extra step - keeping `activeLegacyDisplay` and never releasing the adopted surface - is
 what avoids it there.
+
+## 06:00: how the uke port solves the rest (from its PROGRESS.md)
+
+The uke repository documents its whole display track.  The parts that answer this board's open questions:
+
+**1. The default surface (already applied here).**  It seeds the family's region cache at +0x17c0 with an
+`IOBufferMemoryDescriptor`, sets the enable byte at +0x1780, lets slot 299 build the temporary surface at +0x1620
+and adopts it into +0x1618, retaining the surface, its +0x28 region and +0x30 descriptor because "the adopted
+surface outlives the legacy display's stop" - `stop` clears +0x1618 and drops the region reference.
+
+**2. Why a swap can arrive with no surface.**  Their disassembly of the original `swap_submit` (vtable[178],
+their kernel `0x578f224`):
+
+* the gate action looks the swap record up in the `fb+5496` list by the id at `record+0x98`;
+* masks are copied from the record (+0x14c, +0x150, +0x154);
+* **the layer loop only runs for layer < 4**, and the surface id of each layer lives at `record+0x9c+4*layer`;
+* an id equal to the default surface's id uses `fb+0x1618` directly, otherwise it calls the original
+  `IOSurfaceRoot` lookup - in their kernel `0xfffffff0057a28c0(root, id, task)`, task from `0xfffffff0057a2e84` -
+  and stores the result at `request+0xa40+8*layer`.
+
+Their device record shows why that matters: for a 1200-byte swap record the compositor put the *whole frame* on
+**layer 6** (id 41) while layers 1/2/4 carried id 0, so the original loop never reaches it and the request is
+rejected with `accepted=0 reason=2 surface=0`.
+
+**3. Their fix: own-present.**  `NativeMobileDisplay` pads short records to 1288 bytes (`offline-legacy-swap-pad`),
+captures the first enabled layer that carries an id, and after the original call returns it calls
+`presentBase(frameSurfaceId)`, which resolves the overlay surface through the **original lookup stub** (bound to
+`0xfffffff0057a28c0` and `0xfffffff0057a2e84`, byte-verified) and copies it into the GOP synchronously on the
+compositor's own thread.  That is how they got the system UI on the panel for the first time.
+
+**4. The memory wall** was theirs too: they raised the VM with a UEFI high-DRAM mapping plus
+`owned_memory_size`; this board solved the same problem with the 4 GiB window.
+
+So the remaining work on this board is the same shape: accept that the original layer loop will not see the full
+frame, capture the id from the record, resolve it through the original lookup, and copy to the framebuffer - while
+finding what tears the class down when the display has no presentation to complete.
