@@ -93,3 +93,34 @@ zzz-shared-region-probe
 * 进过 Android 就必须重刷 userdata（会清掉根 manifest，报 `UFS ROOT FAILURE`）。
 * Windows 读不到 WSL 路径，产物要复制到 `D:\新建文件夹\instantnoodlep-artifacts\`。
 
+
+## 18:00 补充：PC 已经解析成镜像（路线 1 完成）
+
+路线 1 已实现、构建并在设备上跑过。证据与命令在 `docs/evidence/2026-11-11-trap-image.md`。
+
+- 新补丁 `zzz-trap-image.patch`（`patches/xnu/series` 里排在 `zzz-trap-pc.patch` 之后）：
+  - `bsd/kern/kern_mman.c`：`native_trap_image()` 打印 `XNU-TRAP-IMAGE`（`find_region_details()` +
+    `vnode_getwithvid()`/`vn_getpath()`，只对文件映射有效）和 `XNU-DYLD-IMAGE`（读任务的 dyld 映像表
+    `task_get_all_image_info_addr()` + `copyin()`，共享缓存里的映像也能命名）；
+  - `osfmk/arm64/sleh.c`：`handle_breakpoint()` 在 `exception_triage()` 之前调用一次。
+- 镜像：内核 `d5a69b98…`，AMFI 后 `a498a1ea…`，payload `95c82aa4…`，
+  `bootEU.img` `56ec8037…`（183,005,184 字节）。三次抓日志结论一致。
+- 三个 trap 的归属：
+
+| 进程 | 命中 | 指令 |
+| --- | --- | --- |
+| watchdogd | `/usr/libexec/watchdogd+0xab0c` | `brk #1`，字符串 `connect_to_kext() unexpectedly failed - unable to lookup watchdog KEXT service` |
+| liveactivitiesd | `SessionSyncEngine+0x1d4f8` | `cbz x20, <brk #1>` 的空分支：Swift 强制解包 nil |
+| SpringBoard | `FrontBoardServices+0x1e2ec` | `brk #0`，紧跟一个编译器当作 noreturn 的调用之后：致命错误 helper 返回了 |
+
+- 结论修正：这两个库不是进程私有映射，而是 iOS 17 **拆分共享缓存**的子缓存（`.09`、`.21`）。
+  根卷上 `FrontBoardServices.framework` 只有 `Info.plist` 和 `_CodeSignature`；缓存本体在
+  SystemOS cryptex 的 `System/Library/Caches/com.apple.dyld/`（1 个 491 KB 的映像表 + 52 个子缓存 +
+  685 MB 的 `.symbols`）。
+
+**下一步**：
+
+1. `watchdogd`：发布 `connect_to_kext()` 期望的 watchdog user client（`AppleARMWatchdogTimer` 那类），
+   或让 `RamWatchDog` 回答它；这条不需要缓存工具。
+2. 两个缓存 PC 的符号：映像表 → 子缓存映射 → 文件偏移这条链已经打通（本文档里的两个文件偏移就是
+   这样算出来的），缺的是 `.symbols` 的读取器（7-Zip 26.04 报 "Unsupported Method"）。
