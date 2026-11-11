@@ -596,3 +596,21 @@ Next: find the common dependency.  The cheapest measurements are (a) print the f
 `load_init_program`/`posix_spawn` launch, so the failing binaries are known by name, and (b) catch one
 job's failure with more detail - for example run its executable from a serial console once the system
 stays up.
+
+## 15:10: why the serial log is not deliverable yet
+
+Three attempts to capture the panel log over the USB console all returned zero bytes:
+
+1. reading the ring after the boot - empty, because the video console draws instead of printing;
+2. teeing `vc_paint_char` into `qcom_usb_debug_putc` - boots, host sees nothing;
+3. teeing into `qcom_usb_debug_enqueue` (backlog only, the late worker drains it) - same.
+
+So the module is not delivering *late* console data to the host even though it enumerated and
+served the early boot.  The status structure (`include/QcomXnuUsbDebug.h`) carries everything needed
+to find out why - `phase`, `buffer_pending`, `buffer_accepted`, `buffer_overflow`,
+`transport_pending`, `poll_calls` - and printing `phase` from the watchdog tick is the next
+measurement.  Two attempts at that print failed on C++ linkage and on where the declaration landed,
+so the patch is reverted and the tree is clean again.
+
+State left behind: `zzz-video-console-tee.patch` exists but is not in the series; the RamWatchdog
+backend is back to its working form (non-fatal deadline, tick report, no USB calls).
