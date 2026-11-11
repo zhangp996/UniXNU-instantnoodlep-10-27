@@ -1911,3 +1911,35 @@ To fill the panel the port needs one of:
    - uke's DISPLAY-AREA work and kebab's `KebabFramebuffer` both treat the panel as 1080x2400 and present there);
 3. or a window expansion through the platform expert, if the firmware already scans out a larger area from the
    same base.
+
+## 08:45: the frame reaches the framebuffer; the swap still never completes
+
+The guard no longer panics, and the boot now shows the copy and the aftermath in order:
+
+```
+DISPLAY: swap accepted=1 reason=0 request=... surface=0xfffffff658a3b0c8 req_surfaces=...,0,0,0
+DISPLAY: present copied 480 rows x 4320 bytes (frame 1)
+DISPLAY: abstract slot 345 (object=0xfffffff3a565d000 caller=0xfffffff00578c1cc); returning
+Kernel data abort. at pc 0xfffffff00be80944, lr 0xfffffff00bfe4684
+```
+
+So the compositor's frame is now copied into the firmware framebuffer, but:
+
+* the family's swap wait still times out (`CommandWake didn't happen`), so it abandons the swap and reaches the
+  abstract slot 345;
+* returning from that slot avoids the guard's own panic, but the machine then dies in the same
+  `OSMetaClass::~OSMetaClass` data abort a moment later - the teardown issue that has followed every display
+  build, now unmasked rather than caused by the guard.
+
+The panel also shows the console text twice, offset: the 480-row window is being copied into a panel area that is
+taller than the window, so the same lines appear in two places and the compositor frame lands only in the window.
+
+State of the display track, in order of certainty:
+
+1. surface creation and adoption: **verified** (sid=1, adopted, no default-surface error);
+2. swap acceptance and frame copy: **verified** (`accepted=1`, 480 rows x 4320 bytes into the GOP);
+3. completion: **missing** - the family never wakes the swap; the protocol path that would (the command gate at
+   `fb+0x1608`, slots 307/312/313) has not been driven;
+4. window size: the kernel only owns 1080x480 of a 1080x2400 panel, so a full-frame presentation needs the larger
+   window or the DPU path;
+5. teardown: the metaclass data abort still ends the boot once the display has been published for a while.

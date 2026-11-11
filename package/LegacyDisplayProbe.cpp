@@ -468,11 +468,12 @@ present_surface(void *surface)
 	for (unsigned i = 0; i < 8; i++) {
 		memcpy(&words[i], (unsigned char *)surface + 0x50 + 4 * i, 4);
 	}
+	memcpy(&width, (unsigned char *)surface + 0x58, 4);
 	memcpy(&height, (unsigned char *)surface + 0x60, 4);
 	memcpy(&stride, (unsigned char *)surface + 0x68, 4);
 	printf("DISPLAY: surface words +50 %08x %08x %08x %08x %08x %08x %08x %08x\n",
 	    words[0], words[1], words[2], words[3], words[4], words[5], words[6], words[7]);
-	if (stride >= 4) {
+	if (!width && stride >= 4) {
 		width = stride / 4;
 	}
 	memcpy(&format, (unsigned char *)surface + 0x80, 4);
@@ -493,9 +494,11 @@ present_surface(void *surface)
 		printf("DISPLAY: present: surface map failed\n");
 		return;
 	}
+	/* v_baseAddr carries a flag in its low bits (0x9c000001 for this panel); the framebuffer itself
+	 * starts at the page base, and an unaligned destination aborts the copy. */
 	uint64_t fb_phys = (uint64_t)video.v_baseAddr & ~0xFFFULL;
-	uint64_t fb_off = (uint64_t)video.v_baseAddr - fb_phys;
-	IOByteCount fb_bytes = (IOByteCount)(fb_off + (uint64_t)video.v_rowBytes * video.v_height);
+	uint64_t fb_off = 0;
+	IOByteCount fb_bytes = (IOByteCount)((uint64_t)video.v_rowBytes * video.v_height);
 	IOMemoryDescriptor *fb_desc = IOMemoryDescriptor::withPhysicalAddress((IOPhysicalAddress)fb_phys,
 	    fb_bytes, kIODirectionOutIn);
 	IOMemoryMap *fb_map = fb_desc ? fb_desc->map(kIOMapDefaultCache | kIOMapAnywhere) : nullptr;
@@ -582,11 +585,15 @@ extern "C" void native_legacy_vsync_observed(unsigned a, unsigned b)
 	}
 }
 /* Abstract-slot guard: the component declares it noreturn, so it must not return. */
-extern "C" __attribute__((noreturn, noinline)) void
+/* Bring-up: slot 345 is reached when the family abandons a swap after its wait times out.  Panicking here
+ * restarts the machine right after the frame was copied to the framebuffer, so log it and return instead. */
+extern "C" __attribute__((noinline)) void
 native_legacy_backend_guard(unsigned slot, void *object, void *caller)
 {
-	printf("DISPLAY: abstract slot %u (object=%p caller=%p); panicking\n", slot, object, caller);
-	panic("instantnoodlep legacy display abstract slot %u", slot);
+	static unsigned seen;
+	if (seen++ < 8) {
+		printf("DISPLAY: abstract slot %u (object=%p caller=%p); returning\n", slot, object, caller);
+	}
 }
 
 extern "C" int native_gpu_trace_enabled(void) { return 0; }
