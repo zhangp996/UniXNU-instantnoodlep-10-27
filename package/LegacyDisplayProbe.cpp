@@ -28,6 +28,7 @@ extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
+static IOService *gSurfaceRoot;
 static void publish_display(void);
 static void publish_thread(void *, wait_result_t);
 
@@ -140,6 +141,52 @@ scan_display_fields(IOService *object)
 	printf("DISPLAY: field scan done (%u pointer slots)\n", found);
 }
 
+/* Create one BGRA IOSurface through the prelinked IOSurfaceRoot factory (vtable slot 141, the method
+ * that keeps the surface count and the tail queue).  Returns null on any failure; every step is logged. */
+static OSObject *
+create_surface(uint32_t width, uint32_t height, uint32_t stride)
+{
+	if (!gSurfaceRoot) {
+		printf("DISPLAY: no IOSurfaceRoot to create a surface on\n");
+		return nullptr;
+	}
+	OSDictionary *props = OSDictionary::withCapacity(8);
+	if (!props) {
+		return nullptr;
+	}
+	uint32_t pixel_format = 0x42475241; /* 'BGRA' */
+	uint32_t alloc = (uint32_t)(stride * height);
+	struct { const char *key; uint32_t value; } words[] = {
+		{"IOSurfaceWidth", width},
+		{"IOSurfaceHeight", height},
+		{"IOSurfaceBytesPerRow", stride},
+		{"IOSurfacePixelFormat", pixel_format},
+		{"IOSurfaceAllocSize", alloc},
+		{"IOSurfacePixelSizeCastingAllowed", 0},
+	};
+	for (unsigned i = 0; i < sizeof(words) / sizeof(words[0]); i++) {
+		OSData *data = OSData::withBytes(&words[i].value, sizeof(uint32_t));
+		if (data) {
+			props->setObject(words[i].key, data);
+			data->release();
+		}
+	}
+	typedef OSObject *(*create_fn)(void *, void *, OSDictionary *, uint32_t, OSObject **);
+	create_fn fn = (create_fn)(*(uintptr_t **)gSurfaceRoot)[141];
+	OSObject *out = nullptr;
+	printf("DISPLAY: create_surface %ux%u stride %u via vt[141]=%p task=%p\n", width, height, stride,
+	    (void *)fn, (void *)current_task());
+	OSObject *result = fn(gSurfaceRoot, current_task(), props, 0, &out);
+	printf("DISPLAY: create_surface result=%p out=%p\n", (void *)result, (void *)out);
+	props->release();
+	if (out && out->getMetaClass()) {
+		printf("DISPLAY: create_surface class=%s size=0x%x\n", out->getMetaClass()->getClassName(),
+		    (unsigned)out->getMetaClass()->getClassSize());
+	}
+	return out;
+}
+
+/* Bring-up: an abstract slot the owned backend does not implement yet.  */
 static void
 publish_display(void)
 {
@@ -159,6 +206,10 @@ publish_display(void)
 	}
 	IOService *surface = matching ? IOService::waitForMatchingService(matching, 5000000000ULL) : nullptr;
 	printf("DISPLAY: IOSurface root found=%d\n", surface ? 1 : 0);
+	if (surface && !gSurfaceRoot) {
+		surface->retain();
+		gSurfaceRoot = surface;
+	}
 	if (surface) {
 		const uintptr_t *vtable = *(const uintptr_t **)surface;
 		const OSMetaClass *meta = surface->getMetaClass();
@@ -315,6 +366,18 @@ native_legacy_backend_guard(unsigned slot, void *object, void *caller)
 		guard_calls++;
 		printf("DISPLAY: unimplemented legacy slot %u (object=%p caller=%p), returning\n",
 		    slot, object, caller);
+	}
+	if (slot == 345) {
+		static bool tried;
+		if (!tried) {
+			tried = true;
+			PE_Video video = {};
+			if (!PE_current_console(&video) && video.v_width && video.v_height) {
+				OSObject *surface = create_surface((uint32_t)video.v_width, (uint32_t)video.v_height,
+				    (uint32_t)video.v_rowBytes);
+				printf("DISPLAY: slot 345 surface=%p (kept for the next step)\n", surface);
+			}
+		}
 	}
 }
 

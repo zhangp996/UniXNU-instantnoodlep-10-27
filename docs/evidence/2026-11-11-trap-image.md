@@ -1256,3 +1256,30 @@ out-parameter that is cleared first, `w3` is a flag whose non-zero value jumps t
 untouched until later.
 
 The next call therefore passes `current_task()` first and the dictionary second.
+
+## 02:20: slot 141 is the user-client factory, and it works from the kernel
+
+Calling it with the corrected argument order (`this, task, dictionary, flag, out`) succeeded:
+
+```
+DISPLAY: create_surface 1080x480 stride 4320 via vt[141]=0xfffffff004baa11c task=0xfffffff349206450
+DISPLAY: create_surface result=0 out=0xfffffff42f92f8b0
+DISPLAY: create_surface class=IOSurfaceRootUserClient size=0x138
+DISPLAY: slot 345 surface=0xfffffff42f92f8b0 (kept for the next step)
+```
+
+So vtable slot 141 of `IOSurfaceRoot` is `createUserClient(task, properties, flag, &client)`: it allocates an
+`IOSurfaceRootUserClient` (0x138 bytes) owned by the task passed first.  (The previous attempt passed the
+dictionary where the task belongs, which is why the kernel reported a `proc_task` zone expectation.)
+
+Consequences:
+
+* the factory itself is now proved callable from the kernel, and the argument convention is known;
+* the surface itself is created *through that user client* (the same external-method path userland uses), not
+  directly by `IOSurfaceRoot`, which matches the reference record's "original IOSurfaceRoot factory" wording;
+* the two-minute panic is unchanged in this boot (the client was created but nothing installs a default surface
+  yet), so the next step is the client's external method.
+
+Next measurement: keep the created `IOSurfaceRootUserClient` and either audit its dispatch table or call its
+`externalMethod` with the surface-creation selector and an `IOSurfaceCreateArgs` payload (width, height, bytes per
+row, pixel format BGRA, alloc size), then check the returned object's class is `IOSurface`.
