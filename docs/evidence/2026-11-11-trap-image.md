@@ -1683,3 +1683,32 @@ With that reading:
 
 So the next measurement is a clean boot of the current image with the console watched from ~100 s to ~200 s, looking
 for `DISPLAY: swap ...` lines (the compositor's layer ids) and for whether the metaclass panic still occurs.
+
+## 06:45: the current build's panic has no display activity in front of it
+
+A clean boot of the newest image (the one with the region seed, the adoption and the surface accessors) logs:
+
+```
+DISPLAY: seeded surface region 0xfffffff89faf8c60 bytes=33554432
+DISPLAY: surfaces default=0 temp=0xfffffff5ed000d68
+DISPLAY: adopted default surface 0xfffffff5ed000d68 sid=1 region=... descriptor=...
+(IOMFB: driver commit:)
+... only process exits: liveactivitiesd (corpse limit), watchdogd, fairplayd, bluetoothd ...
+Kernel data abort. at pc 0xfffffff00be80944, lr 0xfffffff00bfe4684
+  x0 = 0, x21 = 0xfffffff00578b960 (IOMobileFramebufferLegacy::opaque243 + 0x510)
+```
+
+* no `AFB/IOMFB: No Default FB Surface`, no `swap_wait_gated`, no `slot 345`, no `DISPLAY: swap` line;
+* the panic is `OSMetaClass::~OSMetaClass + 0x1c` reached from `NativeLegacyDisplay::MetaClass::~MetaClass`,
+  i.e. our class's metaclass destructor runs with a bogus `this`, about two minutes in;
+* it arrives right after launchd declares `Too many corpses being created` for liveactivitiesd and watchdogd,
+  i.e. when the boot is at its most failure-prone point, and nothing the display does precedes it.
+
+Working hypothesis: the metaclass registered through `OSMetaClass::preModLoad(g_kernel_kmod_info.name)` /
+`postModLoad(handle)` is being torn down by the kext lifecycle (either the family's kext unloading, or the fake
+kmod handle used for late registration being freed), and the destructor is entered with a garbage `this`.
+
+Decisive control experiment for the next boot: build the same kernel with the display arguments removed
+(`offline-mobile-graphics-load`, `offline-legacy-*`) so nothing registers the class at all.
+If the panic disappears, it is the registration/teardown of our class; if it stays, it is unrelated to the display
+and belongs to the boot's process-failure storm.
