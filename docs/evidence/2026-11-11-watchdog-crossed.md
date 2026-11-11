@@ -804,3 +804,30 @@ AMFI explicitly says it is not the killer (`Launch Constraint Violation (not enf
 contain no jetsam activity, so the kill comes from launchd or from the code-signing kill path.  The
 next measurement is to print `WTERMSIG`/`WEXITSTATUS` separately (to remove any doubt), and to look
 for launchd's reason for terminating the job (a failed spawn, a missed check-in, or a watchdog).
+
+
+## 16:30: the killed services carry only CS_VALID, so the signature path is not the killer
+
+The exit observer now also prints `proc_getcsflags` of the exiting process:
+
+```
+XNU-EXIT: amfid              pid=47  code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: keybagd            pid=45  code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: securityd          pid=105 code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: rapportd           pid=78  code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: mobiletimerd       pid=50  code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: sleepd             pid=68  code=9 ns=1 sub=0x4 cs=0x1
+XNU-EXIT: AppleCredentialM   pid=75  code=9 ns=1 sub=0x4 cs=0x1
+```
+
+`cs=0x1` is `CS_VALID` alone: **`CS_KILLED` (0x4000) is not set**, so the code-signing kill path did
+not terminate them - consistent with AMFI's own `Launch Constraint Violation (not enforcing)` line.
+Compare the early platform processes, which carry `cs=0x22002301` (`CS_PLATFORM` and friends) and exit
+cleanly.
+
+All seven services ran first (their dyld-unnest lines are in the log) and were killed while running,
+so the killer is the job manager: launchd itself or watchdogd's service monitoring.
+
+Next: log launchd's own reason.  The console already carries `com.apple.xpc.launchd` notices, so the
+cheapest next step is to raise launchd's log level (boot argument) and read the same console during a
+kill, looking for the job state that triggers the termination.

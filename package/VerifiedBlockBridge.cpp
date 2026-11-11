@@ -287,9 +287,17 @@ static void native_block_device_report(void)
 
 /* One panel line per exiting process: the service graph is only debuggable if the exits and their
  * reasons are visible, and printf from the exit path is what the rest of the console uses. */
+extern "C" struct proc *current_proc(void);
+extern "C" unsigned int proc_getcsflags(struct proc *);
+
 extern "C" void native_exit_observe(const char *comm, int pid, int code, int ns, long long sub)
 {
-    printf("XNU-EXIT: %s pid=%d code=%d ns=%d sub=0x%llx\n", comm ? comm : "?", pid, code, ns, sub);
+    /* The exiting process is current here, so its code-signing flags say whether the kill came from
+     * the signature path (CS_KILLED) or from somewhere else. */
+    struct proc *self = current_proc();
+    unsigned int cs = self ? proc_getcsflags(self) : 0;
+    printf("XNU-EXIT: %s pid=%d code=%d ns=%d sub=0x%llx cs=0x%x\n",
+           comm ? comm : "?", pid, code, ns, sub, cs);
 }
 
 extern "C" int native_owner_watchdog_service(void);
