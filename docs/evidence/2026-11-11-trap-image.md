@@ -280,3 +280,27 @@ framebuffer handoff and NativeLegacyDisplay / IOMobileFramebuffer desktop presen
     `scripts/audit-mobile-graphics-legacy.py`, which is not present in the reference repository's `main`.
 * Consequence: the display step is a port of a recipe plus its ABI audit, not a configuration change.
   `porting.toml` `[[area]] display` now records that as its next action.
+
+## 18:50: the patch reference documents the display start, and it is already applied
+
+`docs/xnu/patch-reference.md` (the page the porting guide links) lists both display hooks:
+
+| Patch | Effect |
+| --- | --- |
+| `offline-legacy-start` | Starts the legacy display probe after `IOKitBSDInit` |
+| `offline-component-load-probes` | Loads the APFS, IOGPU and mobile-graphics components and records checkpoints |
+
+Both are already in `profiles/arch/arm64/patches/xnu/series` (lines 34-35), so this kernel carries
+them: `bsd_init.c` line 1539 now reads
+
+```c
+kern_return_t result = IOKitBSDInit();
+#if (DEVELOPMENT || DEBUG) && defined(XNU_NATIVE_LEGACY_DISPLAY) && XNU_NATIVE_LEGACY_DISPLAY
+	extern void native_legacy_display_late_probe(void);
+	native_legacy_display_late_probe();
+#endif
+```
+
+and `CONFIG_XNU_NATIVE_LEGACY_DISPLAY` is not in `configs/instantnoodlep_defconfig`, so the call is compiled
+out.  No patch work is needed on this board; what remains is the configuration flag, the late archive that
+defines `native_legacy_display_late_probe` (the board recipe), and the `offline-legacy-*` arguments.
