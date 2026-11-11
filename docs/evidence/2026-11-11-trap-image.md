@@ -878,3 +878,21 @@ Next approaches, in order of cost:
    adapter writing a placeholder;
 3. hook the family's error path: the message is printed from a known string; a temporary printf inside
    `NativeLegacyDisplay::start` after the family's start returns can at least show which fields changed.
+
+## 22:45: the organisation publishes the contract, not the adapter
+
+Checked every place under `github.com/UniXNU` that could carry the default-surface implementation:
+
+| Repository / path | Result |
+| --- | --- |
+| `UniXNU/docs/porting/display.md` (65-69) | the only prose contract: the 24A446 adapter, the original IOSurfaceRoot factory, the void `create_default_fb_surface()` slot, "its residual return register is not an object pointer" |
+| `UniXNU/docs/devices/*.md` (~15 records) | the same sentence plus the limit "The 24A446 default-surface adapter still requires a hardware boot result" |
+| `GopFramebuffer/NativeLegacyDisplay.cpp` (pinned 897 lines and upstream `main` 1230 lines) | exactly one `installDefaultSurface` occurrence in both: the call inside `#if NATIVE_LEGACY_DEFAULT_SURFACE`; no definition anywhere |
+| `UniXNU-sheng/package` (`LegacyDisplayProbe.cpp`, `OfflineGOPComposition.mm`, `OfflineGOPPresentation.mm`, `OfflineGOPResources.mm`) | no mention |
+| `UniXNU/scripts` (`check-native-legacy-display.py`, `check-gop-handoff-checkpoints.py`, `check-mobile-display-provider.py`, `check-mobile-graphics-checkpoints.py`, `check-original-mode-validation.py`) | no mention; the mobile-display checker even prints "display publication and presentation remain incomplete" |
+| `GopFramebuffer/README.md`, `AGENTS.md`, `Test/` | describe swap formats only |
+
+So the field offset and the adapter body are published nowhere; the two doc places define what it must do and record
+that it was never proven on hardware.  Also noted: our catalog pin `e47c1b8` is 897 lines where upstream `main` is
+1230, so a later revision of the component exists (still without the adapter) and is worth re-pinning once the
+surface work starts.
