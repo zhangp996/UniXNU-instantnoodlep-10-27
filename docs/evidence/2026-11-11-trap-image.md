@@ -1943,3 +1943,35 @@ State of the display track, in order of certainty:
 4. window size: the kernel only owns 1080x480 of a 1080x2400 panel, so a full-frame presentation needs the larger
    window or the DPU path;
 5. teardown: the metaclass data abort still ends the boot once the display has been published for a while.
+
+## 09:15: the firmware side is prepared but blocked on the edk2 dependency fetch
+
+What was done for the 480-row clamp:
+
+* the clamp in `drivers/DarwinBoot/DarwinBootPkg/Driver/BootVideo.h` (`if (Video[4] > 480) Video[4] = 480;`) is
+  removed in the checkout, with a comment recording why it existed;
+* `Platforms/OnePlus/instantnoodlepPkg/DeviceBuild.py` was created from the kebab template
+  (`PackagesSupported = ("instantnoodlepPkg")`, scopes `instantnoodlep`, same package paths);
+* the Python side of the edk2 toolchain is installed (`edk2-pytool-library`, `edk2-pytool-extensions`,
+  `antlr4-python3-runtime`, `pefile`, `coloredlogs`), and BootShim already builds.
+
+What blocks the build: `stuart` reports
+
+```
+ERROR - Dependency 'mu_nasm' is not met!
+ERROR - Dependency 'Mu-Basetools' is not met!
+ERROR - Dependency 'onecrypto-bin' is not met!
+```
+
+`stuart_update` for the platform returned without fetching them, so the build cannot produce the 4 MiB
+BootShim+UEFI image yet.  The remaining work on this path is purely environment setup:
+
+1. make `stuart_update` resolve `mu_nasm`, `Mu-Basetools` and `onecrypto-bin` (it needs network access to their
+   release archives and the platform config `Platforms/OnePlus/instantnoodlepPkg/DeviceBuild.py`);
+2. `python3 build_uefi.py -d instantnoodlep -r RELEASE` then emits the image;
+3. copy that image over `instantnoodlep-artifacts/kernel_small.bin` (the 4 MiB BootShim+UEFI carrier) and repack
+   `bootEU.img`;
+4. the boot should then report `GOP console ... 1080x2376`, and the console, the diagnostic page and a compositor
+   frame should all cover the panel.  If the console-time mapping fails for 10 MiB, the fallback is to keep the
+   clamp for the console only and present the full panel from the display driver (the probe already proved a
+   10.4 MiB mapping works once the kernel is up).
