@@ -397,3 +397,32 @@ CPU-presentation port can stub.
 
 The defconfig flag and the eight `offline-legacy-*` arguments were reverted after the experiment so the
 repository still builds; the tree keeps the generated header, objects and archive for the next step.
+
+## 19:30: the reference section names the display assertion
+
+The `/zh/reference` index is a hub; the page behind it that matters here is the troubleshooting table:
+
+> | 用户态显示断言 | 显示 provider 和启动参数 | 检查显示驱动和 focus 参数 |
+> - `reference/troubleshooting.md:66`
+
+That row is exactly the SpringBoard failure ("failed to find the main CADisplay"): the official advice is to
+check the display provider and the boot arguments, specifically the focus arguments.
+
+The focus arguments are trace selectors, not a fix: `xnu/boot-arguments.md:89` defines
+`boot-ui-focus=<name>`, and `guide/debugging.md:288-291` shows the pair form
+(`boot-ui-focus=launchd`, `boot-ui-focus2=SpringBoard`, `boot-ui-focus3=backboardd`,
+`boot-ui-focus4=Setup`) used with `boot-ui-trace=1` to capture a process's boot UI stack.  They are the
+documented way to record the assertion's userland frames once the provider exists.
+
+The other reference pages that apply:
+
+* `reference/components.md:28` - `legacy_name` is the "official compatible input name", which is why
+  `build-arm-driver.py NativeLegacyDisplay` resolves the `GopFramebuffer` catalog entry; line 51 says
+  `component:<ID>` positions a component in `[kernel] archives`, which only takes effect for a component whose
+  catalog record has a build recipe (GopFramebuffer has `build = []`, hence a board script).
+* `reference/output-layout.md:85` - every `[kernel] archives` script logs to `archive-NN-<name>.log`, the
+  place to read the failed display link and its inputs.
+* `reference/qemu.md:52-53` - `--no-gop` and `--display-size WxH` let the display path be exercised on the
+  host before touching the phone.
+* `reference/boot-configuration.md`, `configuration.md`, `cli.md`, `glossary.md` cover kext bundles and archive
+  semantics only; nothing about the display provider.
