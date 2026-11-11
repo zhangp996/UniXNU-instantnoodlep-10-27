@@ -2800,3 +2800,20 @@ userland process dies is the ui-trace worker, which this port does not carry.
 
 Cheap experiment queued before any port of that worker: `lw_corpses=0` (image e09af0e1...), which takes the
 lightweight-corpse rate limit out of the path so a full corpse can be produced for SpringBoard's abort.
+
+## 07:45: backboardd never appears in any capture
+
+Grepping every console log this session produced (eight of them, from the earliest display work to the current boot):
+`backboardd` appears **zero times**.  The current boot shows the display driver registering normally -
+`registered family meta=... name=IOMobileFramebufferLegacy size=0x18a0`, the whole meta chain - and then launchd's
+boot tasks, and then `SpringBoard` starting and aborting (code 6) without any backboardd line and without the
+display ever submitting a swap.
+
+If backboardd were running, the absence of an `XNU-EXIT` line would mean it is healthy; but then SpringBoard would
+have a display connection.  The two facts together (no backboardd log, SpringBoard aborting at once) point at the
+display-server job never coming up on this port, which is the next thing to establish: either it is not started by
+launchd (missing job/dependency), or it starts and exits silently before it can log.
+
+The `lw_corpses=0` experiment did not help either: the boot-args line shows it applied, and the corpse messages are
+unchanged (`Process[27] crashed: SpringBoard. Too many corpses being created.`), so the corpse path is failing for a
+different reason - most likely the dying task's VM space - and cannot be relied on for the abort reason.
