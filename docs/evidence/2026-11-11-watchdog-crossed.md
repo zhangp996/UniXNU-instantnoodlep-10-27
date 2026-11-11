@@ -718,3 +718,30 @@ Next, in order:
    generic timer, `machine_routines` and the timer interrupt path);
 3. symbolise any further faulting PC the same way (`llvm-nm --numeric-sort` on `kernel.macho`),
    which has been the fastest way to name a crash all night.
+
+
+## 16:10: the code=9 exits are AMFI trustcache denials
+
+The captured log names the common dependency in one line, repeated fourteen times:
+
+```
+int _check_cdhash_in_trustcache(struct proc *, user_addr_t): Only allowed processes can check the trustcache
+```
+
+and the exits that follow it are exactly the failing set: keybagd, amfid, mobiletimerd, sleepd,
+AppleCredentialM, rapportd and securityd, all with `code=9 ns=1 sub=0x4`, plus watchdogd with
+`code=5 ns=2 sub=0x5`.
+
+So the services die because the kernel refuses their trustcache query, not because of anything they
+do themselves.  The string is in the kernel binary but not in the port sources, i.e. it belongs to
+the prelinked AppleMobileFileIntegrity kext, so the fix is either a kext-side patch (allow the query
+during bring-up) or a boot argument that puts AMFI's trustcache check in permissive mode.
+
+Two smaller findings from the same run:
+
+* `native-ufs-allow-unverified=1` plus `root-unverified=1` do not remove
+  `disk3s1 failed to find named root snapshot: Need authenticator (81)`, and
+  `is_root_hash_authentication_required` still reports the root volume as requiring authentication;
+  launchd continues anyway (`Early boot complete`), so the boot proceeds on the fallback path;
+* the console also shows `KextLog: driverkitd is not active`, then `Loading FileSet KC(s)` and
+  `driverkitd is active`, i.e. the kext collection loads later than the services that ask for it.
