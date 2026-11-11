@@ -1203,3 +1203,39 @@ Image: `instantnoodlep-artifacts/bootEU.img`, sha256
 `7f67638f99d3098e3a333f3553ba15be58632f107171e16ed23bceb95040e548`.
 
 The phone is not enumerated at the moment (no `VID_1209`, no `fastboot`), so the boot is pending.
+
+## 01:45: IOSurfaceRoot is audited down to a candidate factory slot
+
+The probe printed the service's layout on the device:
+
+```
+DISPLAY: IOSurfaceRoot 0xfffffff6c8ccae00 class=IOSurfaceRoot size=0x4a0 vtable=0xfffffff005d3b2b8
+DISPLAY:   vt[0]=0xfffffff004ba8c64 vt[1]=0xfffffff004ba8d68 ...
+```
+
+That vtable address is the same one the display object had at `+0x1600`, so the family holds a reference to the
+IOSurfaceRoot service there.
+
+Enumerating the vtable (it ends at slot 168) leaves only a handful of entries that belong to the class itself
+(the rest are inherited IOService/OSObject implementations):
+
+| slot | address | evidence |
+| --- | --- | --- |
+| 1, 7 | `0xfffffff004ba8d68`, `...8dac` | reference "IOSurfaceRoot" (class name plumbing) |
+| 14, 21 | `...8fe8`, `...8ea8` | no strings |
+| 85, 86 | `...90ac`, `...90bc` | `hw.memsize`, `/vram`, "IOSurfaceRoot: Initial shared event memory alloc failed" (start/init) |
+| 87 | `...9e20` | no strings |
+| **141** | `0xfffffff004baa11c` | `IOSurfaceRoot.cpp`, "IOSurface count of %d approaching limit of %d", tailq head/element asserts |
+
+Slot 141 is the surface factory: it increments the count, checks the limit and walks the surface tail queue.  Its
+prologue shows the calling convention: `x0` this, `x1` stored for later, `w3` a flag whose non-zero value jumps
+straight to the error return (`w19 = 0xE00002C9`), and `x4` an out-parameter that is cleared first.
+
+That is the piece the board has to call: build the descriptor dictionary, call slot 141 on the IOSurfaceRoot
+service, check the returned object's metaclass is `IOSurface`, and hand it to the display family's default-surface
+field (+0x1618 neighbourhood) instead of leaving it null.
+
+Everything before that is verified on hardware: the family loads through the documented boot argument, the owned
+class registers with the original identity, the display publishes over the firmware framebuffer on an
+`AppleARMIODevice` nub the family accepts, the userland client maps it (`s_map_display_type`, `IOMFB: driver
+commit`), and the remaining failure is exactly "no default surface".
