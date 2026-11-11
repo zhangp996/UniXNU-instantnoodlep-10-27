@@ -845,3 +845,36 @@ Kernel-side string work for the next step: the message "No Default FB Surface fo
 `__TEXT` at `0xfffffff0045f6ad7`; it has no `adrp`+`add` cross-reference in the image, so the field offset has
 to be found another way (the referencing code loads it through a literal pool, or the check is inlined into the
 original start method).
+
+## 22:35: static reverse-engineering of the default-surface field reaches its limit
+
+What the disassembly established, in order:
+
+* slot 288 (`0xfffffff00579278c`) is the original `startHardware` and is a stub:
+  `sub sp; str x0; mov w8, #0; and w0, w8, #1; ret` - it returns false, which is exactly the
+  "start_hardware failed" the reference records.  Our component overrides it.
+* slot 316 (`0xfffffff00579ea44`) is not a surface factory either: it stores `x0` and one byte and returns.
+* the code that asked for slot 345 is the family's own `opaque243`, through the ordinary vtable dispatch
+  `ldr x8, [x0]; ldr x8, [x8, #2760]` (#2760 = 345 * 8), and the instructions after the call read fields at
+  +5844/+5848 - mode geometry, not a surface reference.
+* `ldr [x, #2528]` (#2528 = 316 * 8) appears three times, and the one that branches is part of a stub island
+  (`adrp x16; ldr x16; br x16` repeated per slot), so it names the slot's implementation, not its caller.
+* the family's message "No Default FB Surface found" lives at `0xfffffff0045f6ad7` inside the family's
+  `__TEXT`, and has no `adrp`+`add` cross-reference and no literal pointer to it in the image, so the code that
+  emits it cannot be reached by those two scans.
+
+So the field offset the documentation calls "the family default-surface field" is not statically obvious: the
+official records describe the contract but publish no offset, the reference never implemented the adapter
+("still requires a hardware boot result"), and the family's consumer of that field is not reachable with the
+scan patterns that worked for the CADisplay assertion.
+
+Next approaches, in order of cost:
+
+1. extend the ABI audit to record field offsets directly (it already derives the vtable, dimensions and queue
+   offsets); the audit reads the same prelinked class, so the offset can be taken from the family's own
+   `create_default_fb_surface`/`start` code once that function is identified by slot;
+2. dynamic: after start, print the qwords of the display object whose pointee's metaclass name is "IOSurface" -
+   an empty scan now, but it tells which offsets carry surfaces once any exist, and can be repeated with the
+   adapter writing a placeholder;
+3. hook the family's error path: the message is printed from a known string; a temporary printf inside
+   `NativeLegacyDisplay::start` after the family's start returns can at least show which fields changed.
