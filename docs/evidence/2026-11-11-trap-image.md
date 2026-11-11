@@ -1150,3 +1150,37 @@ Next lever, cheapest first: give the family the provider it asks for - allocate 
 prelinked AppleARMPlatform) as the nub over the firmware framebuffer memory, attach it to the resource service and
 to `/arm-io`, and pass it to `start`.  If the family's own path then runs, it may create and install the default
 surface itself, which is the one thing no board record shows.
+
+## 01:10: the AppleARMIODevice provider is accepted, and the family's own lookup runs
+
+Giving the family the provider it asks for changed the picture:
+
+```
+DISPLAY: nub class AppleARMIODevice
+DISPLAY: nub 0xfffffff644226e20 attach=1 start=1 mem=0x9c000001+0x1fa400
+DISPLAY: dt attach=1
+IOMFB: driver commit:
+DISPLAY: chosen display-scale=2 rotation=0 ok=1
+DISPLAY: display attach=1 start=1
+```
+
+* the family no longer prints "provider was not AppleARMIODevice" - the original `start` accepted the provider;
+* the field scan grew from 23 to 24 pointer slots: the new one is
+  `+0x1640 = <nub> vtable=0xfffffff005cbe4c8`, i.e. the family stored the accepted provider in its object;
+* the failure message moved from `AFB: default surface: ...` to
+  `IOMFB: default_fb_surface: No Default FB Surface found. Return error`, so the family's own lookup now runs
+  instead of the earlier AFB path.
+
+The panic is unchanged two minutes in (`swap_wait_gated: CommandWake didn't happen ... cancelling swaps`, then
+slot 345, then the null metaclass teardown).
+
+Where the family looks for the surface, from the disassembly of the function that prints that message
+(`0xfffffff005777464`): it calls a virtual slot through `[x0 + 1392]` (slot 174) and reports the failure when
+that returns non-zero; the neighbouring small function at `0xfffffff00577742c` forwards through
+`[this + 216]` (0xD8) and then slot 217, i.e. the surface is reached through an object held at +0xD8.  Our
+display object has no pointer at +0xD8 (the scan lists none), so that reference is null as well.
+
+Both routes end at the same place: **nothing ever created an IOSurface**.  Reaching the factory needs the
+prelinked IOSurfaceRoot's virtual interface audited the same way the display family's was (its vtable slots and
+class layout), because the IOSurface kext exports no class symbols - only `_gIOSurfaceIdentifier` and
+`_gIOSurfaceTag`.

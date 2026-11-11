@@ -128,7 +128,8 @@ scan_display_fields(IOService *object)
 	printf("DISPLAY: field scan of the 0x18a0 object\n");
 	for (unsigned off = 0; off + 8 <= 0x18a0 && found < 48; off += 8) {
 		uintptr_t value = *(uintptr_t *)(base + off);
-		if (value < 0xfffffff000000000ULL || value > 0xffffffff00000000ULL) {
+		/* The family stores a 0xffffffff00000000 pattern in some slots; it is not a pointer. */
+		if (value < 0xfffffff000000000ULL || value >= 0xffffffff00000000ULL) {
 			continue;
 		}
 		uintptr_t vtable = *(uintptr_t *)value;
@@ -169,7 +170,14 @@ publish_display(void)
 		return;
 	}
 	IOService *parent = IOService::getResourceService();
-	IOService *nub = new IOService;
+	/* The family's own start wants an AppleARMIODevice as provider ("provider was not
+	 * AppleARMIODevice"); use one when the prelinked AppleARMPlatform offers it, and keep the plain
+	 * IOService as the fallback. */
+	IOService *nub = OSDynamicCast(IOService, OSMetaClass::allocClassWithName("AppleARMIODevice"));
+	printf("DISPLAY: nub class %s\n", nub ? "AppleARMIODevice" : "IOService (fallback)");
+	if (!nub) {
+		nub = new IOService;
+	}
 	IODeviceMemory *memory = IODeviceMemory::withRange(video.v_baseAddr, video.v_rowBytes * video.v_height);
 	OSArray *ranges = OSArray::withCapacity(1);
 	if (nub && memory && ranges && parent && nub->init()) {
