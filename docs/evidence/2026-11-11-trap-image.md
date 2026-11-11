@@ -188,3 +188,24 @@ frame shows; the actionable part stays the string itself:
   same site as `SessionCore.Daemon.workloop`.  Compare its record before treating this as a board bug.
 * **watchdogd**: publish the watchdog user client `connect_to_kext()` looks for (or make RamWatchdog
   answer it); the probe patch can stay or be dropped, it prints nothing on a boot without abort_with_payload.
+
+## Reproduce the symbol lookup
+
+```sh
+# apfs-fuse (current CMake needs the policy flag; LZFSE comes from the submodule)
+git clone --depth 1 --recurse-submodules https://github.com/sgan81/apfs-fuse.git
+mkdir apfs-fuse/build && cd apfs-fuse/build
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && make -j8
+
+# the cryptex image is a raw APFS volume; the files live under root/
+./apfs-fuse /path/044-76034-038.dmg /root/cryptex
+C=/root/cryptex/root/System/Library/Caches/com.apple.dyld
+cp $C/dyld_shared_cache_arm64* /root/dsc/          # local disk: ipsw fails on 9p with "invalid argument"
+
+# ipsw v3.1.745 (release asset ipsw_*_linux_x86_64.tar.gz)
+ipsw dyld a2s --no-color -i -d /root/dsc/dyld_shared_cache_arm64 0x19f3df2ec
+# -> 0x19f3df2ec: -[FBSDisplayMonitor _initWithBookendObserver:transformer:] + 1148
+```
+
+Unslid address = the image table address (`ipsw dyld image` or the cache's own table) plus the offset
+the kernel printed as `XNU-DYLD-IMAGE: ... +0x...`.
