@@ -321,3 +321,25 @@ Measured on this board: the current line is 10 arguments / 171 bytes; adding the
 arguments (`offline-legacy-register`, `-gop`, `-unit-scale=2`, `-pm`, `-validate`, `-transfer`,
 `-cpu-present`, `-phase=4`) gives 370 bytes, so the budget is not a constraint for the display step - the
 reference board's 60-argument line would be, and only a subset is needed here.
+
+## 19:10: the right driver page is xnu-drivers, not kexts
+
+`/zh/drivers/kexts` does not cover this step: it describes staging external `.kext` bundles through
+`UNIXNU_LOADER_PROTOCOL` revision 2, and states that the shipped DarwinBoot **rejects** a request carrying
+staged kexts in favour of the built-in drivers.
+
+`/zh/drivers/xnu-drivers` is the page that applies:
+
+* a built-in XNU driver is a C++ IOKit class compiled to a static archive and linked with
+  `-Wl,-force_load`, switched by a `CONFIG_XNU_<NAME>` defconfig entry that the kernel script turns into
+  the force-load block, with its personality in `iokit/KernelConfigTables.cpp`;
+* its reference table lists `SoftwareAES` as "the accelerator subclass with the original ABI" - the same
+  original-ABI subclassing this port already uses for storage (`scripts/derive-storage-bindings.py` and
+  `scripts/data/native-storage-21H461-original-bindings.S`), and what `build-gop-framebuffer.py` does with
+  `original-bindings.o`;
+* `/zh/porting/drivers` states the rule for private interfaces: record the class layout, vtable slots,
+  selectors, argument structures and symbol bindings from the selected OS kernelcache - exactly the audit the
+  legacy display builder performs against the 21H461 prelink.
+
+One supporting record from the sheng variants: the legacy display builder "now refuses arm64e/iOS 26 before
+reading original ABI addresses", i.e. it is iOS 17-only by construction, which is the OS this board targets.
