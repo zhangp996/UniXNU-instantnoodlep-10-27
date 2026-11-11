@@ -1344,3 +1344,33 @@ successfully.  So the documented route to a class's vtable map is the prelink re
 What the page (and the rest of the documentation) still does not contain: the meaning of each slot, the argument
 structures, the family's `+0xD8` field, and the fact that slot 141 is `createUserClient(task, dictionary, flag,
 &client)`.  Those belong to the board's own record, which is where they are now.
+
+## 03:20: the surface client is an IOUserClient2022
+
+The first externalMethod attempt on the freshly created `IOSurfaceRootUserClient` panicked before reaching any
+method:
+
+```
+DISPLAY: create_surface class=IOSurfaceRootUserClient size=0x138
+panic(cpu 0 caller ...): wrong externalMethod for IOUserClient2022 @IOUserClient.cpp:6483
+```
+
+The kernel source in the tree explains it (`iokit/Kernel/IOUserClient.cpp`):
+
+```c
+IOReturn IOUserClient::callExternalMethod(uint32_t selector, IOExternalMethodArguments *args) {
+    ...
+    if (uc2022) {
+        ret = ((IOUserClient2022 *)this)->externalMethod(selector, (IOExternalMethodArgumentsOpaque *)args);
+    } else {
+        ret = externalMethod(selector, args);
+    }
+    ...
+}
+IOUserClient2022::externalMethod(uint32_t, IOExternalMethodArguments *, IOExternalMethodDispatch *,
+    OSObject *, void *) { panic("wrong externalMethod for IOUserClient2022"); }
+```
+
+So a 2022 client must be driven through `IOUserClient::callExternalMethod()`, which routes to the
+`IOUserClient2022::externalMethod(selector, opaque)` overload; calling the five-argument `externalMethod` is what
+panics.  The probe now uses `callExternalMethod`.
