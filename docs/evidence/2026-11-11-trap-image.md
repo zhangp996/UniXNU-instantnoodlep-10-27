@@ -1743,3 +1743,27 @@ Next measurements, cheapest first:
    kext/fake-kext teardown begins;
 3. compare with the uke port, which registers the same way but never lets its display object reach `stop`: it keeps
    `activeLegacyDisplay` and never releases it, and its `stop`/`detach` calls exist only on failure paths.
+
+## 07:10: the control boot is still alive, six minutes in
+
+A live read of the control image (no display arguments) shows the machine still running:
+
+```
+XNU-DYLD-IMAGE: SpringBoard pc=... FrontBoardServices+0x1e2ec load=... images=1235
+Process[201] crashed: SpringBoard. Too many corpses being created.
+Process[219] crashed: SpringBoard. Too many corpses being created.
+XNU-EXIT: liveactivitiesd pid=271 code=5 ns=2 sub=0x5
+XNU-EXIT: bluetoothd pid=272 code=0 ns=0 sub=0x0
+... webbookmarksd: missing executable ...
+```
+
+SpringBoard is back to its well-known crash loop at the missing CADisplay assertion (as expected with no display
+published), the usual services cycle, and there is **no kernel panic**.  That completes the comparison:
+
+| image | display arguments | after ~2 minutes |
+| --- | --- | --- |
+| current | yes | data abort in `OSMetaClass::~OSMetaClass` via `NativeLegacyDisplay::MetaClass::~MetaClass` |
+| control (`954c262c...`) | no | still running, SpringBoard crash loop only |
+
+So the teardown fault is tied to the display registration, and the machine is otherwise stable - which also gives a
+useful baseline: the control image can be left running for long observations.
