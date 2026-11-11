@@ -2337,3 +2337,24 @@ The proper fix for the build is the device's `scripts/build-gop-legacy-display.p
 So the state is: the completion mechanism is understood and present in source; it is the stale object that keeps it
 from running.  Rebuilding the component from the tree source is the next concrete step, and it unlocks the
 `CommandWake` (and therefore continuous refresh) without any new ABI work.
+
+## 01:55: correction - the object matches the source; the open question is which call site fails
+
+`build-report.json` records `source_sha256` for `drivers/GopFramebuffer/NativeLegacyDisplay.cpp` as
+`b6bd4b08fc8ab23c2a497df08df57eff536826938a0b1f67a6e7...`, and the file in the tree hashes to exactly that.  So the
+compiled component **is** the source we have been reading; the earlier "stale object" conclusion was wrong (it came
+from looking for the literal `kIOReturnCannotWire`, which the source never names).
+
+What that changes:
+
+* `retireSwap()`, `activateOnlyPendingSwap()` and `IOMobileFramebufferLegacy::completeCurrentSwap()` are present in
+  the running component, and our arguments already enable the path (`offline-legacy-cpu-present=1`);
+* the transfer line `rc=0xe00002d8` therefore comes from one of the component's own failure branches - none of the
+  source's `native_legacy_transfer_observed()` call sites pass that value as a literal, so either the status comes
+  from a callee that returns it, or from the probe-side stub for one of the bound helpers;
+* the copy never reaches `finishTransfer()`, so `retireSwap()` never runs and the swap is never completed.
+
+The next step is narrow: instrument `kickOnce()`'s decision points (validated request, surface pointer, allocation,
+`native_legacy_prepare_scanout`, `native_legacy_gpu_offer`) so the failing branch names itself, then let the component's
+own `finishTransfer()` run - which is the documented behaviour ("retain until the swap completes and complete the
+corresponding error path") and the only path that wakes `swap_wait_gated` inside the family's context.
