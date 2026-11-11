@@ -50,10 +50,13 @@ static void ram_watchdog_block_report(void)
                    size ? size->unsigned64BitValue() : 0,
                    uuid ? uuid->getCStringNoCopy() : "-");
             extern volatile int native_owner_data_stage;
-            printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu dataStage=%d\n",
+            extern unsigned long native_owner_cache_carrier_accepts;
+            extern unsigned long native_owner_cache_carrier_rejects;
+            printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu dataStage=%d carrier=%lu/%lu\n",
                    native_ram_block_state[0], native_ram_block_state[1],
                    native_ram_block_state[2], native_ram_block_state[3],
-                   (int)native_owner_data_stage);
+                   (int)native_owner_data_stage,
+                   native_owner_cache_carrier_accepts, native_owner_cache_carrier_rejects);
         }
     }
     OSSafeReleaseNULL(iterator);

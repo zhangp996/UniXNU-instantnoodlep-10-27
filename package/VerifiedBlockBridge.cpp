@@ -292,6 +292,26 @@ extern "C" void native_exit_observe(const char *comm, int pid, int code, int ns,
     printf("XNU-EXIT: %s pid=%d code=%d ns=%d sub=0x%llx\n", comm ? comm : "?", pid, code, ns, sub);
 }
 
+/* Where dyld looks for the shared cache, checked from the kernel before launchd starts the jobs:
+ * every service failing with the same status looks exactly like a cache that cannot be opened. */
+extern "C" void native_dyld_path_probe(void)
+{
+    static const char *paths[] = {
+        "/System/Library/dyld/dyld_shared_cache_arm64e",
+        "/System/Cryptexes/OS/System/Library/dyld/dyld_shared_cache_arm64e",
+        "/private/preboot/System/Library/Caches/com.apple.dyld/",
+        "/System/Library/Caches/com.apple.dyld/",
+    };
+    for (unsigned i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        struct vnode *vp = nullptr;
+        int error = vnode_lookup(paths[i], 0, &vp, vfs_context_current());
+        printf("DYLD-PATH: %s -> %d\n", paths[i], error);
+        if (!error && vp) {
+            vnode_put(vp);
+        }
+    }
+}
+
 extern "C" int native_owner_watchdog_service(void);
 
 /* Draw one block at the top of the panel without the console: the panel's physical base comes
@@ -428,6 +448,7 @@ extern "C" kauth_cred_t vfs_context_ucred(struct vfs_context *);
 extern "C" int native_owner_watchdog_override(void)
 {
     native_owner_watchdog_service();
+    native_dyld_path_probe();
     native_block_device_report();
     static const char body[] =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"

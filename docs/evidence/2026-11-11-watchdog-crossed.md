@@ -487,3 +487,36 @@ Next: establish the shared region before PID 1 and the services run.  The port c
 carrier component for this; the things to check are whether it is selected in the configuration and
 whether it publishes the cache in a way `vm_shared_region` accepts (region created, first mapping
 recorded) before launchd starts spawning jobs.
+
+## 13:35: where the dyld shared region stands after the docs and repository survey
+
+What the documentation says:
+
+* `docs/zh/xnu/patch-reference.md:55` - `offline-owner-cache-carrier` "selects the owner dyld cache
+  carrier and validates the device and path"; `concepts/security.md:47` calls it the code-signing
+  cache carrier.
+* `devices/merlinx:197` - the owner path mounts the SystemOS cache carrier and a packed Data seed;
+  `devices/nabu:220` - the SystemOS cryptex union-mounts as the cache carrier.
+* The community port that reaches SpringBoard (GFander/UniXNU-kebab) solves the same problem from the
+  other side: `kebab_dyldcache.c` pre-maps the split cache into the shared region with
+  `vm_shared_region_map_file()`, the primitive dyld itself reaches through
+  `shared_region_map_and_slide_2_np()`, and `0103-kebab-dsc-slide.patch` applies the slide the
+  pre-mapped path leaves at zero.
+
+What this port shows:
+
+* `RWSTATE ... carrier=0/0`: the carrier hook inside `vm_shared_region_map_file` (added by
+  `offline-owner-cache-carrier.patch`) is never reached, so dyld never maps a cache through the
+  syscall the hook guards;
+* the uniform `code=9 ns=1 sub=0x4` on every service means they fail before they run, which is
+  consistent with dyld being unable to establish the shared region;
+* the cache itself is present: scanning `userdata-root.img` finds `/System/Library/dyld`,
+  `dyld_shared_cache` and `com.apple.dyld` (the exact `dyld_shared_cache_arm64e` name is not in the
+  image's plain text, which fits a split/cryptex cache).
+
+Conclusion: the missing piece is the shared region mapping step, not the cache file.  The two
+documented ways to supply it are the carrier path this port already patches (dyld maps the cache and
+the carrier authorises it) and the kebab approach (the kernel pre-maps it before launchd).  Checking
+whether dyld ever calls `shared_region_map_and_slide_2_np` - a counter at the entry of
+`vm_shared_region_map_file` - is the next measurement, and the kernel-side pre-map is the fallback if
+dyld never gets that far.
