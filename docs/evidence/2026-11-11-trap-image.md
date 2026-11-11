@@ -3229,3 +3229,32 @@ file this repository does not carry.
 
 The image already built (f6eb618e, with the probe calling `boot_process_start()` itself plus the JOP and vsync fixes)
 is the first that may actually fill those rows; it still has to be booted.
+
+## 15:10: WHY the other devices get to the home screen - evidence, not loops
+
+**The devices that reach the UI use a different display driver from this board.**
+
+1. The framework ships its own mobile display driver: `UniXNU/drivers/GopFramebuffer/` contains
+   **`NativeMobileDisplay.cpp`**, `NativeGOPPresenter.cpp`, `NativeGOPWire.h` and `OriginalMobileFramebufferABI.h`.
+   That driver *implements* an IOMobileFramebuffer itself and publishes it as its own service.
+2. The device records that claim a usable UI use that driver:
+   * `docs/devices/a04br3.md`: 'The tablet **reaches the iPadOS home screen** on four CPUs with eMMC DMA and
+     **CPU framebuffer rendering**. ... Metal UI acceleration ... remain in development.' - i.e. no GPU needed;
+   * `docs/devices/evb10.md`: home-screen swipes at ~50 fps, frame-rate arguments now the defaults;
+   * `docs/devices/pandora.md`: iOS 16.7 home screen with touch and keys;
+   * `docs/devices/pong-agxmx666.md`: '桌面与壁纸已有显示'.
+3. This board does not use that driver. Its display is **`NativeLegacyDisplay`** - the *legacy* path that loads
+   the prelinked original `IOMobileFramebufferLegacy` family and tries to drive it (default surface, command gate,
+   swap completion).
+4. The two ports that also chose the legacy path have not reached the UI either: sheng's own report says
+   '**Visual presentation was not verified**' (it only observed SpringBoard/backboardd PIDs), and kebab records
+   'GPU/显示呈现/可用SpringBoard 未完成'.
+
+So the answer to 'why can they get in' is architectural: **they publish their own display service; this board tries to
+reanimate the original family.**  Everything this session fought - the default surface, the command gate, the 5-second
+\`swap_wait_gated\` timeout, slot 345, the metaclass teardown - belongs to the original family's lifecycle, and that
+lifecycle is not the one the successful ports use for a CPU-only presentation.
+
+Concrete next step: build and publish `NativeMobileDisplay` (framework driver) for this board the way the
+NUL devices do, keep the current legacy path only as the boot console, and drop the legacy swap work until the
+own-service path presents frames.
