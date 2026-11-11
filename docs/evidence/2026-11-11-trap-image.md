@@ -2303,3 +2303,37 @@ This is the state to build on: firmware hands the panel over, the kernel console
 1080x2376, and the probe copies every accepted frame in full; the only missing piece is completing the swap inside
 the family's own context (command gate at `fb+0x1608`, or taking over `SwapEnd`/`SwapWait` in the component,
 which is now buildable from `compile-command.json`).
+
+## 01:40: the component already has the completion path - the object is stale
+
+Reading the component source shows the completion path is there and correct:
+
+```cpp
+bool retireSwap(const OriginalLegacySwapRequest *request,bool force) {
+    unsigned retire=0,cpuPresent=0;
+    PE_parse_boot_argn("offline-legacy-retire",&retire,sizeof(retire));
+    PE_parse_boot_argn("offline-legacy-cpu-present",&cpuPresent,sizeof(cpuPresent));
+    if(!(retire==1 || cpuPresent==1 || force))return false;
+    if(!activateOnlyPendingSwap(request))return false;
+    ...
+    IOMobileFramebufferLegacy::completeCurrentSwap();     // in the work loop, as the family expects
+```
+
+Our arguments already include `offline-legacy-cpu-present=1`, so this path is armed - but it is never reached because
+the component's own copy fails first with `rc=0xe00002d8` (kIOReturnCannotWire).
+
+**That status does not exist anywhere in the tree's `NativeLegacyDisplay.cpp`**, so the prebuilt
+`NativeLegacyDisplay.o` (and therefore `NativeLegacyDisplay.late.o`) was built from a different, older source than
+the one in the tree.  Until the object is rebuilt, the component is not running the code we read.
+
+Rebuilding it from `compile-command.json` (419 tokens, 17 include dirs, clang-24) fails on
+`meta_features.h`; adding the generated `build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/<component>/DEVELOPMENT`
+directories fixes that but then reorders the includes and produces 81 header-conflict errors.  `compile.log` in that
+directory is empty, so the original invocation context is gone.
+
+The proper fix for the build is the device's `scripts/build-gop-legacy-display.py` (referenced by
+`docs/porting/display.md`), which sets up the header order for this translation unit.
+
+So the state is: the completion mechanism is understood and present in source; it is the stale object that keeps it
+from running.  Rebuilding the component from the tree source is the next concrete step, and it unlocks the
+`CommandWake` (and therefore continuous refresh) without any new ABI work.
