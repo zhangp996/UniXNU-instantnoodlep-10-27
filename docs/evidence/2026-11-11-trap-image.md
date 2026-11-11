@@ -209,3 +209,46 @@ ipsw dyld a2s --no-color -i -d /root/dsc/dyld_shared_cache_arm64 0x19f3df2ec
 
 Unslid address = the image table address (`ipsw dyld image` or the cache's own table) plus the offset
 the kernel printed as `XNU-DYLD-IMAGE: ... +0x...`.
+
+## What the official documentation says about the display wall
+
+Three places in the UniXNU documentation and catalog describe this stage:
+
+* `docs/porting/display.md` - "Display and brightness", step 2 *Adapt the XNU display backend*:
+  read `GopFramebuffer` and its `NativeLegacyDisplay.cpp`, `NativeGOPPresenter.cpp`,
+  `NativeGOPWire.h`; select the component with its display archive recipe
+  (`scripts/build-gop-legacy-display.py`), enable `CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y` and its
+  `offline-legacy-*` arguments.  **Expected result:** "XNU publishes the display, presents frames
+  and completes swaps."
+* `docs/drivers/gop-framebuffer.md` - the implementation: it reads the firmware framebuffer through
+  `PE_current_console` and publishes it through the selected MobileFramebuffer ABI.
+* `components.toml` `[[component]] id = "GopFramebuffer"` - `verified_devices = ["sheng"]`, i.e. the
+  same SM8550 class, with outputs `build/gop-framebuffer/libGopFramebuffer.a` and
+  `libGopFramebuffer.late.a`; `docs/guide/build-kernel.md` lists `XNU_NATIVE_MOBILE_DISPLAY` and
+  `XNU_NATIVE_LEGACY_DISPLAY` as the two link flags for those late archives.
+
+This board's own `porting.toml` already records the same next action under `[[area]] id = "display"`
+(status `planned`, `components = []`): "Check whether the Mu-Silicium framebuffer covers the panel and
+add GopFramebuffer to the selection", with the limit "No display driver is selected; the GOP path
+depends on the missing firmware platform".
+
+The console agrees with that state: every boot so far ends the display loader with
+`XNU-EXIT: IOMFB_FDR_Loader pid=85 code=256`, which is the same signature the `merlinx` record keeps
+("IOMFB_FDR_loader fails before GPU display handoff"), and SpringBoard then reports the missing
+`CADisplay` in `FBSDisplayMonitor`.
+
+Reference points for the work: `sheng` (the component's verified device), `j716f` ("UEFI GOP
+framebuffer handoff and NativeLegacyDisplay / IOMobileFramebuffer desktop presentation"),
+`alioth` (`IOMobileFramebufferLegacy` prelinked and bound by absolute address, `SWAP calls=0`) and
+`evb10` (`offline-legacy-*` plus `sheng-vsync=60`).
+
+**Work items** (none of them is a kernel patch):
+
+1. `[kernel] archives` in `board.toml`: add `component:GopFramebuffer` and the display archive recipe
+   after the complete arm64 list (the array replaces the inherited one).
+2. Bring the late-archive recipe (`scripts/build-gop-legacy-display.py` in the reference board
+   package) and the ABI inputs it audits.
+3. `configs/instantnoodlep_defconfig`: `CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y` (and the matching
+   `XNU_NATIVE_...` link flag), plus `offline-legacy-gop=1`/`offline-legacy-phase=<n>` in the payload
+   arguments.
+4. Board DTS/ADT: the framebuffer handoff region and display policy the component's board hooks read.
