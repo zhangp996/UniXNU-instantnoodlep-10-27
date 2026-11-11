@@ -2007,3 +2007,33 @@ reference).  Fixing it is a platform-DSC/plugin-config task, not a kernel one:
    `instantnoodlep-artifacts/kernel_small.bin`.
 
 The DarwinBoot clamp removal (`BootVideo.h`) is in place and will take effect as soon as that image is built.
+
+## 09:45: firmware build reaches the edk2 plugin stage with one unresolved module path
+
+Fixes applied this round:
+
+* `Platforms/OnePlus/instantnoodlepPkg/DeviceBuild.py` now also lists `/home/dev/unixnu/UniXNU/package` in
+  `PackagesPath`, because this DSC references `UniXNUPkg` (UniXNULib, the UniXNU application, UniXNUDxe,
+  UniXNURamDiskDxe) which lives in the main checkout;
+* the earlier "Failed to convert Edk2Relative Path to an Absolute Path: UniXNUPkg/..." message came from that
+  missing path and is gone.
+
+The OverrideValidation plugin still aborts the pre-build with a `None` file path:
+
+```
+File ".../OverrideValidation/OverrideValidation.py", line 204, in override_detect_process
+    list_path = os.path.normpath(filepath).lower()
+TypeError: ... not NoneType
+```
+
+so one entry the plugin walks resolves to no file at all - most likely a disabled/conditional module in this DSC
+(there is a commented `AdvancedLogDxe.inf` that used to change the GOP mode) or a DSC section the plugin does not
+understand.  Two ways forward, both small:
+
+1. find that entry by giving the plugin a real path (the DSC's `[Components]` list is short enough to audit), or
+2. run the build with the plugin list trimmed (edk2toolext discovers plugins from
+   `Mu_Basecore/BaseTools/Plugin`; the plugin can be neutralised by removing its `do_pre_build` registration in a
+   local copy, since it is a validation aid).
+
+Once the image builds, replacing `instantnoodlep-artifacts/kernel_small.bin` with it activates the DarwinBoot
+clamp removal (full-panel `1080x2376`).
