@@ -3066,3 +3066,36 @@ So the remaining question is the same one kebab is still chasing: what does the 
 before backboardd builds its CADisplay.  The cheapest way to answer it here is the process probe we just ported -
 its rows would show whether backboardd exists on this port at all - which is why getting those rows onto the serial
 console is the next step.
+
+## 12:55: why the other ports reach the lock screen and this one does not
+
+Pagani's STAGE6 opens with the answer to 'how do they get in':
+
+> 第 50 版已获真机确认：跳过 Setup 进入锁屏，电源键短按亮灭屏、长按打开关机界面；触控初始化失败。
+
+and the architecture table shows the display path they use:
+
+* **NativeGOPPresenter** - published under `IOService::getResourceService()`, NGPMode/NGPPresent/NGPWait/NGPSwap/
+  NGPTransfer wire protocol, CPU copy by default, GPU blit when `sheng-fb-gpu=1`;
+* **NativeMobileDisplay** (the sheng framebuffer driver) with a vsync timer as the refresh tick;
+* the original `NativeLegacyDisplay`/`IOMobileFramebufferLegacy` stays present as the 'GOP display' nub, **but it is
+  not the path the system presents through**.
+
+uke reaches the UI the same way (`NativeMobileDisplay` plus `SweetSurface`/AppleCLCD on the Ace 5 reference), and both
+ports add userland pieces we do not have: SpringBoard `BKNoWatchdogs`/`FBLaunchWatchdogExceptions`, an IOWatchdog stub
+so watchdogd does not `_PanicOnCrash`, and sheng's four userland compatibility fixes.
+
+This board has been driving the **original family** instead: our probe loads the prelinked IOMobileFramebufferLegacy,
+allocates it, adopts the family's own default surface and copies frames - the deepest and most fragile route through
+the original resource graph.  kebab, the one sibling that also drives the original family, is at the same wall: its
+records say 'backboardd 存活' but '主 CADisplay 缺失', 'GPU/显示呈现/可用SpringBoard 未完成'.
+
+So the answer to 'why can they get in' is: they do not drive the original family at all - they publish their own
+framebuffer service, which is what backboardd's enumeration accepts, and they patch the two userland watchdog doors.
+
+### What this implies for the next session
+
+1. port `NativeGOPPresenter`/`NativeMobileDisplay` from the GopFramebuffer project (sheng's LegacyDisplayProbe.cpp is
+   the reference the pagani record points at) and publish it under getResourceService;
+2. keep the current original-family path only as the boot-time console (it already works at 1080x2376);
+3. add the SpringBoard watchdog preferences and the IOWatchdog stub so SpringBoard is not killed while it enumerates.
