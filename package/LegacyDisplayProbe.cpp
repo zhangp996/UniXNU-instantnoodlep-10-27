@@ -28,24 +28,16 @@ extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
+static void publish_display(void);
 
 /* --- functional entries ------------------------------------------------- */
 
 extern "C" void
 native_legacy_display_probe(void)
 {
-	static bool family_loaded;
 	static bool registered;
 
 	printf("DISPLAY: probe entered (registered=%d)\n", registered ? 1 : 0);
-	if (!family_loaded) {
-		/* The family carries no OSBundleRequired, so the prelinker leaves it to be loaded on
-		 * demand; nothing in this port asks for it yet. */
-		OSReturn rc = OSKext::loadKextWithIdentifier("com.apple.iokit.IOMobileGraphicsFamily");
-		printf("DISPLAY: load family kext rc=0x%x loaded=%d\n", (unsigned)rc,
-		    OSKext::isKextWithIdentifierLoaded("com.apple.iokit.IOMobileGraphicsFamily") ? 1 : 0);
-		family_loaded = true;
-	}
 	if (registered) {
 		return;
 	}
@@ -109,8 +101,11 @@ native_legacy_display_probe(void)
 	if (display->init()) {
 		unsigned phase = 0;
 		PE_parse_boot_argn("offline-legacy-phase", &phase, sizeof(phase));
-		printf("DISPLAY: init ok phase=%u, retained for publication\n", phase);
+		printf("DISPLAY: init ok phase=%u\n", phase);
+		/* The kernel's offline-mobile-graphics-load probe has already loaded the family; publish
+		 * inline now that the object exists. */
 		pendingDisplay = display;
+		publish_display();
 	} else {
 		printf("DISPLAY: init failed\n");
 		display->release();
@@ -176,25 +171,15 @@ publish_display(void)
 	if (ranges) ranges->release();
 }
 
-static void
-display_retry(void *, wait_result_t)
-{
-	/* offline-legacy-start runs at bsd_autoconf, before IOKit has settled; give the registry a
-	 * moment, then register the owned class and publish it on the firmware framebuffer. */
-	IOSleep(5000);
-	printf("DISPLAY: retry after 5 s\n");
-	native_legacy_display_probe();
-	publish_display();
-}
-
 extern "C" void
 native_legacy_display_late_probe(void)
 {
-	thread_t thread = nullptr;
-	if (kernel_thread_start(display_retry, nullptr, &thread) == KERN_SUCCESS) {
-		thread_deallocate(thread);
-	}
+	/* offline-legacy-start runs at bsd_autoconf, before the family is loaded. The load itself is
+	 * done by offline-mobile-graphics-load (offline-component-load-probes.patch), which then calls
+	 * native_legacy_display_probe(); this entry only records that ordering. */
+	printf("DISPLAY: late probe (load handled by offline-mobile-graphics-load)\n");
 }
+
 
 /* --- diagnostics the component asks for ---------------------------------- */
 

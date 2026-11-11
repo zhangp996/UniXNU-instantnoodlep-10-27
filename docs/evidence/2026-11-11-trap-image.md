@@ -987,3 +987,26 @@ transfer anywhere in the patch series.  But this changes two things for us:
 Boot arguments for the next run therefore become:
 `offline-mobile-graphics-load=1 offline-legacy-register=1 offline-legacy-gop=1 offline-legacy-unit-scale=2
 offline-legacy-phase=4` (the rest of the display set unchanged).
+
+## 23:30: the probe now follows the arch patch instead of loading the family itself
+
+Changes for the next boot:
+
+* `package/LegacyDisplayProbe.cpp` no longer calls `OSKext::loadKextWithIdentifier` and no longer spawns the
+  five-second retry thread.  `native_legacy_display_probe()` now does the whole sequence when the kernel's
+  `offline-mobile-graphics-load` probe calls it (family already loaded, class registered, GOP console read,
+  object allocated and started, published on the nub); `native_legacy_display_late_probe()` only records that
+  `offline-legacy-start` ran earlier, because `bsd_autoconf` happens before `bsd_init`.
+* `board.toml` gains `offline-mobile-graphics-load=1`; the display argument set is now 19 arguments, 401 bytes
+  of the 1000-byte budget.
+* The image is built and waiting: `instantnoodlep-artifacts/bootEU.img`, sha256
+  `6af5801edd3fd7ee6636c5f85f6caf697efa6b66bb57f4d580aad214b2d22162`.
+
+The expectation for this boot, if the display stack behaves as before: the family is loaded by the patch at
+`bsd_init` (later than the old `bsd_autoconf` call), the probe publishes the service in the same call, and
+`AFB`/`IOMFB` still ask for the default surface, which is not implemented yet - so the same two-minute panic
+should be expected unless `offline-mobile-graphics-client=1` changes the surface path.  The run is still worth it:
+it removes our hand-rolled load, puts the probe on the documented timing, and shows whether the client probe's
+selector-90 call reaches the default-surface code.
+
+The phone is powered down (no `fastboot` entry, no `COM14`), so the image cannot be booted until it is started.
