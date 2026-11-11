@@ -1283,3 +1283,34 @@ Consequences:
 Next measurement: keep the created `IOSurfaceRootUserClient` and either audit its dispatch table or call its
 `externalMethod` with the surface-creation selector and an `IOSurfaceCreateArgs` payload (width, height, bytes per
 row, pixel format BGRA, alloc size), then check the returned object's class is `IOSurface`.
+
+## 02:35: the family reaches the default surface through `+0xD8` and slot 174
+
+The function that prints "No Default FB Surface found" (at `0xfffffff005777464`) has this shape:
+
+```
+str x0, [x29,#-16]       ; this
+str x1, [sp,#24]         ; arg1
+str w2, [sp,#20]         ; arg2
+str w3, [sp,#16]         ; arg3
+ldr x8, [x29,#-16]
+ldr x0, [x8, #216]       ; x0 = this->[0xD8]        <-- the default-surface holder
+ldr w1, [sp,#20]
+ldr w2, [sp,#16]
+ldr x8, [x0]             ; its vtable
+ldr x8, [x8, #1392]      ; slot 174
+blr x8                   ; status -> error path when non-zero
+```
+
+So the family's default-surface lookup is: take the object held at **`this + 0xD8`**, ask it through **slot 174**
+(with the two 32-bit arguments the caller passed), and report "No Default FB Surface found" when that comes back
+non-zero (the error it returns is `0xE00002BC`).
+
+Two possibilities remain, and they are cheap to tell apart on the next boot:
+
+1. the object at `+0xD8` is a real surface holder whose slot 174 answers "no surface", or
+2. the field belongs to a different object than the display (our display object's `+0xD8` is empty - the scan
+   lists no pointer there), and the family is being asked on a different instance.
+
+Either way the missing piece is unchanged: an IOSurface must be created (now via the `IOSurfaceRootUserClient`
+whose factory slot is verified) and installed where slot 174 can find it.
