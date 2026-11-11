@@ -3036,3 +3036,33 @@ the kernel builds with exit 0.  What is missing is evidence that the capture wor
 Cheapest next step: print from inside the capture path (BootProcessProbe.c) once per pass - one line at the start of
 boot_process_capture() and one after the target loop - so the serial shows whether it runs and whether proc_iterate
 returns anything, instead of relying on arm_init prints that the console cannot show.
+
+## 12:40: what kebab's repository says about this wall
+
+GFander/UniXNU-kebab (OnePlus 8T, SM8250 - the closest sibling to this board) documents the same stage in two
+dedicated records:
+
+* **BACKBOARDD-WAIT-OBSERVER-20261031.md** - they sample the waits of the original backboardd: PID57/UID501, all
+  12 threads; the main thread waits in a CFRunLoop receive (ipc_mqueue_receive_continue), another thread is inside
+  QuartzCore CA::Render::Server::server_thread, plus DataMigration XPC and dispatch_group_wait.  Their own earlier
+  diagnostic had wrongly required the service UID to be 0, so it never selected the live backboardd - i.e.
+  **backboardd is running**, and a silent one is not an absent one.
+* **BACKBOARDD-USER-WAITS-20261031.md** - they conclude the current framebuffer comment claims the original framework
+  depends on a display-subsystem declaration, while the real ADT's arm-io only carries gic/timer/ufshc; they insist
+  the exact consumer and resource binding must be established before adding any node ('不能仅凭注释加假的 Apple 硬件节点').
+  Their status line is explicit: 'GPU/显示呈现/可用SpringBoard 未完成' - they do not have a fix either.
+
+Two opposite data points on the display-subsystem question:
+
+* kebab builds a `display-subsystem` node under arm-io (`kebab-display`, scripts/tests/test-gop-display-adt.py);
+* pagani's architecture note warns the opposite for the presenter: `NativeGOPPresenter` must be published under
+  `IOService::getResourceService()`, because attaching it under display-subsystem produced SpringBoard crashes
+  (sheng int-075/077).  Pagani keeps the GOP display nub under /arm-io on the DT plane.
+
+This board already follows the pagani arrangement: the probe attaches its nub to `IOService::getResourceService()`
+(LegacyDisplayProbe.cpp:283) and the display to that nub (line 332).
+
+So the remaining question is the same one kebab is still chasing: what does the original display enumeration need
+before backboardd builds its CADisplay.  The cheapest way to answer it here is the process probe we just ported -
+its rows would show whether backboardd exists on this port at all - which is why getting those rows onto the serial
+console is the next step.
