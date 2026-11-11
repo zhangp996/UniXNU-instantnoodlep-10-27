@@ -2546,3 +2546,23 @@ Image: `bootEU.img` sha `9e6be549fed867f4d21ccacb33acdd7b79536f519579f1111db8e7c
 What this changes on hardware: the `swap_wait_gated` timeout branch no longer calls into an opaque guard that
 returns garbage from a `void` function - it asks `isTimingEnabled()` and gets this driver's real scanout state, which
 is exactly the fix the Pagani port recorded for the same panic.
+
+## 04:25: the slot 345 fix boots; the boot never reaches a swap to exercise it
+
+The kernel with `isTimingEnabled()` for slot 345 boots and runs.  Neither capture window (110-260 s, then 120 s
+live) shows the display stack submitting its first swap at all:
+
+* the windows contain only launchd task start-up, `Early boot complete`, then the `watchdogd` /
+  `liveactivitiesd` / `fairplayd` exit loop with `Too many corpses being created`;
+* no `DISPLAY: swap accepted`, no `swap_wait_gated`, and - importantly - **no display panic**.
+
+So the fix is in the image but the timeout path it repairs was never reached on this boot.  The blocker for the
+next observation is system-level: on many boots the service graph loops before `SpringBoard`/the display server can
+submit a frame, so the compositor never runs.
+
+Two things to try next:
+
+1. keep booting until a boot reaches the compositor (the swap appeared at ~2:10 on earlier boots regardless of
+   this service loop), then check that the timeout no longer panics;
+2. look at the service loop itself (`-no_corpses`, launchd policy, or the `liveactivitiesd` crash at
+   `SessionSyncEngine+0x1d4f8`), since a boot that never reaches the compositor cannot validate the display path.
