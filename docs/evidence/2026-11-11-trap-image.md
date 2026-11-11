@@ -896,3 +896,23 @@ So the field offset and the adapter body are published nowhere; the two doc plac
 that it was never proven on hardware.  Also noted: our catalog pin `e47c1b8` is 897 lines where upstream `main` is
 1230, so a later revision of the component exists (still without the adapter) and is worth re-pinning once the
 surface work starts.
+
+## 22:55: what the prelink page does and does not cover
+
+`/zh/concepts/prelink` explains the mechanism this port relies on, and nothing about the default surface:
+
+* inputs: the native kernel, the original kernelcache, `[kernel.prelink] roots`, slide and early-security
+  initialiser;
+* steps: parse both Mach-Os, read `__PRELINK_INFO`, select the roots and their kernel interfaces, copy each
+  component's segments into the merged ranges, rebind pointers, apply the slide, rewrite module headers and kmod
+  entries, build the sparse index, write `kernel.macho`;
+* "输出保留原始组件代码不变" - the invariant that lets this board bind the family's methods by absolute address;
+* the report next to the output lists `components`, `kernel_interfaces`, `bindings` (`new_site` ->
+  `new_target`), `instruction_inventory`, `module_entrypoints` and `early_security_initializers`.
+
+That report is where our `original-bindings.S` addresses and the family's extents came from, so the page is the
+reason the ownership work could be done at all.  It does not list object field offsets, and the private-ABI rule
+in `porting/drivers.md` (line 70) confirms the scope: record the class layout, the virtual-method slots, the
+selectors, the argument structures and the symbol bindings from the selected kernelcache - object fields are not
+part of the contract.  That is why the family's default-surface field has no published offset and has to be
+measured on this board.
