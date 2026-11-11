@@ -2037,3 +2037,30 @@ understand.  Two ways forward, both small:
 
 Once the image builds, replacing `instantnoodlep-artifacts/kernel_small.bin` with it activates the DarwinBoot
 clamp removal (full-panel `1080x2376`).
+
+## 10:00: firmware build - environment done, blocked on a build macro
+
+State of the firmware build after this round:
+
+**done**
+
+* edk2 toolchain installed (`edk2-pytool-*`, `antlr4`, `pefile`, `coloredlogs`, `regex`) and `stuart_update`
+  fetched `mu_nasm`, `Mu-Basetools`, `onecrypto-bin`;
+* `Platforms/OnePlus/instantnoodlepPkg/DeviceBuild.py` created from the kebab template, with two extra package
+  paths: `/home/dev/unixnu/UniXNU/package` (UniXNUPkg) and `/home/dev/unixnu/UniXNU/drivers/DarwinBoot`
+  (DarwinBootPkg);
+* Mu's OverrideValidation plugin was patched locally to skip entries that resolve to no path (it aborted with
+  `TypeError: ... not NoneType` on this DSC); that is a validation aid, not part of the image;
+* missing third-party include directories (mipisyst, brotli, spdm) were created so the DEC files resolve.
+
+**blocked**
+
+`edk2` now stops on `MdePkg/Library/BaseFdtLib/BaseFdtLib.inf`, whose source line is
+`$(FDT_LIB_PATH)/fdt.c`.  `FDT_LIB_PATH` is not defined anywhere in this checkout (kebab/lemonade do not define
+it either, so their build environment must supply it) - the fix is to define the macro in the platform build, e.g.
+`DEFINE FDT_LIB_PATH = libfdt` next to the other `DEFINE` lines, or pass `-D FDT_LIB_PATH=libfdt` to the edk2
+build, matching where `libfdt` actually lives in `Mu_Basecore/MdePkg/Library/BaseFdtLib`.
+
+Once that resolves, the remaining work is: finish the image, replace
+`instantnoodlep-artifacts/kernel_small.bin` with it, repack, and confirm `GOP console ... 1080x2376` with the
+DarwinBoot clamp removed.
