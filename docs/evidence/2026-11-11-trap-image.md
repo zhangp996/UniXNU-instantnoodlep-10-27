@@ -2220,3 +2220,29 @@ What is left is not geometry:
    `OSMetaClass::~OSMetaClass` data abort follows.
 
 Fixing the completion (or making the component's copy see the geometry) should remove both.
+
+## 00:55: completion attempt and where the session ends
+
+The probe now calls the family's `completeCurrentSwap` (vtable slot 312) right after its own full-panel copy:
+
+```c
+typedef void (*complete_fn)(void *);
+complete_fn complete = ((complete_fn *)(*(void ***)gDisplay))[312];
+complete(gDisplay);
+```
+
+but the last boot never reached the swap: its console ends with the usual service exits and then the same
+`OSMetaClass::~OSMetaClass + 0x1c` data abort (with `x6 = 0xfffffff00578c1cc`, the family's `opaque243 + 0xd7c`),
+so the completion call is still unverified.  In the previous boot the swap did run and the copy was complete
+(2376 rows x 4320 bytes) while `swap_wait_gated` still timed out.
+
+Session state:
+
+* **working**: full-panel firmware (DarwinBoot clamp removed and video handed over), kernel IO submap 32 MiB, console
+  at 1080x2376, surface at 1080x2376, and this board's copy writing the whole panel on the first accepted swap;
+* **open**: the swap completion (CommandWake) - either by calling slot 312 correctly, by signalling the command gate
+  at `fb+0x1608`, or by taking over SwapEnd/SwapWait the way the uke port does; and the metaclass teardown panic
+  that follows a minute or two after the display is published.
+
+Images on disk for the next run: `bootEU.img` (newest, slot-312 attempt) and `kernel_small.bin.old` (the previous
+firmware, for a quick revert).
