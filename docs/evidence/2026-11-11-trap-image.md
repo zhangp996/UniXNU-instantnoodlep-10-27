@@ -2749,3 +2749,20 @@ reports the exit code, and launchd does not forward the process's stderr to the 
 Options from here: forward launchd/SpringBoard stderr to the console (launchd can be told to keep a job's output),
 or run a shell that starts SpringBoard by hand with its output attached, so the abort reason names itself instead of
 only its exit code.
+
+## 06:50: how to get SpringBoard's abort reason
+
+The policy file (/private/var/db/com.apple.xpc.launchd/disabled.plist) can only disable jobs, so it cannot redirect
+SpringBoard's stderr. Two ways remain, both inside reach:
+
+1. **read the crash report from the kernel.**  SpringBoard's abort is reported by ReportCrash into the Data volume's
+   CrashReporter directory, and this kernel already knows how to run file syscalls from a kernel context:
+   package/BootWatchdogPolicy.c opens /private/var/db/com.apple.xpc.launchd/disabled.plist with copyout +
+   open/write/fchown/fstat.  The same pattern with open/read can print the newest crash report to the serial
+   console before launchd starts;
+2. **have launchd keep the job's output.**  This needs a per-job override plist rather than the disabled database,
+   which this kernel's policy writer does not produce today.
+
+Option 1 reuses code that already runs on every boot and needs no new syscall surface, so it is the next step:
+add a boot-argument-gated reader (for example native-crash-dump=<path>) to the same file, call it from the same
+place the policy runs, and print the report with printf.
