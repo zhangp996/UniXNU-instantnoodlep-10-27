@@ -2923,3 +2923,22 @@ exit 0.
 Image: \`bootEU.img\` sha \`11ddd4aad1a802a54652657712da51de973ca6927ef51b2f370a4039349e1a1b\`, boot arguments already
 carry \`sheng-crashlog=1\`.  The probe sleeps 60 s and then scans CrashReporter every 90 s, printing backboardd and
 SpringBoard reports into msgbuf, which the serial console shows.
+
+## 09:50: the probe runs but there is nothing for it to read
+
+The crash-report probe is compiled into the kernel (uke_crash_log_start present, 22 UkeCrash strings, archive
+member verified) and its call site is the unconditional boot_progress_init() in arm_init.c (CONFIG_XNU_BOOT_PROGRESS=y
+in the built .config), with \`sheng-crashlog=1\` in the boot arguments.  On hardware, however, the log shows **zero**
+UkeCrash lines over four minutes while SpringBoard keeps exiting with code 6:
+
+    XNU-EXIT: SpringBoard pid=27  code=6 ...
+    XNU-EXIT: SpringBoard pid=145 code=6 ...
+
+The probe only prints when it finds reports in /private/var/mobile/Library/Logs/CrashReporter, and that directory is
+not being filled: the corpse messages on this boot ('Too many corpses being created', with corpses disabled by
+config in the earlier run) say the crash-information path fails before a report is written.  So the missing piece is
+not the reader but the producer - the kernel's corpse allocation for these dying processes.
+
+State: image 11ddd4aa... carries the probe and boots; the probe is silent because no crash reports exist yet.
+The next lever is the corpse path (task_collect_crash_info failing with KERN_RESOURCE_SHORTAGE) rather than more
+instrumentation of the reader.
