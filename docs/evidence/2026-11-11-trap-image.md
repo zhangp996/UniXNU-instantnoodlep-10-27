@@ -2726,3 +2726,26 @@ Remaining productive directions, in order:
    early-retire path on the swap timeout;
 3. if the loop is accepted as this system stage's normal state, document it as such and keep the display work at
    'full panel + full-frame copy, swap completion pending'.
+
+## 06:35: the lite launchd policy does not stop the SpringBoard loop
+
+The board already carries the policy mechanism (package/BootWatchdogPolicy.c): it writes a launchd plist that
+disables the listed jobs, runs after writable scratch Data mounts and before launchd exec, and is enabled
+unconditionally; `disable-jobs=<labels>` and `lite=1` select the set.  Adding `lite=1` to the kernel arguments is
+visible in launchd's own boot-args line:
+
+    boot-args = -v serial=3 debug=0x14e -no_corpses -no_slto_panic ... qcom-usb-debug=1 lite=1 offline-legacy-...
+
+and launchd does start its boot tasks (finish-obliteration, etc.), but SpringBoard still exits with code 6 within
+seconds and is restarted:
+
+    XNU-EXIT: SpringBoard pid=27  code=6 ...
+    XNU-EXIT: SpringBoard pid=146 code=6 ...
+
+So the abort is not caused by any of the jobs the lite set disables (identityservicesd, locationd, CommCenter,
+fairplayd.A2, PerfPowerServices, ...).  The remaining unknown is SpringBoard's own abort reason; the kernel log only
+reports the exit code, and launchd does not forward the process's stderr to the serial console.
+
+Options from here: forward launchd/SpringBoard stderr to the console (launchd can be told to keep a job's output),
+or run a shell that starts SpringBoard by hand with its output attached, so the abort reason names itself instead of
+only its exit code.
