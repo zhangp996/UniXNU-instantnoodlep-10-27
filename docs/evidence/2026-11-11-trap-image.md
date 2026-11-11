@@ -2590,3 +2590,47 @@ Two candidates worth trying, both cheap:
 
 Until one of those lets SpringBoard live past its first frame, the display path cannot be validated further: every
 swap-related observation needs the compositor to submit.
+
+## 05:00 (session summary): the display path is complete up to swap completion
+
+**What this session established, in order**
+
+1. **The 480-row window was our own DarwinBoot bring-up clamp** - `if (Video[4] > 480) Video[4] = 480;` in
+   `drivers/DarwinBoot/DarwinBootPkg/Driver/BootVideo.h`, added because the kernel could not map the panel at console
+   time.  It is removed, and DarwinBoot now hands the video to XNU (`DARWINBOOT_VIDEO_FOR_XNU` block replaced by an
+   unconditional copy).
+2. **The kernel's IO submap was 8 MiB** (`osfmk/arm/io_map.c: IO_MAP_SIZE`), smaller than the panel's 10,264,320-byte
+   frame buffer; it is now 32 MiB.  With both changes the console runs at the panel's real size:
+   `DISPLAY: GOP console 0x9c000001 1080x2376 depth=32 stride=4320`.
+3. **The firmware is built here now**: the WSL Mu-Silicium tree needed the edk2 Python toolchain, `stuart_update` for
+   `mu_nasm`/`Mu-Basetools`/`onecrypto-bin`, a `DeviceBuild.py` (created from the kebab template) with the UniXNU
+   package paths, the nested `libfdt` submodule, and the OverrideValidation plugin skipping path-less entries.  The
+   final image is assembled as `112-byte shim header + FVMAIN_COMPACT.Fv`.
+4. **The compositor renders at panel size and the frame reaches the panel**: `surface geom 2376x0 stride=4352
+   alloc=10342400`, `present surface ... 1080x2376`, and `present copied 2376 rows x 4320 bytes (frame 1)`.
+5. **The component is rebuildable**, which it was not before: `compile-command.json` plus the generated
+   `meta_features.h` include and `-Wno-missing-designated-field-initializers` compiles it, and the link needs the
+   `__GLOBAL__sub_I_NativeLegacyDisplay.cpp` symbol provided from the probe.
+6. **slot 345 is `isTimingEnabled()`**, as the Pagani/13T record documents for the same caller
+   (`0xfffffff00578c1cc`, the `swap_wait_gated` timeout branch).  It is implemented as
+   `primary && bootMapping && logicalPM` and the kernel builds and links with it.
+
+**Where it stops**
+
+The last boots never reach the compositor's first swap: SpringBoard aborts (code 6) and the service graph loops into
+`Too many corpses being created` before any frame is submitted, so neither the early-retire path
+(`native_legacy_gpu_offer` now returns true) nor the slot 345 fix has been exercised on hardware.  Earlier boots did
+reach the swap at about 2:10, so this is boot-to-boot variance, not a fixed wall.
+
+**Next session, in order**
+
+1. let SpringBoard survive to its first frame (`-no_corpses` is now in the arguments; the Pagani service trims are the
+   next lever), then confirm the timeout no longer panics;
+2. with a swap reaching the display, check that early retire (`gpu_offer=true` + `sheng-early-retire`) wakes
+   `swap_wait_gated`, which is the last step to continuous refresh;
+3. if the family still does not wake, take over `SwapEnd`/`SwapWait` in the component (uke's design), which the
+   rebuild recipe above now makes possible.
+
+Artifacts: `instantnoodlep-artifacts/bootEU.img` (latest, sha `489eb188...`, with `-no_corpses` and the slot 345
+fix), `kernel_small.bin.old` (the pre-change firmware, for a quick revert), and the logs under
+`docs/evidence/logs/`.
