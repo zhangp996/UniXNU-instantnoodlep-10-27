@@ -3099,3 +3099,21 @@ framebuffer service, which is what backboardd's enumeration accepts, and they pa
    the reference the pagani record points at) and publish it under getResourceService;
 2. keep the current original-family path only as the boot-time console (it already works at 1080x2376);
 3. add the SpringBoard watchdog preferences and the IOWatchdog stub so SpringBoard is not killed while it enumerates.
+
+## 13:05: the missing argument - sheng-vsync
+
+UniXNU-sheng's board.toml uses the **same** offline-legacy-* display arguments as this board, plus a group this
+port never set.  The decisive one is the refresh tick: the component's own comment says
+
+> Display refresh tick (boot-arg `sheng-vsync=<Hz>`, 0 or absent: **off**). The original family sends the
+> compositor's vsync message (type 5) ...
+
+and sheng passes `sheng-vsync=120` with `sheng-vsync-fixed=1`.  This board has never passed either, so the display
+has been running with the refresh tick **off**: no vsync is published to the display server, which is exactly the
+kind of missing timing that keeps backboardd from building a usable CADisplay - and matches kebab's observation that
+backboardd is alive and waiting.
+
+sheng's other display arguments this board lacks: `sheng-fb-gpu=1`, `sheng-fb-bgra=1`, `sheng-dpu-scanout=2`,
+`sheng-backlight=1`, `sheng-disable-watchdogd=1`.
+
+Image with `sheng-vsync=120 sheng-vsync-fixed=1` added: bootEU.img 262d376c..., waiting for the device.
