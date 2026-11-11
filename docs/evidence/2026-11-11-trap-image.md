@@ -2427,3 +2427,29 @@ The boot that carried it did not reach the swap inside the capture window (the c
 boot, and the window ended at 3:10 with the machine already in its idle/abandoned state), so the result is still
 outstanding - one boot captured over 110-240 s will show whether the copy now succeeds and the family retires the
 swap itself.
+
+## 03:20: the reference port retires the swap before the copy - and our probe was declining that path
+
+The Pagani (SM8750) port documents exactly this stage in its display driver README:
+
+> The copy runs on a **kernel thread call outside the family's command gate** and **the swap retires before the copy**,
+> so the compositor renders the next frame meanwhile (the next swap still waits for this copy).
+> ... `sheng-early-retire` (default 1): retire an offered swap when the GPU client takes it.
+
+and its component implements it as
+
+```cpp
+if(!gpuBypass && native_legacy_gpu_offer(this,memory,sourceStride,width,height,format)) {
+    ...
+    if(early==1 && retireSwap(request,true)) { gpuRetired=true; ... }   // completeCurrentSwap, inside the work loop
+    return;
+}
+```
+
+with `retireSwap()` calling `IOMobileFramebufferLegacy::completeCurrentSwap()` - the only context in which it wakes
+the waiting client.  On this port `native_legacy_gpu_offer()` is a board-probe stub that has always returned
+`false`, so that branch never ran and every swap ended in `swap_wait_gated` timing out.
+
+The stub now returns `true` (the frame is taken by the probe's own copy, which already runs in the swap-validation
+hook), so the component should retire each swap early inside the family's work loop.  Image
+`382b9569758a087e61c2a18d3b134a002e71f21362c89a39233e091047a3b8e2` is built and waiting for the device.
