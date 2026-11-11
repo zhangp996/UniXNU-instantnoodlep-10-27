@@ -2526,3 +2526,23 @@ probe object expects.  The next step is to reproduce the original object's initi
 `.late.o` was 384,278 bytes against our 385,152) - either by matching the original compile flags (the device's
 `scripts/build-gop-legacy-display.py` sets them) or by moving the globals that need dynamic initialisation into a
 form that emits the symbol.
+
+## 04:10: the kernel builds and links with slot 345 implemented as isTimingEnabled()
+
+The missing link symbol was the component's static initialiser: the component's translation unit emits
+`__GLOBAL__sub_I_NativeLegacyDisplay.cpp` as a **local** symbol while the probe object references it as an
+**external** one.  Defining that symbol in the probe (same name, empty body, via an asm label) resolves the link.
+
+With it:
+
+* ABI header: slot 345 is `virtual bool isTimingEnabled()=0`, `LEAF(345)` removed from `NATIVE_LEGACY_LEAVES`;
+* component: `bool isTimingEnabled() override {return primary && bootMapping && logicalPM;}` - the Pagani port's
+  body (`primary && bootMapping && displayOn`) with this component's name for the power state;
+* component compiles (`meta_features.h` include + `-Wno-missing-designated-field-initializers`), archive rebuilds,
+  and `unixnu build kernel` finishes with exit 0.
+
+Image: `bootEU.img` sha `9e6be549fed867f4d21ccacb33acdd7b79536f519579f1111db8e7c19002bc30`.
+
+What this changes on hardware: the `swap_wait_gated` timeout branch no longer calls into an opaque guard that
+returns garbage from a `void` function - it asks `isTimingEnabled()` and gets this driver's real scanout state, which
+is exactly the fix the Pagani port recorded for the same panic.
