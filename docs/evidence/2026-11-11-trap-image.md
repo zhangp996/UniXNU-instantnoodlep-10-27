@@ -1101,3 +1101,52 @@ ldr  x8, [x0] ; ldr x8, [x8, #2760] ; blr x8       ; #2760 = 345 * 8
 Only `x0` is set up, so the slot takes just the object (a notification/void leaf), not a surface request.  The
 next scan therefore prints each pointer's `vtable` as well, so the slots can be named against the component
 segments (IOSurface's data extent is known from the prelink report) instead of guessed.
+
+## 00:40: the field map names the family's members, and the provider is the next lever
+
+The completed scan (23 pointer slots, each with its pointee's vtable):
+
+| offset | pointee's vtable symbol | what it is |
+| --- | --- | --- |
+| +0x000 | `NativeLegacyDisplay` vtable | the object itself |
+| +0x018, +0x020 | `OSDictionary` | two dictionaries |
+| +0x030 | `IOService` | the nub (provider) |
+| +0x060 | `IOServicePM` | power management state |
+| +0x1570..+0x15e0 | vtable 0 | eight embedded links (queue) |
+| +0x1608 | `IOCommandGate` | command gate |
+| +0x1610 | `IOWorkLoop` | work loop |
+| +0x1638 | `IOInterruptEventSource` | interrupt source |
+| +0x1648 | `IOTimerEventSource` | timer source |
+
+Nothing sits at `+0x1618` - the region a device record (`uke`) names for the default surface - which is what a
+missing default surface looks like.
+
+Two new facts from the console of the same boot:
+
+```
+virtual bool IOMobileFramebufferLegacy::start(IOService *): provider was not AppleARMIODevice.
+```
+
+The family's own start rejects a plain `IOService` provider.  Our component's start still succeeds, but the
+family's normal path - which is where the default surface is created and installed - never runs.  The reference
+board hit the same message and worked around it with a plain service; that is exactly why its records say the
+default-surface adapter "still requires a hardware boot result".
+
+```
+disk3s1: device is not readable.
+mockfs_mountroot failed: 13
+apfs_vfsop_mountroot:2965: apfs: mountroot called!
+```
+
+The root volume reported "not readable" on this boot before APFS took over; the boot continued, but this is the
+same storage path that later fails to create the swap file (`vm_swap_create_file failed @ 115 secs`).
+
+Reaching the original IOSurfaceRoot factory from the kernel is not a symbol call: the prelinked IOSurface kext
+exports only `_gIOSurfaceIdentifier` and `_gIOSurfaceTag`, no class methods, so a surface has to be created
+through the service's virtual interface (which means auditing IOSurfaceRoot's slots) or by letting the family do
+it through its normal start path.
+
+Next lever, cheapest first: give the family the provider it asks for - allocate `AppleARMIODevice` (present in the
+prelinked AppleARMPlatform) as the nub over the firmware framebuffer memory, attach it to the resource service and
+to `/arm-io`, and pass it to `start`.  If the family's own path then runs, it may create and install the default
+surface itself, which is the one thing no board record shows.
