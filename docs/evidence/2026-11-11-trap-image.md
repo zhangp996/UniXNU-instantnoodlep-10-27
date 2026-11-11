@@ -1482,3 +1482,24 @@ So the two coherent paths are:
 
 Path 1 costs one measurement at a time and keeps the working display publication; path 2 is a rewrite with a known
 end state.  Both need a decision before code is written.
+
+## 04:40: selector 0 with the documented argument layout
+
+The phone's own screen showed what the console relay had missed:
+
+```
+DISPLAY: create_surface class=IOSurfaceRootUserClient size=0x138
+DISPLAY: client sel=0 rc=0xe00002c2 out=0x0,0x0,0x0,0x0
+... (sel 1..7 the same)
+```
+
+`0xE00002C2` is `kIOReturnBadArgument`: the 2022 dispatch *is* reached now (the two-argument virtual was the
+right entry), it just rejected the argument shape.  The sibling's source documents the shape:
+
+```
+sel 0 create: scalar [parent id], struct in = serialized property dictionary, struct out = lock result (0xa68)
+```
+
+so the probe now calls selector 0 with one scalar (parent id 0), a hand-written XML plist
+(`IOSurfaceWidth/Height/BytesPerRow/PixelFormat/AllocSize`) as the structure input, and a 0xa68-byte lock-result
+buffer as the structure output, then logs the first words of the result.
