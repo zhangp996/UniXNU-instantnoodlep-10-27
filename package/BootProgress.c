@@ -636,6 +636,12 @@ void boot_progress_cancel_scanout(void) {
   __atomic_store_n(&display.yield_requested,0,__ATOMIC_RELEASE);
 }
 void boot_progress_init(void) {
+    /* Uke's crash-report probe: starts its worker under sheng-crashlog=1 and mirrors CrashReporter
+     * entries (backboardd, SpringBoard) into the kernel log. */
+    {
+        extern void uke_crash_log_start(void);
+        uke_crash_log_start();
+    }
   unsigned opt=0;
   if (!PE_parse_boot_argn("boot-progress",&opt,sizeof(opt)) || (opt != 1 && opt != 2)) return;
   __asm__ volatile("mrs %0,cntfrq_el0" : "=r"(boot_progress_frequency));

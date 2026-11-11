@@ -67,7 +67,34 @@ stub_command = [str(stubs) if arg == str(source) else str(stub_obj) if arg == st
                 for arg in command]
 subprocess.run(stub_command, cwd=record['directory'], check=True, timeout=300)
 
+
+# Uke's crash-report probe (package/CrashLogProbe.c). It is a BSD source: compile it with the
+# kern_exec record, and always put it in the archive because this kernel link does not honour
+# weak imports.
+bsd = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/bsd/DEVELOPMENT/kern_exec.o.json')
+                  .read_text().strip().rstrip(','))
+probe_source = next((p for p in (ROOT / 'kits' / 'instantnoodlep' / 'CrashLogProbe.c',
+                                 ROOT / 'package' / 'CrashLogProbe.c') if p.is_file()), None)
+if probe_source is None:
+    raise SystemExit('package/CrashLogProbe.c is missing from the device repository')
+probe_obj = OUT / 'CrashLogProbe.o'
+probe_command, idx = [], 0
+while idx < len(bsd['arguments']):
+    arg = bsd['arguments'][idx]
+    if arg == bsd['file']:
+        probe_command += ['-x', 'c', str(probe_source)]
+    elif arg == '-o':
+        probe_command += ['-o', str(probe_obj)]
+        idx += 1
+    elif arg in ('-MF', '-MT', '-MJ'):
+        idx += 1
+    else:
+        probe_command.append(arg)
+    idx += 1
+probe_command += ['-Wno-error', '-I', str(ROOT / '.cache/xnu-work/osfmk')]
+subprocess.run(probe_command, cwd=bsd['directory'], check=True, timeout=300)
+
 archive = OUT / 'libBootProgress.a'
 archive.unlink(missing_ok=True)
-subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj)], check=True, timeout=30)
+subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj), str(probe_obj)], check=True, timeout=30)
 print('PASS: boot progress renderer built against the source kernel ABI')

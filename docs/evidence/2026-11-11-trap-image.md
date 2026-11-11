@@ -2906,3 +2906,20 @@ these findings kept for the next attempt:
 
 Rolled back to a buildable tree (kernel build exit 0, image `8bf8c20c...`); package/CrashLogProbe.c stays in the
 repository as the source for the next attempt, with the two fixes above already known.
+
+## 09:30: the crash-report probe is linked into the kernel
+
+The port finished after the two fixes:
+
+* scripts/build-boot-progress.py (device repository **and** the assembled tree copy) compiles package/CrashLogProbe.c
+  with the kern_exec record and puts CrashLogProbe.o into libBootProgress.a unconditionally;
+* package/BootProgress.c calls \`uke_crash_log_start()\` from \`boot_progress_init()\` (a strong call, because the
+  kernel link does not honour weak imports).
+
+Verified in the built kernel: \`llvm-nm kernel.macho | grep -c uke_crash_log_start\` = 1, 22 \`UkeCrash\` strings, and
+libBootProgress.a holds BootProgress.o, BootProgressStubs.o and CrashLogProbe.o.  The kernel build finished with
+exit 0.
+
+Image: \`bootEU.img\` sha \`11ddd4aad1a802a54652657712da51de973ca6927ef51b2f370a4039349e1a1b\`, boot arguments already
+carry \`sheng-crashlog=1\`.  The probe sleeps 60 s and then scans CrashReporter every 90 s, printing backboardd and
+SpringBoard reports into msgbuf, which the serial console shows.
