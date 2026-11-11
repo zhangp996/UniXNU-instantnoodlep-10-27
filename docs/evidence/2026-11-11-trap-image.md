@@ -2099,3 +2099,35 @@ repacked (sha `30a60c18eb329358e9c51bced42bb5c2e8471d7ff8138ee71de0e5866ceeb37e`
 Next boot decides two things at once: whether this hand-assembled firmware boots at all (the shim and volume base
 are unchanged, so it should), and whether `PE_current_console` now reports `1080x2376` - which would end the
 480-row window and let the console, the diagnostic page and a compositor frame cover the panel.
+
+## 11:00: the full-panel firmware boots; the kernel receives no video
+
+The hand-assembled image (new FV + unchanged 112-byte shim header) **boots**: the loader draws its menu across
+the whole panel with the green pulse bar at the bottom, and its hand-off banner reports a panel-sized video mode
+(picture shows `video base 0x9C000000 1080x2376 row 4320`).
+
+The kernel, however, gets nothing:
+
+```
+DISPLAY: no usable GOP console (base=0x0 0x0 depth=0 rot=0 stride=0)
+```
+
+and the machine ends up back in the loader menu.  `PE_current_console` only copies `PE_state.video`, and
+`PE_init_platform` copies that straight from `boot_args->Video` - so the zero is already in the boot arguments by
+the time XNU starts.  In DarwinBoot, `ReadBootVideo()` runs first and, on any failure, leaves `Video[6]` zeroed
+before `CopyMem(Args->Video, Video, ...)`; the banner uses the same array, which is why the picture shows a real
+mode while the kernel sees zeros only if the failure happens on one path and not the other.
+
+Two candidates, both cheap to settle next:
+
+1. `DarwinBootVideoFromGop` rejects the mode because `Gop->Mode->FrameBufferSize < rowBytes * v_height`
+   (10,264,320 bytes for 1080x2376); SimpleFbDxe computes that size as `Width*Height*4` from the same PCDs, so it
+   should pass - unless the GOP mode the loader sees is a different (smaller) one;
+2. XNU rejects/ignores the larger window on its side (the original comment's "kernel map cannot give it the full
+   10 MiB at the point the console comes up").
+
+The evidence so far favours (2) being the real limit and (1) being fine (the banner shows the values), so the next
+look should be at where the kernel maps the framebuffer for the console on this board.
+
+The previous firmware is kept at `kernel_small.bin.old`; restoring it returns the 1080x480 window and a working
+boot.
