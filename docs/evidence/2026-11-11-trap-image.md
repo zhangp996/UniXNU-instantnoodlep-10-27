@@ -534,3 +534,45 @@ candidate the reference tooling accepts (`scripts/probe-native-legacy-display.py
 The probe itself is now a working instrument: it prints the GOP mode, the allocation, the bound parent
 metaclass, the registered family metaclass and the whole metaclass chain.  Console:
 `docs/evidence/logs/2026-11-11-bootEX-console.log`, `...bootEY...`, `...bootEZ...`.
+
+## 20:20: the APFS "class open" line
+
+A live read of the serial port caught one line that earlier captures did not have:
+
+```
+apfs_is_valid_class:2395: disk5s1 rejecting class open (class 2) because we're not content protected
+```
+
+What the same log says about that disk, in order:
+
+```
+SEL-DIAG: disk5s1 seedInfo=1 base=0 bytes=3221225472
+apfs_log_op_with_proc:3091: disk5s1 mounting volume OwnerData, requested by: init (pid 1)
+handle_mount:817: disk5s1 vol-uuid: E553E004-A6C6-4992-B474-25EB0F160524 block size: 4096
+   block count: 786432 (unencrypted; flags: 0x1; features: 1.0.2)
+BLK: disk5s1 size=3221225472 uuid=E553E004-A6C6-4992-B474-25EB0F160524
+```
+
+So `disk5s1` is the 3 GiB `OwnerData` volume, and APFS itself reports it as **unencrypted, flags 0x1**.
+The rejecting function, `apfs_is_valid_class()`, sits next to the other content-protection strings in the
+APFS kext ("cannot roll non-content protected volume", "cannot create xattr crypto for non-content protected
+volume", "cannot lock inode on non-content protected volumes", and
+`((cp_key_class_t)(0x0000001f & (skey_get_class(key)))) == key_out_class`), so "class" here is a
+`cp_key_class_t` (five bits, values 0-31) and "class 2" is one concrete content-protection class.
+
+**What it means:** a caller opened a file on Data and asked APFS to apply content-protection class 2; because
+the volume carries no content-protection wrapper, APFS refuses instead of serving the file with that class.
+Everything else on the volume works: it mounts, reads, writes, and the services that use it keep running.
+
+**Frequency:** one occurrence in a 60 s window, none in the earlier `bootEW`/`bootEX`/`bootEY`/`bootEZ`
+captures, so it is a one-shot attempt rather than a loop.  The line carries the function name but not the
+pid, and no `apfs_log_op_with_proc` line is adjacent, so the caller cannot be named from the console alone.
+
+**Why this board sees it:** the Data seed (`owner-data-3g.dbr`) is a plain APFS volume we generate; a real
+device's Data volume is content-protection wrapped and its class keys come from AppleKeyStore.  A plain volume
+therefore rejects any class-scoped open by construction.
+
+**Options, in order of cost:** accept and record it (it does not stop the boot); instrument
+`apfs_is_valid_class` in the prelinked kext to print the calling process before deciding whether it matters; or
+build a content-protected Data volume with real class keys, which needs the keystore/keybag path this port does
+not have yet.
