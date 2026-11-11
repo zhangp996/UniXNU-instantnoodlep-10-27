@@ -2064,3 +2064,38 @@ build, matching where `libfdt` actually lives in `Mu_Basecore/MdePkg/Library/Bas
 Once that resolves, the remaining work is: finish the image, replace
 `instantnoodlep-artifacts/kernel_small.bin` with it, repack, and confirm `GOP console ... 1080x2376` with the
 DarwinBoot clamp removed.
+
+## 10:30: a freshly built firmware with the clamp removed, packaged by hand
+
+The firmware build in the WSL Mu-Silicium tree finally produced the volume:
+
+```
+Build/instantnoodlepPkg/RELEASE_CLANGPDB/FV/FVMAIN_COMPACT.Fv   4,194,304 bytes
+```
+
+after: installing the edk2 toolchain, fetching `mu_nasm`/`Mu-Basetools`/`onecrypto-bin` with
+`stuart_update`, creating `Platforms/OnePlus/instantnoodlepPkg/DeviceBuild.py` from the kebab template with
+`/home/dev/unixnu/UniXNU/package` and `/home/dev/unixnu/UniXNU/drivers/DarwinBoot` added to `PackagesPath`,
+initialising the nested `MdePkg/Library/BaseFdtLib/libfdt` submodule, and letting the OverrideValidation plugin
+skip entries without a path.
+
+The build then stopped only in the *post-build* PECOFF validation (two runtime drivers' section alignment), after
+the volume was written.  The final image is therefore assembled from the two parts this port already used:
+
+```
+kernel_small.bin = 112-byte Linux Image header (BootShim) + FVMAIN_COMPACT.Fv
+```
+
+which reproduces exactly the previous image's size (4,194,416 bytes):
+
+```
+head -c 112 kernel_small.bin.old  > kernel_small.new
+cat FVMAIN_COMPACT.Fv            >> kernel_small.new
+```
+
+`kernel_small.bin` now holds the new firmware (the old one kept as `kernel_small.bin.old`), and `bootEU.img` was
+repacked (sha `30a60c18eb329358e9c51bced42bb5c2e8471d7ff8138ee71de0e5866ceeb37e`).
+
+Next boot decides two things at once: whether this hand-assembled firmware boots at all (the shim and volume base
+are unchanged, so it should), and whether `PE_current_console` now reports `1080x2376` - which would end the
+480-row window and let the console, the diagnostic page and a compositor frame cover the panel.
