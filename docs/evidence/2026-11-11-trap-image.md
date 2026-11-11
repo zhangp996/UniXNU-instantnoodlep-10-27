@@ -3408,3 +3408,30 @@ verified-root split, NativeUfs bindings) - not because it is stale.
 identical), and the differences are device-local additions plus iOS 26/27 and GPU material.  The framework is not
 what keeps SpringBoard in its loop; the missing pieces are the device-side services discussed earlier (a real GPU
 backend and the userland-facing services SpringBoard expects).
+
+## 06:05: the packaging pipeline was feeding a stale kernel - scope of the damage
+
+`scripts/build_payload.sh` copies `out/.../kernel/kernel.macho` to `/tmp/amfiEU/kernel.macho` and applies the two
+AMFI patches (nopmgr, trustcache gate) before packing.  `restore_owner_data.sh`, used for the last rounds, packs
+`/tmp/amfiEU/kernel.macho` **without** copying the new build first, so those images carried whatever kernel was there.
+
+Evidence: the image built at 05:31 (`20807042`) and the repack (`8511d7ba`) contain no `mini stand-ins` string,
+while `out/.../kernel/kernel.macho` does; after running the patcher on a fresh copy, image `ad936d1e` contains it.
+
+### What this invalidates
+
+Any change made after the last run of `build_payload.sh` was tested against a kernel that did not contain it:
+
+* the JOP shared-region signing fix (`vm_shared_region.c`),
+* the GOP presenter and the empty-accelerator stub,
+* the HakiOS `Mini*` stand-ins (until image `ad936d1e`).
+
+The SpringBoard loop itself is not an artifact of this: it was recorded in the early boots whose kernels did carry the
+session's changes (the probe prints, the display attach/start results and the sheng-vsync arguments all appear in
+those logs).  But those three fixes above have **not actually been executed on the device yet**, so their negative
+results do not count.
+
+### Correct packing from now on
+
+`build_payload.sh` (fresh copy + both AMFI patches + payload), then `pack_boot.sh`.  `restore_owner_data.sh` must not
+be used without the copy step.
