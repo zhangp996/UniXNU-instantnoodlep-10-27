@@ -3258,3 +3258,30 @@ lifecycle is not the one the successful ports use for a CPU-only presentation.
 Concrete next step: build and publish `NativeMobileDisplay` (framework driver) for this board the way the
 NUL devices do, keep the current legacy path only as the boot console, and drop the legacy swap work until the
 own-service path presents frames.
+
+## 16:00: the diagnostic page cannot enter userland, and the knob image still aborts
+
+* The diagnostic page (`boot-progress`) is a kernel-side renderer: it draws boot stages and, when the probes fill
+  them, process and ui-trace rows.  It cannot start or enter userland - userland begins exactly once, when the
+  kernel execs `/sbin/launchd`, and this port has no shell path or 'jump to desktop' switch.
+* The image with a04br3-style knobs (kt_fixed_zones, vm_compressor, ml-timeout-lock-panic-scale, disable-watchdogd,
+  disable-jobs including iomfb_fdr_loader, sheng-vsync) boots, the trims are visible in boot-args, and SpringBoard
+  still exits with code 6:
+
+      XNU-EXIT: SpringBoard pid=27  code=6 ...
+      Process[146] crashed: SpringBoard. Too many corpses being created.
+
+## The remaining structural difference
+
+Every device record that claims a home screen carries a **GPU driver** in the kernel, even when the UI is composed
+on the CPU: a04br3 passes `a04br3-gpu=2`, `sheng-fb-gpu=1`, `a04br3-gpu-metal=1`; pagani and uke carry Adreno drivers
+and publish an AGXAccelerator/IOAcceleratorES service.  This board has no GPU driver at all - it links UFS, USB,
+RAM block, verified root and the display, nothing that creates a Metal device.
+
+That is consistent with SpringBoard aborting in every configuration tried today: its render server asks the system
+for a graphics device at startup, and a display with no Metal device is not enough.
+
+## What this means
+
+The display work is complete up to the frame reaching the panel; the next real blocker is a Metal-capable GPU
+service, which is a driver port of its own (Adreno 650 on this SoC), not a display configuration.
