@@ -614,3 +614,30 @@ so the patch is reverted and the tree is clean again.
 
 State left behind: `zzz-video-console-tee.patch` exists but is not in the series; the RamWatchdog
 backend is back to its working form (non-fatal deadline, tick report, no USB calls).
+
+## 15:10: the serial tee works; the console module's transmit path is stuck
+
+`USBPHASE` prints the console module status from the watchdog tick:
+
+```
+USBPHASE: phase=3 pending=207  accepted=16671 transport=16384
+USBPHASE: phase=3 pending=485  accepted=16869 transport=16384
+USBPHASE: phase=3 pending=720  accepted=17104 transport=16384
+USBPHASE: phase=3 pending=918  accepted=17302 transport=16384
+```
+
+The phase enum in `include/QcomXnuUsbDebug.h` is
+
+```
+0 NOT_INITIALIZED  1 DISABLED  2 PREPARING  3 ACTIVE  4 STOPPED  5 REFUSED  6 IO_FAILED
+```
+
+so `phase=3` is **ACTIVE**: the module is alive, `accepted` grows with every painted character, and
+the tee is doing its job.  What does not move is `transport` (16384 bytes, constant) while `pending`
+grows, i.e. the USB IN transmit path stopped draining after the early boot.  That is why the host
+reads zero bytes even though the queue is filling.
+
+Next: the transmit path inside the console module.  `transport_pending` staying at exactly 16384
+suggests one queued IN transfer never completes (endpoint not re-armed, or the poll that would re-arm
+it no longer runs after the video console takes over).  Printing `poll_calls` and `io_failed` from the
+same status structure, and the transfer length at issue, is the next measurement.

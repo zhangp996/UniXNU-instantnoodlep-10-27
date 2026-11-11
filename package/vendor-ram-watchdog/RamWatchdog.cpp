@@ -23,7 +23,28 @@ volatile uint64_t fuxi_ram_watchdog_state[8];
 const char *fuxi_ram_watchdog_step = "arguments";
 int fuxi_ram_watchdog_detail;
 int fuxi_ram_watchdog_prepare(void);
+void qcom_usb_debug_get_status(void *status);
+unsigned long qcom_usb_debug_enqueue(const void *bytes, unsigned long count);
 }
+
+/* Prefix of struct qcom_usb_debug_status (include/QcomXnuUsbDebug.h) up to the transport
+ * counters: enough to say whether the console module is active and whether anything is queued. */
+struct usb_status_prefix {
+    unsigned phase, error;
+    int core_result;
+    unsigned qcom_result, restore_result, dma_mode, dma_lease_active;
+    unsigned vbus_owned, vbus_saved;
+    unsigned phy_owned, phy_saved, phy_applied, phy_restoring, stop_failed;
+    unsigned dma_address_width, hwparams0;
+    unsigned last_trace, trace_a, trace_b, traces;
+    unsigned poll_calls, last_poll_events, io_failed;
+    uint64_t dma_pa, counter_frequency, cache_line, dropped;
+    unsigned domain_result, domain_stage, domain_bank, domain_slot, domain_asid;
+    uint64_t tables_pa, dma_iova, domain_last_address, domain_last_expected, domain_last_readback;
+    unsigned diag_enabled, diag_checkpoint;
+    uint64_t buffer_capacity, buffer_pending, buffer_high_water, buffer_accepted;
+    uint64_t buffer_overflow, buffer_contended, buffer_replayed, transport_pending;
+};
 
 // Live panel heartbeat: one block per watchdog tick, drawn straight into the frame buffer the
 // loader handed over. The panic screen does not fit beside this code, so the panel is the only
@@ -55,6 +76,14 @@ static void ram_watchdog_block_report(void)
             extern unsigned long native_sr_map_calls;
             extern unsigned long native_sr_map_failures;
             printf("SR-MAP: calls=%lu failures=%lu\n", native_sr_map_calls, native_sr_map_failures);
+            {
+                struct usb_status_prefix us = {};
+                qcom_usb_debug_get_status(&us);
+                printf("USBPHASE: phase=%u pending=%llu accepted=%llu transport=%llu\n",
+                       us.phase, (unsigned long long)us.buffer_pending,
+                       (unsigned long long)us.buffer_accepted,
+                       (unsigned long long)us.transport_pending);
+            }
             printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu dataStage=%d carrier=%lu/%lu\n",
                    native_ram_block_state[0], native_ram_block_state[1],
                    native_ram_block_state[2], native_ram_block_state[3],
