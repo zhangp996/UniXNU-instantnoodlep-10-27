@@ -2282,3 +2282,24 @@ uke does.
 The component is rebuildable: `tree/build/native-legacy-display/compile-command.json` holds the full clang-24
 command line that produced `NativeLegacyDisplay.o`, so a component change can be compiled and re-archived without
 the device builder script.
+
+## 01:20: guarded completion - the stable full-panel state
+
+The out-of-context completion call is now behind `offline-legacy-complete=1` (default off), so the probe copies the
+frame and leaves the family's swap path untouched.  The boot confirms the whole picture once more:
+
+```
+DISPLAY: swap accepted=1 reason=0 request=... surface=...
+DISPLAY: surface geom 2376x0 stride=4352 fmt=42475241 alloc=10342400 desc=...
+DISPLAY: present copied 2376 rows x 4320 bytes (frame 1)
+IOMFB: swap_wait_gated:  CommandWake didn't happen even after 5 seconds.
+DISPLAY: abstract slot 345 (object=... caller=0xfffffff00578c1cc); returning
+Kernel data abort. at pc 0xfffffff00be80944, lr 0xfffffff00bfe4684
+```
+
+and the panic screen itself uses the whole panel, so the console stays at 1080x2376 through the crash.
+
+This is the state to build on: firmware hands the panel over, the kernel console and the display both run at
+1080x2376, and the probe copies every accepted frame in full; the only missing piece is completing the swap inside
+the family's own context (command gate at `fb+0x1608`, or taking over `SwapEnd`/`SwapWait` in the component,
+which is now buildable from `compile-command.json`).
