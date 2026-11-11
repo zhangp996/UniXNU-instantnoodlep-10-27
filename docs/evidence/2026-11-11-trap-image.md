@@ -2766,3 +2766,17 @@ SpringBoard's stderr. Two ways remain, both inside reach:
 Option 1 reuses code that already runs on every boot and needs no new syscall surface, so it is the next step:
 add a boot-argument-gated reader (for example native-crash-dump=<path>) to the same file, call it from the same
 place the policy runs, and print the report with printf.
+
+## 07:00: the crash-report reader's wiring
+
+package/BootWatchdogPolicy.c is compiled by scripts/build-verified-block-bridge.py into
+build/verified-block-bridge/BootWatchdogPolicy.o and linked into the kernel, where the zzz-boot-progress patch calls
+sheng_boot_watchdog_policy() after writable scratch Data mounts and before launchd exec.  A crash-report reader
+(open/read on the Data volume, printf to the console, gated by its own boot argument) belongs in the same file and
+the same call path, so the recipe is:
+
+1. add the reader to package/BootWatchdogPolicy.c and call it from sheng_boot_watchdog_policy();
+2. rebuild the object with scripts/build-verified-block-bridge.py (it already produced the current .o);
+3. ./unixnu build kernel, payload, bootimg, boot, and read the report on the serial console.
+
+That is a new kernel change rather than a configuration change, which is where this session stops.
