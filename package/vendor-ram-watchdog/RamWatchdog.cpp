@@ -117,9 +117,18 @@ class RamWatchdog : public IOWatchdog {
         fuxi_ram_watchdog_state[3] = sequence;
         fuxi_ram_watchdog_state[4] = enabled;
         fuxi_ram_watchdog_state[5] = deadline;
-        if (enabled && (!deadline || now >= deadline))
-            panic("RAM_WATCHDOG software deadline expired: beats=%llu now=%llx deadline=%llx",
-                sequence, now, deadline);
+        if (enabled && (!deadline || now >= deadline)) {
+            /* Bring-up: the service must exist so watchdogd's open succeeds, but nothing pets it yet
+             * (watchdogd exits early on this port), so the deadline is reported instead of fatal. */
+            static unsigned reported;
+            if (!reported) {
+                reported = 1;
+                printf("RAM_WATCHDOG deadline passed (not fatal): beats=%llu now=%llx deadline=%llx\n",
+                    sequence, now, deadline);
+            }
+            self->armed = 0;
+            return;
+        }
         if (__atomic_load_n(&self->armed, __ATOMIC_ACQUIRE)) self->schedule();
     }
     void schedule() {

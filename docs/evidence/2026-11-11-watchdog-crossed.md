@@ -546,3 +546,20 @@ XNU-EXIT: fairplayd.A2     pid=126 code=0 ns=0 sub=0x0
 Next: catch SpringBoard's breakpoint - the kernel already reports the user backtrace for a critical
 exit in some community ports (`0277-kebab-critical-watchdog-user-backtrace.patch`); the same
 treatment for SpringBoard, or reading its crash reason from the panic text, is the next step.
+
+## 14:10: the serial tee does not deliver, and the watchdog deadline is no longer fatal
+
+Two attempts closed out the night:
+
+* `vc_paint_char` was patched to mirror every drawn character into `qcom_usb_debug_putc` (patch kept
+  as `zzz-video-console-tee.patch`, not in the series).  The board boots with it but the host reads
+  zero bytes at both 115200 and 921600, so the module does not flush what the tee writes; the patch
+  is out of the series until that is understood.
+* the RamWatchdog backend no longer panics when its software deadline expires: it prints
+  `RAM_WATCHDOG deadline passed (not fatal)` once and stops the timer.  The deadline had fired with
+  `beats=0` because nothing pets the watchdog on this port (watchdogd exits early), and that panic
+  was masking whatever happens next.
+
+Latest image: `bootDW` (`15d09978`) has the non-fatal deadline; `bootDU` (`df7853a5`) is the one that
+reached SpringBoard with `SR-MAP: calls=1 failures=0`.
+

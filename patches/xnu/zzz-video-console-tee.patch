@@ -1,0 +1,20 @@
+diff --git a/osfmk/console/video_console.c b/osfmk/console/video_console.c
+index e42cb55..5c6ad96 100644
+--- a/osfmk/console/video_console.c
++++ b/osfmk/console/video_console.c
+@@ -1621,10 +1621,15 @@ vc_paint_char_32(unsigned int xx, unsigned int yy, unsigned char ch, int attrs,
+ 	}
+ }
+ 
++/* Bring-up: mirror what the video console draws into the USB console module, so the panel log can
++ * be captured as text on the host without a camera. */
++extern void qcom_usb_debug_putc(char c);
+ static void
+ vc_paint_char(unsigned int xx, unsigned int yy, unsigned char ch, int attrs,
+     unsigned char ch_previous, int attrs_previous)
+ {
++	qcom_usb_debug_putc((char)ch);
++
+ 	if (!vinfo.v_depth) {
+ 		return;
+ 	}
