@@ -79,8 +79,9 @@ static void ram_watchdog_block_report(void)
             {
                 struct usb_status_prefix us = {};
                 qcom_usb_debug_get_status(&us);
-                printf("USBPHASE: phase=%u pending=%llu accepted=%llu transport=%llu\n",
-                       us.phase, (unsigned long long)us.buffer_pending,
+                printf("USBPHASE: phase=%u poll=%u ioFail=%u pending=%llu accepted=%llu transport=%llu\n",
+                       us.phase, us.poll_calls, us.io_failed,
+                       (unsigned long long)us.buffer_pending,
                        (unsigned long long)us.buffer_accepted,
                        (unsigned long long)us.transport_pending);
             }

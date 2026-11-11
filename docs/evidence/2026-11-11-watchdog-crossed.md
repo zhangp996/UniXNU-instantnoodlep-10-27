@@ -641,3 +641,27 @@ Next: the transmit path inside the console module.  `transport_pending` staying 
 suggests one queued IN transfer never completes (endpoint not re-armed, or the poll that would re-arm
 it no longer runs after the video console takes over).  Printing `poll_calls` and `io_failed` from the
 same status structure, and the transfer length at issue, is the next measurement.
+
+## 15:25: poll runs, no IO errors, one 16 KiB IN transfer never completes
+
+```
+USBPHASE: phase=3 poll=5096 ioFail=0 pending=408  accepted=16792 transport=16384
+USBPHASE: phase=3 poll=5081 ioFail=0 pending=681  accepted=17265 transport=16384
+USBPHASE: phase=3 poll=5106 ioFail=0 pending=1019 accepted=17403 transport=16384
+```
+
+So the console module is ACTIVE, its poll runs thousands of times, no I/O error is recorded and the
+tee keeps filling the queue - but `transport_pending` is pinned at exactly 16384 bytes while
+`buffer_pending` grows.  That is one queued IN transfer that never reports completion; once the
+transport buffer is full the module waits for an event that never arrives, and the host reads
+nothing.
+
+Three candidates, in order of likelihood:
+
+1. the DWC3 IN endpoint's TRB chain is not re-armed after the early boot;
+2. the host driver keeps no read pending when the port is only opened (Windows can hold reads until
+   an application asks), so the IN transfer has nobody to complete against;
+3. the endpoint was reset or disabled and never re-enabled.
+
+The next measurement is the IN endpoint state in `usb/Dwc3.c` (endpoint RUN/ACTIVE bits and the TRB
+dequeue pointer) and a transfer length/status print at submit and completion.
