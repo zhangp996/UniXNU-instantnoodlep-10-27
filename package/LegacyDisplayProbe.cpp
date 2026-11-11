@@ -302,18 +302,54 @@ publish_display(void)
 		}
 		if (data) data->release();
 		if (dtParent) dtParent->release();
+		/* The family's create_default_fb_surface asks IOSurfaceRoot for "PurpleGfxMem", which does not
+		 * exist on this board; seed its own region cache at +0x17c0 with system memory and set the
+		 * enable byte at +0x1780 so slot 299 builds the temporary surface instead (uke's recipe). */
+		IOBufferMemoryDescriptor *surface_region = IOBufferMemoryDescriptor::withCapacity(0x2000000,
+		    kIODirectionOutIn);
+		if (surface_region) {
+			uint32_t format = 0x42475241 /* 'BGRA' */, planes = 1, bpp = 4;
+			memset((unsigned char *)display + 0x1700, 0, 0x70);
+			memcpy((unsigned char *)display + 0x1700, &format, sizeof(format));
+			memcpy((unsigned char *)display + 0x1704, &planes, sizeof(planes));
+			memcpy((unsigned char *)display + 0x1708, &bpp, sizeof(bpp));
+			((unsigned char *)display)[0x1748] = 0;
+			surface_region->retain();
+			memcpy((unsigned char *)display + 0x17c0, &surface_region, sizeof(surface_region));
+			((unsigned char *)display)[0x1780] |= 1;
+			printf("DISPLAY: seeded surface region %p bytes=%llu\n", surface_region,
+			    (unsigned long long)surface_region->getLength());
+		} else {
+			printf("DISPLAY: surface region allocation failed\n");
+		}
 		bool dispAttached = display->attach(nub);
 		bool dispStarted = dispAttached ? display->start(nub) : false;
 		printf("DISPLAY: display attach=%d start=%d\n", dispAttached, dispStarted);
 		if (dispStarted) {
 			scan_display_fields(display);
-			/* Try the surface path here as well: the family's own error arrives about two minutes in
-			 * and the boot may not reach slot 345, so exercise the factory while the display is up. */
-			static bool surface_tried;
-			if (!surface_tried) {
-				surface_tried = true;
-				create_surface((uint32_t)video.v_width, (uint32_t)video.v_height,
-				    (uint32_t)video.v_rowBytes);
+			/* Adopt the temporary surface the family created at +0x1620 as the default one at +0x1618,
+			 * the way the uke port does; retain the region and descriptor so the compositor's mapping
+			 * never points at freed pages when the display's stop clears the field. */
+			void *temp = nullptr, *def = nullptr;
+			memcpy(&temp, (unsigned char *)display + 0x1620, sizeof(temp));
+			memcpy(&def, (unsigned char *)display + 0x1618, sizeof(def));
+			printf("DISPLAY: surfaces default=%p temp=%p\n", def, temp);
+			if (!def && temp) {
+				void *surface_region = nullptr, *surface_descriptor = nullptr;
+				uint32_t sid = 0;
+				memcpy(&sid, (unsigned char *)temp + 0x10, sizeof(sid));
+				memcpy(&surface_region, (unsigned char *)temp + 0x28, sizeof(surface_region));
+				memcpy(&surface_descriptor, (unsigned char *)temp + 0x30, sizeof(surface_descriptor));
+				if (surface_region) {
+					((OSObject *)surface_region)->retain();
+				}
+				if (surface_descriptor) {
+					((OSObject *)surface_descriptor)->retain();
+				}
+				((OSObject *)temp)->retain();
+				memcpy((unsigned char *)display + 0x1618, &temp, sizeof(temp));
+				printf("DISPLAY: adopted default surface %p sid=%u region=%p descriptor=%p\n",
+				    temp, (unsigned)sid, surface_region, surface_descriptor);
 			}
 		}
 	}

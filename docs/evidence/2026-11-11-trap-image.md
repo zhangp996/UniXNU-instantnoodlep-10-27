@@ -1541,3 +1541,44 @@ Open, in order of cost:
   sources are kept in `docs/evidence/reference/`), which requires deciding whether the closed
   `IOMobileGraphicsFamily` stays;
 * the storage side of the same boot: `vm_swap_create_file failed` and the one-off "disk3s1 is not readable".
+
+## 05:20: the community answer for the default surface (Allenwdk/UniXNU-uke)
+
+Searching the community devices turned up the port that documents this exact wall.  `UniXNU-uke` ships
+`scripts/audit-mobile-graphics-default-surface.py`, whose header states the contract:
+
+> The original class keeps its default surface at instance+0x1618 and its temporary surface at instance+0x1620.
+> Only the (absent) platform driver ever installs the former; this audit pins the exact fields, slots and
+> user-client dispatch entry the bring-up backend may use.
+
+Its offsets and slots:
+
+```
+surface_root 0x1600   command_gate 0x1608   work_loop 0x1610
+default_surface 0x1618   temp_surface 0x1620   memory_region 0x17c0
+surface_enable 0x1780    mode_block 0x1700    width 0x16b0   height 0x16b4
+slot 174  default_fb_surface gate -> slot 333      slot 242  copy the surface port name
+slot 299  create_default_fb_surface -> instance+0x1620
+slot 333  default-surface layout/commit, returns sid
+user-client dispatch selector 3, scalars 2 in / 1 out, output is the default surface's mach port
+surface object: sid +0x10, region +0x28, descriptor +0x30, stride +0x68, format +0x80, allocation +0x90
+```
+
+and the decisive line: `default_surface_nonzero_writer_in_family: False` - the family never installs +0x1618
+itself.
+
+The port's probe (`package/LegacyDisplayProbe.cpp`, 58 KB) then shows the workaround it actually runs with
+`offline-legacy-default-surface=1`:
+
+1. allocate `IOBufferMemoryDescriptor::withCapacity(0x2000000, kIODirectionOutIn)`;
+2. write the mode block at +0x1700 (`'BGRA'`, planes 1, bpp 4, clear 0x70 bytes, `fb[0x1748] = 0`);
+3. put that descriptor into the region cache at **+0x17c0**, instead of the `PurpleGfxMem` region the original
+   `create_default_fb_surface` would ask IOSurfaceRoot for (the platform driver that would provide it is absent);
+4. set the enable byte `fb[0x1780] |= 1`;
+5. start the display - slot 299 then builds the temporary surface at +0x1620 from that region;
+6. after start, retain the surface and its +0x28 region and +0x30 descriptor, then
+   `memcpy(fb + 0x1618, &temp, 8)` to adopt it, and let the original slots 174/242 produce the IOSurfaceID and
+   the mach port the compositor maps.
+
+This board's probe now does the same: seed +0x17c0, enable +0x1780, start, adopt +0x1620 into +0x1618, with the
+region and descriptor retained.
