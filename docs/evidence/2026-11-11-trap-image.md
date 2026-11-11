@@ -2942,3 +2942,24 @@ not the reader but the producer - the kernel's corpse allocation for these dying
 State: image 11ddd4aa... carries the probe and boots; the probe is silent because no crash reports exist yet.
 The next lever is the corpse path (task_collect_crash_info failing with KERN_RESOURCE_SHORTAGE) rather than more
 instrumentation of the reader.
+## 10:10: raising the corpse cap did not change the message
+
+\`TOTAL_CORPSES_ALLOWED\` (4-5 in task_corpse.h) was raised to 64 and the kernel rebuilt (exit 0, image decb5176...).
+The boot still prints:
+
+    Process[128] crashed: liveactivitiesd. Too many corpses being created.
+    XNU-EXIT: SpringBoard pid=27 code=6 ...
+    Process[27] crashed: SpringBoard. Too many corpses being created.
+
+so the cap is not the limiting factor: \`task_collect_crash_info()\` fails before \`task_crashinfo_get_ref()\` is
+consulted (the message is the else branch of task_mark_corpse, i.e. any failure other than NO_SPACE, NOT_SUPPORTED or
+TERMINATED).  The likely cause is the crash-info allocation inside the dying task's VM (CORPSEINFO_ALLOCATION_SIZE
+is 16 KB plus the kcdata buffer), which fails under this board's memory situation.
+
+Consequences for the next attempt:
+
+* the crash-report probe (linked and running) stays silent because no report is ever produced;
+* the abort reason has to be captured another way: the kernel-side print in abort_with_payload never fires (plain
+  abort()), so the remaining options are a launchd override that keeps the job's stderr, or the ui-trace worker the
+  sheng ports use;
+* raising memory available to the crash-info allocation (larger RAM window, less Data) is the other lever.
