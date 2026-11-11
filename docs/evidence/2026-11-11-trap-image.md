@@ -252,3 +252,31 @@ framebuffer handoff and NativeLegacyDisplay / IOMobileFramebuffer desktop presen
    `XNU_NATIVE_...` link flag), plus `offline-legacy-gop=1`/`offline-legacy-phase=<n>` in the payload
    arguments.
 4. Board DTS/ADT: the framebuffer handoff region and display policy the component's board hooks read.
+
+## 18:40: the display component, as far as it goes without a board recipe
+
+* `[components] include` now selects `GopFramebuffer`; the tree step fetches `drivers/GopFramebuffer`
+  and `drivers/NativeMobileDisplay`.
+* A `component:GopFramebuffer` entry in `[kernel] archives` builds nothing:
+  `scripts/unixnu/kernel.py:archive_plan()` expands only components whose catalog record has a non-empty
+  `build` list, and `GopFramebuffer` has `build = []` with `build_stage = "embedded"`.  The entry was
+  removed again; the archives have to come from a board recipe.
+* `python3 scripts/build-arm-driver.py GopFramebuffer` fails with eleven
+  `-Werror,-Wmissing-designated-field-initializers` errors from the XNU kalloc macro; with
+  `CCC_OVERRIDE_OPTIONS='# +-Wno-missing-designated-field-initializers'` it passes the `-Werror` build and
+  the arm64-apple-ios17.0 object audit and writes `build/gop-framebuffer/libGopFramebuffer.a`
+  (270,784 bytes) from `NativeMobileDisplay.o`.
+* The kernel links `libGopFramebuffer.late.a` (`XNU_NATIVE_MOBILE_DISPLAY`) or
+  `libNativeLegacyDisplay.late.a` (`XNU_NATIVE_LEGACY_DISPLAY`), and both are produced by board recipes in
+  the reference repository:
+  * `scripts/build-gop-framebuffer.py` (pinned commit 516a7804): runs `build-arm-driver.py NativeMobileDisplay`,
+    then requires the exact candidate `build/xnu-prelink/native-owner-mobile-graphics-candidate.macho`
+    (sha256 `aded28d3c61dafaf7b8a7c96b14427a798e9e95470ae6f287bcd038c07626798`), verifies that the original
+    constructor and destructor at `0xfffffff00577b348`/`0xfffffff00577b37c` really branch to
+    `IOService::IOService(OSMetaClass const*)` and `IOService::~IOService()` through the original veneers,
+    globalizes `__GLOBAL__sub_I_NativeMobileDisplay.cpp`, drops `__mod_init_func`, and archives the late
+    object with `original-bindings.o` and `MobileDisplayProviderProbe.o`.
+  * `scripts/build-gop-legacy-display.py` is iOS 17 only by construction and additionally runs
+    `scripts/audit-mobile-graphics-legacy.py`, which is not present in the reference repository's `main`.
+* Consequence: the display step is a port of a recipe plus its ABI audit, not a configuration change.
+  `porting.toml` `[[area]] display` now records that as its next action.

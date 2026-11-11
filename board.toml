@@ -9,7 +9,7 @@ description = "OnePlus 8 Pro (IN2020): SM8250, 8 GiB, 1440x3168 DSC command pane
 kit = "instantnoodlep"
 
 [components]
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "VirtioMmioBlock", "VerifiedRoot", "QcomXnuUsbDebug"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "VirtioMmioBlock", "VerifiedRoot", "QcomXnuUsbDebug", "GopFramebuffer"]
 
 [kernel]
 # Arrays replace inherited arrays, so this list is the complete one: profiles/arch/arm64/profile.toml
