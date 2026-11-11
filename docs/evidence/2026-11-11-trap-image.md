@@ -2999,3 +2999,21 @@ Porting sheng's userland stack capture (Enlixk/UniXNU-sheng) reached a clear poi
 
 Next: add `-I <kit dir>` to the trace compile command in scripts/build-boot-progress.py, add the four objects to
 libBootProgress.a, call `boot_process_start()` from boot_progress_init(), and boot with `sheng-log=1 boot-ui-trace=1`.
+
+## 11:45: sheng's ui-trace worker is in the kernel
+
+Port status, after fixing the chain of missing headers and hooks:
+
+* package/ now carries BootProcessProbe.c, BootProcessWorker.c, BootUiTraceProbe.c, BootLatencyTrace.c and the
+  headers they pull in (BootUiTraceCore.h, BootUiTraceDetails.h, BootSpringBoardProfile.h, BootLatencyTrace.h,
+  BootLatencyStore.h, plus the rest of sheng's package headers);
+* they compile with the **osfmk record** and are archived in libBootProgress.a (BootProcessProbe.o,
+  BootProcessWorker.o, BootUiTraceProbe.o, BootLatencyTrace.o, BootTraceStubs.o);
+* BootTraceStubs.c defines the kernel hook variables the probes only assign to (sheng_user_exit_hook,
+  sheng_unnest_hook, sheng_user_fault_hook, sheng_sb_wait_hook, sheng_sb_wait_tid, sheng_pmu_fixup) and
+  native_gpu_role_thread, because this kernel link does not honour weak imports;
+* BootProgress.c calls boot_process_start() next to uke_crash_log_start(), and the kernel builds and links with
+  exit 0 (symbols boot_process_start, boot_process_capture, boot_ui_trace_begin all present).
+
+The probes do not print: they fill boot_process_rows/boot_ui_trace rows for the **diagnostic page**, so the image now
+also passes `boot-progress=2` (bootEU.img bed9c995...) to draw them on the panel.

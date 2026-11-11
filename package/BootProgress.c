@@ -638,6 +638,12 @@ void boot_progress_cancel_scanout(void) {
 void boot_progress_init(void) {
     /* Uke's crash-report probe: starts its worker under sheng-crashlog=1 and mirrors CrashReporter
      * entries (backboardd, SpringBoard) into the kernel log. */
+    /* sheng's userland stack capture: with boot-ui-trace=1 this worker samples the target processes'
+     * user stacks (launchd, backboardd, SpringBoard, ...) into boot_process_rows. */
+    {
+        extern void boot_process_start(void);
+        boot_process_start();
+    }
     {
         extern void uke_crash_log_start(void);
         uke_crash_log_start();

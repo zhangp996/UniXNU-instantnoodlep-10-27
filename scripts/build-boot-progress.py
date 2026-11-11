@@ -95,7 +95,26 @@ probe_command += ['-Wno-error', '-I', str(ROOT / '.cache/xnu-work/osfmk')]
 subprocess.run(probe_command, cwd=bsd['directory'], check=True, timeout=300)
 
 
+
+# sheng's userland stack capture: Mach-side sources, so they use the same osfmk record as BootProgress.
+# The include of the source directory is required: the kit copy sits beside its own headers.
+trace_sources = ['BootProcessProbe.c', 'BootProcessWorker.c', 'BootUiTraceProbe.c', 'BootLatencyTrace.c',
+                 'BootTraceStubs.c']
+trace_objects = []
+for trace_name in trace_sources:
+    trace_src = next((p for p in (ROOT / 'kits' / 'instantnoodlep' / trace_name,
+                                  ROOT / 'package' / trace_name) if p.is_file()), None)
+    if trace_src is None:
+        raise SystemExit('package/' + trace_name + ' is missing from the device repository')
+    trace_obj = OUT / (trace_src.stem + '.o')
+    trace_command = [str(trace_src) if arg == str(source) else str(trace_obj) if arg == str(obj) else arg
+                     for arg in command]
+    trace_command = [arg for arg in trace_command if not arg.startswith('-Werror')]
+    trace_command += ['-I', str(trace_src.parent), '-I', str(ROOT / 'package')]
+    subprocess.run(trace_command, cwd=record['directory'], check=True, timeout=300)
+    trace_objects.append(str(trace_obj))
+
 archive = OUT / 'libBootProgress.a'
 archive.unlink(missing_ok=True)
-subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj), str(probe_obj)], check=True, timeout=30)
+subprocess.run(['xcrun', 'ar', 'rcs', str(archive), str(obj), str(stub_obj), str(probe_obj)] + trace_objects, check=True, timeout=30)
 print('PASS: boot progress renderer built against the source kernel ABI')
