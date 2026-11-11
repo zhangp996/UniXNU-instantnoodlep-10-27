@@ -2817,3 +2817,23 @@ launchd (missing job/dependency), or it starts and exits silently before it can 
 The `lw_corpses=0` experiment did not help either: the boot-args line shows it applied, and the corpse messages are
 unchanged (`Process[27] crashed: SpringBoard. Too many corpses being created.`), so the corpse path is failing for a
 different reason - most likely the dying task's VM space - and cannot be relied on for the abort reason.
+
+## 08:05: the exec instrumentation compiles in but never fires
+
+Two prints were added to the kernel this round:
+
+* `BRINGUP-ABORT` in `abort_with_payload()` - the abort reason string, if a process passes one;
+* `BRINGUP-EXEC2` in `exec_activate_image()` - every image activation with its path (so a service that never starts
+  can be told apart from one that starts and dies).
+
+Both strings are present in the built kernel (`strings kernel.macho | grep -c BRINGUP-EXEC2` = 1), and neither
+produces a single line at runtime: after 90 s of the boot, 0 exec lines and 0 abort lines, while launchd is clearly
+starting tasks and SpringBoard clearly aborts (code 6).
+
+So on this port launchd's spawning does not go through `exec_activate_image` (and aborts do not go through
+`abort_with_payload`) - the offline-exec work on this board changed those paths.  Instrumenting the path that is
+actually used (the `posix_spawn`/offline exec entry in this tree) is what the next session needs, not another
+boot with the same two prints.
+
+The observations that stand: backboardd never logs anything, SpringBoard aborts within seconds of starting, the
+display driver itself registers correctly, and no swap is ever submitted on these boots.
