@@ -343,3 +343,57 @@ staged kexts in favour of the built-in drivers.
 
 One supporting record from the sheng variants: the legacy display builder "now refuses arm64e/iOS 26 before
 reading original ABI addresses", i.e. it is iOS 17-only by construction, which is the OS this board targets.
+
+## 19:20: the legacy display archive builds; the link needs the board probe layer
+
+Continuing the display step on this board, the missing piece turned out to be smaller than expected and
+is now precisely bounded.
+
+**What already works**
+
+* The 21H461 OS profile's `[kernel.prelink] roots` already names
+  `com.apple.iokit.IOMobileGraphicsFamily`, so the original display family has always been inside
+  `kernel.macho`.
+* Using that prelink output as the audit's candidate (`kernel/kernel.macho` + `kernel.json` copied to
+  `build/xnu-prelink/native-owner-mobile-graphics-candidate.{macho,json}`), `scripts/audit-mobile-graphics-legacy.py`
+  **passes**: "original Legacy has 358 slots with nine abstract leaves".  The family `__TEXT_EXEC` hash is
+  `2e044ee68c1650397e1435234ca6459206262e4c7ed709cb7131c6f664f9bd9b`, the same constant the audit pins.
+  The QEMU observation was pruned from the reference and only its hash is carried, so
+  `build/display-analysis/mobile-graphics-legacy-abi.json` was seeded with that recorded hash and the audit
+  then wrote the full 48,970-byte ABI table (358 slots, abstract leaves 211/213/245/246/306/307/337/338/345).
+* `scripts/build-gop-legacy-display.py` (reference, unmodified except for the toolchain) generates
+  `build/native-legacy-display/OriginalLegacyFramebufferABI.h` (22,127 bytes), compiles
+  `NativeLegacyDisplay.o` (384,400 bytes) and generates and compiles `original-bindings.S`/`.o`
+  (23,130/11,904 bytes).
+* The late object needs three manual steps that macOS `llvm-objcopy` does and Linux LLVM 14/15 cannot:
+  `--remove-section=__DATA,__mod_init_func` (works), `--globalize-symbol=__GLOBAL__sub_I_NativeLegacyDisplay.cpp`
+  (not supported for Mach-O; done by patching the symbol's `n_type |= N_EXT` in Python), then
+  `llvm-ar rcs`.  Result: `libNativeLegacyDisplay.late.a` 407,816 bytes, sha256 `56403366...`, with a
+  `build-report.json` the kernel consumer validates.
+* `CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y` must be applied through `./unixnu defconfig`; editing the defconfig
+  alone does not regenerate `.config` and the flag silently stays out of the build.
+
+**What still blocks the link**
+
+With the archive force-loaded, the kernel link fails on twenty symbols the component expects from the board
+package - the same role `package/LegacyDisplayProbe.cpp` (49 KB) plays in the reference:
+
+```
+_native_legacy_display_probe      _native_legacy_display_late_probe
+_native_legacy_backend_guard      _native_legacy_client_enter / _observed
+_native_legacy_swap_stage         _native_legacy_swap_validation_observed
+_native_legacy_gop_mapping_observed  _native_legacy_pm_observed
+_native_legacy_transfer_observed  _native_legacy_retirement_observed
+_native_legacy_frame_observed / _frame_colors_observed / _copy_timing_observed
+_native_legacy_surface_rejected   _native_legacy_gpu_offer / _prepare_scanout
+_native_gpu_trace_enabled / _record  _native_adreno_fences / _fences_detail
+```
+
+Two of them are functional (`native_legacy_display_probe`, `native_legacy_display_late_probe`, the entry the
+`offline-legacy-start` patch calls after `IOKitBSDInit`); the rest are diagnostics and GPU-handoff hooks that a
+CPU-presentation port can stub.
+
+**State on disk**
+
+The defconfig flag and the eight `offline-legacy-*` arguments were reverted after the experiment so the
+repository still builds; the tree keeps the generated header, objects and archive for the next step.
