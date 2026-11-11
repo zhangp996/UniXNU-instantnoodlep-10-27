@@ -1975,3 +1975,35 @@ BootShim+UEFI image yet.  The remaining work on this path is purely environment 
    frame should all cover the panel.  If the console-time mapping fails for 10 MiB, the fallback is to keep the
    clamp for the console only and present the full panel from the display driver (the probe already proved a
    10.4 MiB mapping works once the kernel is up).
+
+## 09:30: the firmware toolchain now resolves its dependencies; the build stops in a platform plugin
+
+Progress on the firmware path this round:
+
+* the edk2 toolchain is complete (`edk2-pytool-library`, `edk2-pytool-extensions`, `antlr4`, `pefile`,
+  `coloredlogs`, `regex`), and `stuart_update` now runs through the installed script
+  (`.../bin/stuart_update`) instead of the module path;
+* it fetched the three external dependencies - `mu_nasm`, `Mu-Basetools`, `onecrypto-bin` -
+  ("Updated/Verified 3 dependencies"), and the nuget feed is reachable (HTTP 200);
+* `build_uefi.py -d instantnoodlep -r RELEASE` gets past BootShim and into the edk2 build.
+
+It then stops inside Mu's OverrideValidation plugin:
+
+```
+File ".../OverrideValidation/OverrideValidation.py", line 204, in override_detect_process
+    list_path = os.path.normpath(filepath).lower()
+TypeError: _path_normpath: path should be string, bytes or os.PathLike, not NoneType
+```
+
+i.e. the plugin walks the platform's override list and receives a `None` path - a mismatch between this
+`instantnoodlep.dsc` and the plugin's expectations (the kebab/lemonade DSC files in the same tree are the
+reference).  Fixing it is a platform-DSC/plugin-config task, not a kernel one:
+
+1. diff `Platforms/OnePlus/instantnoodlepPkg/instantnoodlep.dsc` against `kebab.dsc`/`lemonade.dsc` for the
+   sections the plugin reads (it walks DSC modules and their override flags);
+2. or disable the plugin for this platform build (the plugin list lives in the Mu build config), since it is a
+   validation aid rather than part of the image;
+3. then `build_uefi.py -d instantnoodlep -r RELEASE` produces the 4 MiB BootShim+UEFI image, which replaces
+   `instantnoodlep-artifacts/kernel_small.bin`.
+
+The DarwinBoot clamp removal (`BootVideo.h`) is in place and will take effect as soon as that image is built.
