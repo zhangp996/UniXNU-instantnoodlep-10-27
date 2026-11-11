@@ -745,3 +745,32 @@ Two smaller findings from the same run:
   launchd continues anyway (`Early boot complete`), so the boot proceeds on the fallback path;
 * the console also shows `KextLog: driverkitd is not active`, then `Loading FileSet KC(s)` and
   `driverkitd is active`, i.e. the kext collection loads later than the services that ask for it.
+
+
+## 17:10: where the AMFI trustcache denial lives (for the binary patch)
+
+Addresses found in this port's `kernel.macho` (prelinked, no symbols for the kext function):
+
+```
+message string   "Only allowed processes can check the trustcache"   VA 0xfffffff0042e18b1 (__PRELINK_TEXT)
+signature string "int _check_cdhash_in_trustcache(struct proc *, ...)"  VA 0xfffffff0042e18e2
+only reference to the signature string (ADRP+ADD)                     VA 0xfffffff004ab75cc (__PLK_TEXT_EXEC)
+that block prints signature + message and then branches to the tail   VA 0xfffffff004ab75e8 -> 0xfffffff004ab7638
+common tail (a compare and b.ne)                                      VA 0xfffffff004ab7648 (cmp + b.ne 0xfffffff004ab7bac)
+```
+
+The signature string has exactly one reference, so the function that enforces the caller gate is the
+one containing `0xfffffff004ab75cc`.  A scan of the surrounding 12 KiB found no conditional branch
+whose target is that block, so the reject path is reached some other way (a jump table, or a branch
+from outside the scanned window).
+
+Next session, in order:
+
+1. dump the function properly (`llvm-objdump` needs the exact Mach-O section name for this kernel;
+   `llvm-objdump --macho --section-headers` lists it) and read the control flow around the reject
+   block;
+2. patch the *decision*, not the message: force the compare at `0xfffffff004ab7648` to take the
+   allowed path, in the same validated style as `scripts/patch-amfi-nopmgr.py` (check the expected
+   instruction, branch to the epilogue);
+3. verify on hardware: the `Only allowed processes` lines stop and some of keybagd/amfid/securityd
+   start exiting cleanly.
