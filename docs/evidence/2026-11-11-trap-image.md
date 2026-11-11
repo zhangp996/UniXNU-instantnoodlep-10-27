@@ -426,3 +426,35 @@ The other reference pages that apply:
   host before touching the phone.
 * `reference/boot-configuration.md`, `configuration.md`, `cli.md`, `glossary.md` cover kext bundles and archive
   semantics only; nothing about the display provider.
+
+## 19:40: what the UniXNU account actually carries for this stage
+
+Surveyed all 32 repositories under `github.com/UniXNU` (trees API):
+
+| Repository | Display material |
+| --- | --- |
+| `GopFramebuffer` | the component only: `NativeMobileDisplay.cpp`, `NativeLegacyDisplay.cpp`, `NativeGOPPresenter.cpp`, `NativeGOPWire.h`, `NativeLegacyRequest.h`; no board probe |
+| `UniXNU-sheng` | the only board-side probe in the organisation: `package/LegacyDisplayProbe.cpp` (49 KB), `OfflineGOPComposition.mm`, `OfflineGOPPresentation.mm`, `OfflineGOPResources.mm`, plus `scripts/build-gop-framebuffer.py`, `build-gop-legacy-display.py`, `build-gop-legacy-display-27.py`, `legacy-display-24A446.json`, `legacy-display-26C5035r.json` |
+| `UniXNU` (main) | the qualification tooling for this exact stage: `scripts/check-native-legacy-display.py`, `scripts/probe-native-legacy-display.py`, `scripts/check-gop-handoff-checkpoints.py` |
+
+There is no generic board probe; a new board ports the sheng one.
+
+`check-native-legacy-display.py` states the evidence contract: the build report needs
+`generated_abi_sha256`, `compiled_object_sha256`, `late_object_sha256`, `archive_sha256`, `source_sha256`,
+`virtual_entries == 358` and `owned_entries == [0,1,7,84,211,213,245,246,288,306,307,337,338,345]`; then seven
+bounded QEMU observations (`build/darwinboot-owner-hvf-legacy-display-*`) must show the class initialising with
+object size 0x18a0, the GOP mapping and mode getter, and the "original pre-publication boundary".  Those runs use
+HVF, i.e. a macOS host, so this leg cannot be reproduced from this Linux/WSL host.
+
+The same checker also records the reference's own conclusion: the untouched original start path refuses with
+`start_hardware failed` because of the real IOSurface dependency, so `display_backend_complete=False`,
+`presentation=False`, `desktop=False`.  A board must therefore own the backend, which is what
+`NativeLegacyDisplay.cpp` plus a board probe provide.
+
+Our own probe (`package/LegacyDisplayProbe.cpp`, 5 KB) now implements the twenty symbols the late object needs:
+the two entries (`native_legacy_display_probe`, `native_legacy_display_late_probe`) do the metaclass
+registration, validate the `PE_current_console` mode (32-bit, unrotated, sane stride) and allocate the original
+class; the diagnostics are no-ops; `native_legacy_backend_guard` panics with the slot number instead of
+returning; the GPU trace and Adreno fence hooks report "no GPU".  It compiles with the kernel's own recorded
+command line (197,024 bytes) and joins the late archive, which is now 605,832 bytes
+(sha256 `c1632378...`).
