@@ -665,3 +665,29 @@ Three candidates, in order of likelihood:
 
 The next measurement is the IN endpoint state in `usb/Dwc3.c` (endpoint RUN/ACTIVE bits and the TRB
 dequeue pointer) and a transfer length/status print at submit and completion.
+
+## 15:20: the console only transmits while the host holds DTR
+
+The serial mystery is host-side, not kernel-side.  `usb/Dwc3.c` `pump()` starts an IN transfer only
+when the host has raised DTR:
+
+```c
+if (!d->dtr || d->active[EP_IN]) return 0;
+```
+
+and .NET's `SerialPort.DtrEnable` defaults to false.  Every capture that read zero bytes opened the
+port without DTR, so the module kept buffering (`accepted` and `pending` growing, `transport` pinned
+at the empty buffer) and never sent anything.  The one early capture that returned 3843 bytes had
+`DtrEnable = $true`.
+
+So the transport telemetry was right all along: the module was waiting for DTR.  Correct capture:
+
+```powershell
+$s = New-Object System.IO.Ports.SerialPort 'COM14',115200,'None',8,'One'
+$s.DtrEnable = $true
+$s.Open()
+# read while DTR stays raised, then close
+```
+
+This also explains why the late-boot log never arrived even though the tee worked: the module had a
+16 KiB buffer and a queue, and with no DTR it never submitted the transfer that would drain them.
