@@ -3452,3 +3452,25 @@ the stub to a provider that this kernel sets up differently.
 
 Next image disables it with its own boot argument (`accel_stub=0`) and keeps the GOP presenter (`fb-presenter=1`),
 so the two changes can be judged separately.
+## 06:10: two regressions isolated - the component rebuild and a disk-time panic
+
+**1. `DISPLAY: display attach=1 start=0` is not the presenter or the accelerator stub.**
+With `fb-presenter=0 accel_stub=0` the display still fails to start.  The component object was rebuilt at 04:40
+with the framework's `build-arm-driver.py` (384344 bytes); recompiling it with this port's original recorded
+command produced a different object (385032 bytes) - so the framework build and the recorded build are not the
+same binary, and the start failure appeared when the framework one replaced the recorded one.
+
+**2. A new panic during disk setup, independent of display settings.**
+
+    disk5s1 setting dev block size to 4096
+    disk5s1 scan took 0.000296 s (no trims)
+    attempting to load /usr/appleinternal/sbin/nvramd.dev#opment
+    panic(cpu 0 caller 0xfffffff00c01f26c): Kernel data abort. at pc 0xfffffff00be85910
+
+* it happens with `fb-presenter=0 accel_stub=0`, so neither new component is involved;
+* it happens with only the nopmgr AMFI patch, so the trustcache-gate patch is not the cause;
+* the pc is in the same text region (`0xfffffff00be85xxx`) as the earlier accelerator/presenter panic, which
+  suggests the display component's code is still being entered at that point.
+
+Next isolation: boot with the display probe disabled entirely (`offline-mobile-graphics-load=0`) and see whether the
+disk-time panic survives; if it disappears, the component is being called from a path this session added.
