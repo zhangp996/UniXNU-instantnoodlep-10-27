@@ -8,5 +8,6 @@ zzz-root-unverified.patch
 zzz-qcom-usb-report.patch
 zzz-owner-report.patch
 zzz-owner-watchdog-override.patch
+zzz-exit-service-release-path.patch
 zzz-exit-observe.patch
 zzz-shared-region-probe.patch

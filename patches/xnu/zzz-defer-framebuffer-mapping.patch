@@ -1,5 +1,5 @@
 diff --git a/osfmk/console/video_console.c b/osfmk/console/video_console.c
-index 4c1edf1..3486f39 100644
+index 4c1edf1..b9a01de 100644
 --- a/osfmk/console/video_console.c
 +++ b/osfmk/console/video_console.c
 @@ -117,6 +117,16 @@
@@ -44,7 +44,7 @@ index 4c1edf1..3486f39 100644
 +			deferred_video.v_height   = deferred_fb_height;
 +			deferred_video.v_depth    = deferred_fb_depth;
 +			deferred_video.v_display  = 1;
-+			deferred_video.v_scale    = kPEScaleFactor1x;
++			deferred_video.v_scale    = kPEScaleFactor2x;   /* bring-up: larger console text */
 +			boot_vinfo   = &deferred_video;
 +			deferred_fb_pa = 0;
 +			gc_graphics_boot = TRUE;
@@ -89,8 +89,17 @@ index 4c1edf1..3486f39 100644
  		} else {
  			if (makeMapping) {
  #if HAS_UCNORMAL_MEM
-@@ -3125,7 +3163,13 @@ vcattach(void)
- vcattach(void)
+@@ -3001,6 +3060,9 @@ initialize_screen(PE_Video * boot_vinfo, unsigned int op)
+ 		vc_enable_progressmeter( FALSE );
+ #endif
+ 		gc_enable( TRUE );
++		/* Bring-up: the loader leaves its own page on the panel; clear it so the kernel log starts on
++		 * an empty screen. */
++		gc_clear_screen( 0, 0, 0, vinfo.v_rows, 2 );
+ 		break;
+ 
+ 	case kPEReleaseScreen:
+@@ -3057,6 +3119,12 @@ vcattach(void)
  {
  	vm_initialized = TRUE;
  

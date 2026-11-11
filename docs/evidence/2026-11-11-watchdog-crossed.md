@@ -563,3 +563,36 @@ Two attempts closed out the night:
 Latest image: `bootDW` (`15d09978`) has the non-fatal deadline; `bootDU` (`df7853a5`) is the one that
 reached SpringBoard with `SR-MAP: calls=1 failures=0`.
 
+
+## 14:50: services loop with exit status 9; the shared region is in use
+
+On `bootDZ` the panel shows a steady stream of
+
+```
+XNU-EXIT: announced      pid=586 code=9 ns=1 sub=0x5
+XNU-EXIT: triald         pid=638 code=9 ns=1 sub=0x4
+XNU-EXIT: transparencyd  pid=631 code=9 ns=1 sub=0x4
+XNU-EXIT: corespeechd    pid=624 code=9 ns=1 sub=0x4
+XNU-EXIT: coreduetd      pid=629 code=9 ns=1 sub=0x4
+XNU-EXIT: bluetoothd     pid=646 code=0 ns=0 sub=0x0
+```
+
+so consecutive generations of the same jobs keep starting and exiting, while `bluetoothd` exits
+cleanly.  Status 9 is the usual 'daemon could not initialise' exit, and a whole class of jobs sharing
+it means a common dependency is missing rather than a per-service bug.
+
+The same panel also shows
+
+```
+MobileGestaltHelper[647] triggered unnest of range 0x1f6400000->0x1f6600000 of DYLD shared region
+```
+
+which proves the shared cache is mapped and in use, closing that question for good.
+
+The heartbeat block stops by design on this image: the non-fatal watchdog change disarms the timer on
+the first expired deadline.
+
+Next: find the common dependency.  The cheapest measurements are (a) print the first N exec paths that
+`load_init_program`/`posix_spawn` launch, so the failing binaries are known by name, and (b) catch one
+job's failure with more detail - for example run its executable from a serial console once the system
+stays up.
