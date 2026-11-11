@@ -3285,3 +3285,59 @@ for a graphics device at startup, and a display with no Metal device is not enou
 
 The display work is complete up to the frame reaching the panel; the next real blocker is a Metal-capable GPU
 service, which is a driver port of its own (Adreno 650 on this SoC), not a display configuration.
+## 17:00: final file-by-file state against UniXNU/UniXNU-sheng
+
+After this session's synchronisation the picture is:
+
+### A. Files that are now identical (adopted from sheng this session)
+
+`package/BootProgress.c`, `package/BootProcessWorker.c`, `package/BootUiTraceProbe.c`,
+`package/BootUiTraceDetails.h`, `package/BootWatchdogPolicy.c` - i.e. the four boot/diagnosis components this
+session had been patching by hand are now the maintained revisions.
+
+### B. The 14 files that still differ
+
+| file | difference |
+| --- | --- |
+| `board.toml` | 52 args / 19 archives there vs 32 args / 16 archives here (device identity, GPU stack, msdc root) |
+| `patches/xnu/series` | 3 board patches there (audio addon mount, cpu idle, amp) vs 16 here (trap pc, exit observe, usb debug, panic region, deferred fb mapping, shared-region probe) |
+| `porting.toml` | 751 lines of device qualification records there vs 206 here |
+| `package/LegacyDisplayProbe.cpp` | their reference probe (740 lines) vs this board's probe (602 lines, board-specific diagnostics) |
+| `scripts/build-boot-progress.py` | their builder (96 lines) vs ours (120 lines, wired for CrashLogProbe + ui-trace objects) |
+| `package/GeniI2c.h`, `package/ShengAdsp.h` | I2C and ADSP headers for drivers this board does not have |
+| `proprietary-files.txt`, `feeds.toml`, `unixnu.lock` | firmware list, feeds and pinned versions |
+| `README.md`, `AGENTS.md`, `.gitignore`, `.github/workflows/package.yml` | documentation and CI |
+
+### C. Only in sheng (434 files) - by area
+
+| area | files | what it is |
+| --- | --- | --- |
+| `drivers/QcomIris/` | 42 | camera/video (Iris) driver |
+| `patches/xnu-12377/` | 20 | the iPadOS 27 kernel patch set |
+| `package/tests/` | 16 | host tests for their probes |
+| `scripts/policies/` | 15 | launchd policy directories per OS profile |
+| `package/linux-log/`, `package/linux-ref/` | 10 | Linux reference logs and dumps |
+| `patches/xnu/` | 3 | audio addon mount, cpu idle, amp |
+| `configs/` | 4 | sheng, ipados26, ipados27, macos defconfigs |
+| remaining `package/` (~120) | | Adreno GPU (compiler, PM4, VPC, firmware), Adsp, Backlight, Audio, Bluetooth, Battery, BoardClock, AirLibrary, AcceleratorABI, TouchTrace, tests |
+| remaining `scripts/` (~190) | | display builders (`build-gop-legacy-display(-27).py`, `build-gop-framebuffer.py`), ABI jsons (`legacy-display-24A446.json`), boot/log/UI checks |
+
+### D. Only here (170 files)
+
+| area | files | what it is |
+| --- | --- | --- |
+| `docs/evidence/` | 70 | this board's evidence records |
+| `kits/NativePrelink/` | 25 | prelink kit this board shares |
+| `patches/xnu/` | 23 | this board's diagnostics patches |
+| `components/kona-ufs/`, `drivers/KonaUfs/` | 27 | the SM8250 UFS bring-up |
+| `package/vendor-ram-watchdog/` | 6 | RAM watchdog policy |
+| `configs/instantnoodlep_defconfig`, `dts/instantnoodlep.dts`, `local.toml` | 3 | board configuration |
+
+### E. What the file-by-file comparison actually proves
+
+The display code both repositories use is the **same component family** (`NativeLegacyDisplay` +
+`LegacyDisplayProbe`); sheng does not carry a different display driver.  The material gaps are (1) sheng's GPU and
+peripheral driver stack, (2) its display **build pipeline** (`build-gop-legacy-display.py`, which generates the ABI
+header from the audit - this session built the component that way through `scripts/build-arm-driver.py
+NativeLegacyDisplay`), and (3) its launchd policy directories.  Nothing in sheng's tree shows a display configuration
+that this board lacks; the difference is the device stack around it.
