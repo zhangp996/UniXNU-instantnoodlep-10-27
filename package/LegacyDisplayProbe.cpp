@@ -117,6 +117,28 @@ native_legacy_display_probe(void)
 	}
 }
 
+/* Map the fields the family keeps in the display object: every 8-byte slot that holds a kernel
+ * pointer is printed with its offset, so the default-surface field can be recognised once anything
+ * writes it.  A fault here panics with the offset already on the console. */
+static void
+scan_display_fields(IOService *object)
+{
+	unsigned char *base = (unsigned char *)object;
+	unsigned found = 0;
+	printf("DISPLAY: field scan of the 0x18a0 object\n");
+	for (unsigned off = 0; off + 8 <= 0x18a0 && found < 48; off += 8) {
+		uintptr_t value = *(uintptr_t *)(base + off);
+		if (value < 0xfffffff000000000ULL || value > 0xffffffff00000000ULL) {
+			continue;
+		}
+		uintptr_t vtable = *(uintptr_t *)value;
+		printf("  +0x%03x = 0x%llx vtable=0x%llx\n", off, (unsigned long long)value,
+		    (unsigned long long)vtable);
+		found++;
+	}
+	printf("DISPLAY: field scan done (%u pointer slots)\n", found);
+}
+
 static void
 publish_display(void)
 {
@@ -171,6 +193,9 @@ publish_display(void)
 		bool dispAttached = display->attach(nub);
 		bool dispStarted = dispAttached ? display->start(nub) : false;
 		printf("DISPLAY: display attach=%d start=%d\n", dispAttached, dispStarted);
+		if (dispStarted) {
+			scan_display_fields(display);
+		}
 	}
 	if (memory) memory->release();
 	if (ranges) ranges->release();

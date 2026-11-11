@@ -1052,3 +1052,52 @@ display work.
 
 So the ordering and the load path are now the documented ones, and everything that is left is the default-surface
 adapter: create the BGRA IOSurface through the original IOSurfaceRoot factory and hand it to the family field.
+
+## 00:05: the client probe runs, the fields are mapped, the wall stands
+
+With `offline-mobile-graphics-client=1` the kernel's own client probe ran:
+
+```
+DISPLAY: probe entered (registered=1)          <- second call, from the client probe
+static IOReturn IOMobileFramebufferUserClient::s_map_display_type(...) UserClient display type is 0
+IOMFB: driver commit:
+```
+
+so an `IOMobileFramebufferUserClient` was allocated, initialised and answered a selector, and the real userland
+client then mapped the display ("UserClient display type is 0").  It does not change the outcome: about two
+minutes in, the same sequence repeats -
+
+```
+AFB: default surface: No Default FB Surface found. Return error
+IOMFB: swap_wait_gated: CommandMake didn't happen even after 5 seconds ... cancelling swaps
+DISPLAY: unimplemented legacy slot 345 (object=0xfffffff42f623000 caller=0xfffffff00578c1cc), returning
+panic: data abort at pc OSMetaClass::~OSMetaClass+0x1c, lr NativeLegacyDisplay::MetaClass::~MetaClass, far 0
+```
+
+The field scan of the live display object (25 eight-byte slots hold kernel pointers):
+
+```
++0x000 vtable 0xfffffff007210758     +0x010..+0x030 registry/provider links (nub at +0x030)
++0x060 0xfffffff262cdc100            +0x278, +0x780 = 0xffffffff00000000 (pattern)
++0x1570..+0x15e0  eight pointers spaced 0x10 (0xfffffff42f6245xx)
++0x1600 0xfffffff348fa7e00           +0x1608 0xfffffff262d7f150
++0x1610 0xfffffff42f597380           +0x1638 0xfffffff262ca9700
++0x1648 0xfffffff515c7b2e0           +0x17e8 0xfffffff42f6247e0
++0x17f8 0xfffffff72f303f40           +0x1868 0xfffffff262e52b50
+```
+
+The stretch around +0x1610 is interesting because a device record (`uke`) notes that a swap record whose ID
+matches the default surface names `fb+0x1618` directly - i.e. the default surface is identified around that
+offset, and today nothing is stored there.
+
+The call site of slot 345, from the family's `opaque243`:
+
+```
+ldur x0, [x29, #-184]      ; the display object
+mov  x9, #6020 ; add x8, x0, x9 ; ldrb w8, [x8]   ; byte at +0x1784
+ldr  x8, [x0] ; ldr x8, [x8, #2760] ; blr x8       ; #2760 = 345 * 8
+```
+
+Only `x0` is set up, so the slot takes just the object (a notification/void leaf), not a surface request.  The
+next scan therefore prints each pointer's `vtable` as well, so the slots can be named against the component
+segments (IOSurface's data extent is known from the prelink report) instead of guessed.
