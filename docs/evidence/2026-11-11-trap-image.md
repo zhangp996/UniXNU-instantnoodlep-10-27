@@ -916,3 +916,21 @@ in `porting/drivers.md` (line 70) confirms the scope: record the class layout, t
 selectors, the argument structures and the symbol bindings from the selected kernelcache - object fields are not
 part of the contract.  That is why the family's default-surface field has no published offset and has to be
 measured on this board.
+
+## 23:05: what the boot-configuration reference offers
+
+`/zh/reference/boot-configuration` describes the payload's `unixnu.toml`: menus ([boot], [ui]), drivers, dt patches,
+block slices, ACPI, kits, and per-entry keys (`args`, `initrd`, `confirm`/`confirm_args`, `[[entry.kext]]`,
+`[[entry.variable]]`, `[[entry.dt_patch]]`).  The one piece that touches our display work is:
+
+> `[entry.chosen]` - 每个键成为 `/chosen` 属性，在菜单项补丁之后应用
+
+That is the declarative counterpart of what the probe does at runtime when it publishes `display-scale` and
+`display-rotation` into `/chosen`.  Two limits apply: the page states that `[[dt_patch]]` applies to EFI and Linux
+entries while the Darwin path uses the `.adt` sidecar, so for XNU those properties come from the sidecar
+generator (`[payload.adt]`) or, as now, from the board probe; and nothing on the page concerns the family's
+default-surface field.
+
+So the page is not an answer to the current wall, but it does point at the tidy way to retire one of our probe's
+responsibilities later: declare `display-scale`/`display-rotation` in the entry's `[entry.chosen]` (or in the ADT
+generator) instead of writing them from `native_legacy_gop_mapping_observed`.
