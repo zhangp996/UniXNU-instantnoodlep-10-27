@@ -3341,3 +3341,26 @@ peripheral driver stack, (2) its display **build pipeline** (`build-gop-legacy-d
 header from the audit - this session built the component that way through `scripts/build-arm-driver.py
 NativeLegacyDisplay`), and (3) its launchd policy directories.  Nothing in sheng's tree shows a display configuration
 that this board lacks; the difference is the device stack around it.
+## 18:30: the presenter and the attach topology - sheng's probe, read line by line
+
+sheng's display builder puts **three** objects in `libNativeLegacyDisplay.late.a`: `NativeLegacyDisplay`,
+`NativeKeyStoreEvents` and **`NativeGOPPresenter`** (build-arm-driver.py for each).  This board's archive has the
+display, the probe and the accelerator stub - **no presenter**.
+
+Their probe's publish path, verbatim from `package/LegacyDisplayProbe.cpp`:
+
+* phase 3: `native_gop_presenter_create()` -> `init()` -> `attach(nub)` -> `start(nub)`; the presenter owns the
+  transport ('Explicit own transport service only. The incomplete original framebuffer backend is never published');
+* phase 4: the legacy display is probed, attached and started; when `fb-gpu=1` a **handoff presenter** is created and
+  attached to `IOService::getResourceService()` with this comment:
+
+  > Not a child of the display subsystem's node: the original display code enumerates that node's children (int-075/077:
+  > SpringBoard found no display and crashed with the presenter attached there, registered or not).
+
+So there are two distinct topologies in sheng, and the comment records that the wrong one makes SpringBoard crash with
+'no display'.  This board's probe attaches its nub to `getResourceService()` (the safe side) but never creates a
+presenter, so the system has a display service and no presenter service.
+
+That is the concrete, file-level difference left: **`NativeGOPPresenter` is missing from this port's archive**, and
+with it the NGP present/wait/complete path the render server uses.  Building it is one
+`build-arm-driver.py NativeGOPPresenter` step plus the create/attach/start sequence above.
