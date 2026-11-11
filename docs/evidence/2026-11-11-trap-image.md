@@ -2705,3 +2705,24 @@ Candidates for the system-level loop, none of them display code:
 * the service graph trims the Pagani record documents (identityservicesd, locationd, CommCenter, bluetoothd,
   iomfb_fdr_loader, iconservicesagent), each matched to the original task's Label and ProgramArguments;
 * the stock boot image would show whether the loop predates all of this work on the device.
+
+## 06:15: the data volume cannot be swapped for a fresh seed
+
+Booting with the pristine IPSW seed instead of this installation's owner data panics immediately:
+
+    panic(cpu 0 caller 0xfffffff00bd0a5e0): offline scratch Data mount failed: 2 @kern_exec.c:8190
+
+so the Data volume is bound to the installation's own seed - a fresh seed is not a valid substitute, and
+CONFIG_XNU_OWNER_DATA_MOUNT requires the persistent one. The owner data was restored from backup and the payload
+rebuilt with it (image b6c8e8e9...).
+
+That closes the 'stale data volume' hypothesis: the SpringBoard loop is not something a clean data seed fixes, and
+the volume is not what makes SpringBoard abort.
+
+Remaining productive directions, in order:
+
+1. the launchd policy trim the Pagani record documents (match each original task's Label and ProgramArguments);
+2. a boot that reaches the compositor (earlier boots did, around 2:10) to validate the slot 345 fix and the
+   early-retire path on the swap timeout;
+3. if the loop is accepted as this system stage's normal state, document it as such and keep the display work at
+   'full panel + full-frame copy, swap completion pending'.
