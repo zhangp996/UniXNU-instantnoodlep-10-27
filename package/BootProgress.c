@@ -131,7 +131,6 @@ extern unsigned int vm_page_active_count,vm_page_inactive_count,vm_page_wire_cou
 extern uint64_t max_mem;
 extern volatile uint32_t native_ram_block_sparse __attribute__((weak_import));
 extern volatile uint64_t native_ram_block_bytes,native_ram_block_resident_bytes __attribute__((weak_import));
-extern volatile uint64_t native_ram_block_reads,native_ram_block_failures __attribute__((weak_import));
 extern unsigned int vm_page_free_min,vm_page_free_reserved,vm_page_free_target;
 extern void boot_progress_exit_fault(int,unsigned,char *,unsigned long) __attribute__((weak_import));
 extern void boot_progress_exit_reason(int,unsigned,char *,unsigned long) __attribute__((weak_import));
@@ -169,41 +168,6 @@ extern volatile int32_t __attribute__((weak_import)) armcpu_smp_psci_rc[8];
 extern volatile uint32_t __attribute__((weak_import)) armcpu_irq_phase,armcpu_irq_id,armcpu_quiesce_calls,armcpu_halt_calls;
 extern int nprocs;
 extern volatile int native_owner_root_accepted;
-// offline-owner-cache-carrier.patch counts how often the shared-region map accepted or rejected
-// the dyld cache carrier. A refused carrier is the documented reason a launchd ends before main.
-// Weak definitions, not weak imports: the kernel link only satisfies weak imports from a dylib,
-// and the carrier counters live in a translation unit this build does not compile them into, so
-// the page reads 0/0 instead of failing the link.
-// clang defaults to -fno-common, so an uninitialized definition becomes an undefined reference
-// instead of a common symbol: the initializer is what makes these real weak definitions.
-unsigned long native_owner_cache_carrier_accepts __attribute__((weak)) = 0;
-unsigned long native_owner_cache_carrier_rejects __attribute__((weak)) = 0;
-// offline-owner-systemos-mount.patch records what the cryptex mount actually produced. The page
-// reads these directly, so a union that silently did not compose the root shows up as u=0 rather
-// than as a cache directory that cannot be found.
-int native_owner_cache_native_union __attribute__((weak)) = 0;
-int native_owner_cache_readonly __attribute__((weak)) = 0;
-int native_owner_cache_mount_status __attribute__((weak)) = 0;
-unsigned long long native_owner_cache_actual_mount_flags __attribute__((weak)) = 0;
-// kona-union-trace.patch counts _shared_region_map_and_slide and keeps its last error, which is how
-// the page says whether dyld asked the kernel to map the cache at all now that the union resolves it.
-unsigned long native_sr_map_calls __attribute__((weak)) = 0;
-unsigned long native_sr_check_calls __attribute__((weak)) = 0;
-int native_sr_map_error __attribute__((weak)) = -1;
-// kona-p1-stderr.patch keeps what PID 1 writes to stderr; the page prints it because dyld's own
-// failure text is the only description of why it leaves before touching the shared region.
-char native_p1_stderr[256] __attribute__((weak)) = {0};
-unsigned long native_p1_stderr_len __attribute__((weak)) = 0;
-// kona-p1-open.patch keeps the last path PID 1 opened; it names the step dyld reached.
-char native_p1_path[128] __attribute__((weak)) = {0};
-unsigned long native_p1_path_len __attribute__((weak)) = 0;
-// kona-p1-exit-pc.patch records where PID 1 called exit from, in its own address space.
-unsigned long long native_p1_exit_pc __attribute__((weak)) = 0;
-unsigned int native_p1_exit_status __attribute__((weak)) = 0;
-// kona-alt-dyld.patch records which linker path the loader chose.
-char native_dyld_choice[96] __attribute__((weak)) = {0};
-// Defined next to the interrupt sampler, which owns the ring; draw() runs before that point.
-static unsigned bp_p1_pcs(uint64_t out[2]);
 
 extern volatile uint32_t native_legacy_stage __attribute__((weak_import));
 extern volatile uint32_t native_legacy_pm_stage __attribute__((weak_import));
@@ -298,7 +262,7 @@ static void draw(unsigned now) {
           visible->reason == 1 ? "STOP: NO STAGE / IO ACTIVITY FOR 30s - diagnostic snapshot" :
           visible->reason == 2 ? "STOP: 120s OBSERVATION LIMIT - activity does not prove forward progress" :
           "UniXNU boot diagnostics - live XNU - native 4K - no automatic reboot";
-  // Session/build label from the sheng-build-tag boot argument (e.g. ks-001, gpu-003), so a photograph says which image it is.
+  // Session/build label from the build-tag boot argument (e.g. ks-001, gpu-003), so a photograph says which image it is.
   if(build_tag[0]) snprintf(b,sizeof(b)," [%s] %s",build_tag,title); else snprintf(b,sizeof(b)," %s",title);
   bar(0, b, 0xffffffff, visible->reason && !visible->continuous ? BP_BAR_STOP : BP_BAR_LIVE);
   snprintf(b,sizeof(b),"time=%us idle=%us IRQ=%llu monitor=%llu lost=%u root=%d procs=%d free=%u",
@@ -312,13 +276,6 @@ static void draw(unsigned now) {
     size_t n=strlen(b);const char *why=native_ufs_root_failure;
     snprintf(b+n,sizeof(b)-n," | probe=%u match=%u root=%u %.40s",native_ufs_probe_calls,native_ufs_matched,
       native_ufs_root_step,why?why:"-");
-  } else if(&native_ufs_root_step && native_ufs_blocks_published) {
-    // A published media still needs its step on screen: once the windows are out the interesting
-    // number is the block-read counter (70000 + calls), which is what separates a stop during
-    // bring-up from one during the system's own I/O. The probe/match pair is dropped so the line
-    // still fits the panel.
-    size_t n=strlen(b);const char *why=native_ufs_root_failure;
-    snprintf(b+n,sizeof(b)-n," | root=%u %.28s",native_ufs_root_step,why?why:"-");
   }
   line(2,b,0xffffffff);
   snprintf(b,sizeof(b),"TCR=%llx TTBR0=%llx TTBR1=%llx SCTLR=%llx",tcr,ttbr0,ttbr1,sctlr); line(3,b,0xffffffff);
@@ -346,13 +303,10 @@ static void draw(unsigned now) {
     snprintf(b,sizeof(b),"PC %us p%d %.10s %llx/%x | %us p%d %.10s %llx/%x",a->second,a->pid,a->name,a->pc,(unsigned)a->psr,c->second,c->pid,c->name,c->pc,(unsigned)c->psr);
     line(12+i,b,0xffaaaaaa);
   }
-  // The exit panel below redraws rows 16..23 as soon as any process leaves, which used to erase the
-  // kernel console exactly when it mattered (a panic after PID 1 exits). Keep the console block on
-  // its own rows so the last lines survive the exit panel.
-  bar(24," Kernel console (latest lines; an IRQ-off hard lock stops refresh)",0xffffff00,BP_BAR_SECTION);
+  bar(16," Kernel console (latest lines; an IRQ-off hard lock stops refresh)",0xffffff00,BP_BAR_SECTION);
   {
     unsigned last=visible->logs[visible->log_row][0] ? visible->log_row : (visible->log_row+BP_LOGS-1)%BP_LOGS;
-    for (unsigned i=0;i<5;++i) line(25+i,visible->logs[(last+BP_LOGS-4+i)%BP_LOGS],0xffffffff);
+    for (unsigned i=0;i<7;++i) line(17+i,visible->logs[(last+BP_LOGS-6+i)%BP_LOGS],0xffffffff);
   }
   if(exit_snapshot.total) {
     snprintf(b,sizeof(b)," Process exits: total=%u nonzero-status-or-reason=%u dropped=%u; FAIL rows persist across normal exits",
@@ -537,27 +491,9 @@ static void draw(unsigned now) {
     max_mem>>20,vm_page_free_count,vm_page_active_count,vm_page_inactive_count,
     vm_page_wire_count,vm_page_speculative_count);line(35,b,0xffffff00);
   if(&native_ram_block_sparse){
-    // reads/failures first: they say whether the file system in RAM is being served at all, which
-    // is the only question a frozen page has to answer for a RAM-root boot.
-    snprintf(b,sizeof(b),"RAMDISK sparse=%u reads=%llu fails=%llu capMiB=%llu resKiB=%llu; free=%u/%u/%u cache=%lu/%lu",
-      native_ram_block_sparse,native_ram_block_reads,native_ram_block_failures,
-      native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
-      vm_page_free_min,vm_page_free_reserved,vm_page_free_target,
-      native_owner_cache_carrier_accepts,native_owner_cache_carrier_rejects);line(36,b,0xffffff00);
-    // Where PID 1 was actually executing: the interrupt sampler already records every process's
-    // interrupted PC, user or kernel, in bp_prof. Pull the newest PID 1 entries on the row so dyld's
-    // own code shows up as U<address> instead of another guess.
-    {
-      uint64_t p1pc[2]={0,0};
-      bp_p1_pcs(p1pc);
-      snprintf(b,sizeof(b),"SRMAP chk=%lu map=%lu exitpc=%llx st=%u open=%.28s dyld=%.26s",
-        native_sr_check_calls,native_sr_map_calls,native_p1_exit_pc,native_p1_exit_status,
-        native_p1_path,native_dyld_choice);
-      line(38,b,0xffffff00);
-    }
-    snprintf(b,sizeof(b),"CACHE u=%d ro=%d st=%d flags=%llx",native_owner_cache_native_union,
-      native_owner_cache_readonly,native_owner_cache_mount_status,
-      native_owner_cache_actual_mount_flags);line(37,b,0xffffff00);
+    snprintf(b,sizeof(b),"RAMDISK sparse=%u capacityMiB=%llu residentKiB=%llu; free min/reserved/target=%u/%u/%u",
+      native_ram_block_sparse,native_ram_block_bytes>>20,native_ram_block_resident_bytes>>10,
+      vm_page_free_min,vm_page_free_reserved,vm_page_free_target);line(36,b,0xffffff00);
   }
   if (visible->frozen) {
     // Capture without touching the controller, including when an interrupted
@@ -635,66 +571,14 @@ int boot_progress_prepare_scanout(void) {
 void boot_progress_cancel_scanout(void) {
   __atomic_store_n(&display.yield_requested,0,__ATOMIC_RELEASE);
 }
-
-/* BRINGUP: the ui-trace probes only fill boot_process_rows for the diagnostic page. Mirror those rows to the
- * kernel log so the serial console shows them without a photograph. */
-extern char boot_process_rows[10][120];
-static void
-boot_rows_printer(void *arg, wait_result_t result)
-{
-	static char last[10][120];
-	(void)arg; (void)result;
-	for (;;) {
-		assert_wait_timeout((event_t)&last, THREAD_UNINT, 4000, NSEC_PER_MSEC);
-		thread_block(THREAD_CONTINUE_NULL);
-		for (unsigned i = 0; i < 10; i++) {
-			const char *row = boot_process_rows[i];
-			if (row[0] == 0 || row[0] == ' ') continue;
-			if (__builtin_memcmp(row, last[i], sizeof(last[i])) == 0) continue;
-			__builtin_memcpy(last[i], row, sizeof(last[i]));
-			printf("PROC[%u] %s\n", i, row);
-		}
-	}
-}
-
-static void
-boot_rows_start(void)
-{
-	unsigned enabled = 0;
-	static unsigned started;
-	thread_t thread;
-	printf("BRINGUP-ROWS: boot_rows_start called\n");
-	if (!PE_parse_boot_argn("boot-ui-trace", &enabled, sizeof(enabled)) || enabled != 1) return;
-	if (__atomic_exchange_n(&started, 1, __ATOMIC_ACQ_REL)) return;
-	if (kernel_thread_start_priority(boot_rows_printer, 0, BASEPRI_KERNEL, &thread) == KERN_SUCCESS) {
-		thread_deallocate(thread);
-		printf("BRINGUP-ROWS: printer thread started\n");
-	} else {
-		printf("BRINGUP-ROWS: printer thread failed\n");
-	}
-}
-
 void boot_progress_init(void) {
-    /* Uke's crash-report probe: starts its worker under sheng-crashlog=1 and mirrors CrashReporter
-     * entries (backboardd, SpringBoard) into the kernel log. */
-    /* sheng's userland stack capture: with boot-ui-trace=1 this worker samples the target processes'
-     * user stacks (launchd, backboardd, SpringBoard, ...) into boot_process_rows. */
-    {
-        extern void boot_process_start(void);
-        boot_process_start();
-    }
-    boot_rows_start();
-    {
-        extern void uke_crash_log_start(void);
-        uke_crash_log_start();
-    }
   unsigned opt=0;
   if (!PE_parse_boot_argn("boot-progress",&opt,sizeof(opt)) || (opt != 1 && opt != 2)) return;
   __asm__ volatile("mrs %0,cntfrq_el0" : "=r"(boot_progress_frequency));
   if (!boot_progress_frequency) return;
   boot_progress_epoch=ticks(); state.limit=120; state.stall=30;
   state.continuous=opt==2; enabled=opt;
-  PE_parse_boot_argn("sheng-build-tag",build_tag,sizeof(build_tag));build_tag[sizeof(build_tag)-1]=0;
+  PE_parse_boot_argn("build-tag",build_tag,sizeof(build_tag));build_tag[sizeof(build_tag)-1]=0;
   if (PE_parse_boot_argn("boot-diag-resume",&resume_after,sizeof(resume_after)) && (resume_after<5 || resume_after>3600)) resume_after=0;
   boot_progress_stage("PE initialized; early native mappings");
 }
@@ -826,18 +710,6 @@ static void bp_kernel_chain(uint64_t pc) {
     const uint64_t *frame=(const uint64_t *)fp;e[i]=(uint32_t)frame[1];
     const uint64_t next=frame[0];if(next<=fp)break;fp=next;
   }
-}
-// Newest PID 1 samples, kernel bit in bit 63; 0 means no sample was seen for that process.
-static unsigned bp_p1_pcs(uint64_t out[2]) {
-  unsigned found=0;
-  uint32_t head=__atomic_load_n(&bp_prof_head,__ATOMIC_RELAXED);
-  uint32_t start=head>BpProfSamples?head-BpProfSamples:0;
-  for(uint32_t i=head;i>start && found<2;--i){
-    uint64_t w=bp_prof[(i-1)%BpProfSamples];
-    if(((w>>48)&0xffff)!=1)continue;
-    out[found++]=(((w>>47)&1)?(1ull<<63):0)|(w&((1ull<<47)-1));
-  }
-  return found;
 }
 void boot_progress_irq(uint64_t pc,uint64_t psr,uint64_t sp) {
   // Independent of the recorder lock. IRQ still performs no pixel stores.
@@ -1218,10 +1090,10 @@ static void crash_banner(unsigned now) {
 }
 static void touch_overlay_locked(void);
 static void touch_overlay(void) {
-  // sheng-banner=0 switches every on-screen diagnostic painting off once the system owns the display (the UFS log carries the same rows):
+  // banner=0 switches every on-screen diagnostic painting off once the system owns the display (the UFS log carries the same rows):
   // the painters hold render_busy for about a million uncached stores, which a swap's scanout hand-off has to wait for.
   static int banner_off=-1;
-  if(banner_off<0){unsigned v=1;PE_parse_boot_argn("sheng-banner",&v,sizeof(v));banner_off=v==0;}
+  if(banner_off<0){unsigned v=1;PE_parse_boot_argn("banner",&v,sizeof(v));banner_off=v==0;}
   if(banner_off)return;
   __atomic_fetch_add(&touch_passes,1,__ATOMIC_RELAXED);
   // Same rule as the text renderer: draw only while holding render_busy, so a display handoff (which takes it before
@@ -1312,7 +1184,7 @@ static void monitor(void *arg, wait_result_t result) {
   }
 }
 // The boot core is a little A510. Without cluster types the scheduler sees equal cores and hands it work first (lowest idle core
-// number); a lowest-priority thread bound to it (sheng-cpu0-park=1) keeps it busy so work goes to the big cores while any is idle.
+// number); a lowest-priority thread bound to it (cpu0-park=1) keeps it busy so work goes to the big cores while any is idle.
 // Compositing frames ran 40 fps without it and 55 fps with it. With E and P clusters the Edge scheduler places work, so it is off.
 static void cpu0_park(void *arg, wait_result_t result) {
   (void)arg;(void)result;
@@ -1337,7 +1209,7 @@ void boot_progress_start(void) {
     else __atomic_store_n(&process_worker_status,3,__ATOMIC_RELEASE);
   }
   if(kernel_thread_start_priority(touch_monitor,0,BASEPRI_KERNEL,&thread)==KERN_SUCCESS)thread_deallocate(thread);
-  {unsigned park=0;PE_parse_boot_argn("sheng-cpu0-park",&park,sizeof(park));
+  {unsigned park=0;PE_parse_boot_argn("cpu0-park",&park,sizeof(park));
    if(park==1 && kernel_thread_start_priority(cpu0_park,0,1,&thread)==KERN_SUCCESS)thread_deallocate(thread);}
   boot_progress_stage(state.continuous ?
     "monitor continuous: deadlines warn only; OS remains running" :

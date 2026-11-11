@@ -3364,3 +3364,20 @@ presenter, so the system has a display service and no presenter service.
 That is the concrete, file-level difference left: **`NativeGOPPresenter` is missing from this port's archive**, and
 with it the NGP present/wait/complete path the render server uses.  Building it is one
 `build-arm-driver.py NativeGOPPresenter` step plus the create/attach/start sequence above.
+## 19:30: the presenter/accelerator build regressed the display start
+
+The kernel with `NativeGOPPresenter` + `MiniAcceleratorES` builds and links, but the boot now reports:
+
+      DISPLAY: display attach=1 start=0
+
+i.e. the legacy display **attaches but fails to start**, so nothing is published and the presenter branch is never
+reached (`dispStarted == 0`).  Previous builds reported `attach=1 start=1` followed by the default-surface adoption.
+
+So one of the two additions this round disturbs the family's start path:
+
+* `native_gop_presenter_static_init()` called at probe entry (the presenter's class registration), or
+* `MiniAcceleratorPublishStub()` publishing an `IOAcceleratorES` before the display starts.
+
+Both are isolatable with boot arguments on the next boot (`accel_stub=0` disables the stub; the presenter init can be
+gated the same way).  The finding that matters is that the start failure appeared exactly when these two were added,
+so the display's start path is sensitive to what is published before it.

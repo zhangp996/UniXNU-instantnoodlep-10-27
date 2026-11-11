@@ -19,6 +19,21 @@
 #include <ipc/ipc_space.h>
 #include <ipc/ipc_port.h>
 #include <string.h>
+// The stuck-thread scan reads the VM object or page a thread waits for, on kernels whose VM waits have block hints of their own
+// (they came before the page sleep with an inheritor, which has a macro to test).
+#if __has_include(<vm/vm_object_internal.h>) && __has_include(<vm/vm_pageout_xnu.h>)
+#include <vm/vm_options.h>
+#endif
+#if defined(PAGE_SLEEP_WITH_INHERITOR)
+#define BT_STUCK_VM 1
+#include <kern/block_hint.h>
+#include <vm/vm_object_internal.h>
+#include <vm/vm_page_internal.h>
+#include <vm/vm_pageout_xnu.h>
+#include <vm/vm_protos_internal.h>
+#else
+#define BT_STUCK_VM 0
+#endif
 #if defined(__arm64e__)
 #include <ptrauth.h>
 #define BT_USER_ADDRESS_BITS 47
@@ -48,19 +63,20 @@ static uint64_t sample_k[BT_MAX_THREADS][BT_KFRAMES],sample_event[BT_MAX_THREADS
 static unsigned sample_state[BT_MAX_THREADS],sample_hint[BT_MAX_THREADS];static int sample_pri[BT_MAX_THREADS];
 // All callers hold sched_lock. Switch-out can detach the stack before it takes
 // that lock and clears TH_RUN, even after the thread has set TH_WAIT.
-static void bt_kernel_stack(thread_t thread,uint64_t *out) {
- memset(out,0,BT_KFRAMES*sizeof(uint64_t));
+static void bt_kernel_stack_n(thread_t thread,uint64_t *out,unsigned count) {
+ memset(out,0,count*sizeof(uint64_t));
  if((thread->state & (TH_WAIT|TH_RUN|TH_TERMINATE|TH_TERMINATE2)) != TH_WAIT)return;
  const uintptr_t low=thread->kernel_stack,size=kernel_stack_size;
  if(!low)return;
  thread_kernel_state_t state=thread_get_kernel_state(thread);
  if(!state || size<sizeof(*state) || (uintptr_t)state<low || (uintptr_t)state-low>size-sizeof(*state))return;
  uint64_t fp=state->machine.ss.fp;out[0]=state->machine.ss.lr;
- for(unsigned i=1;i<BT_KFRAMES && fp>=low && fp-low<=size-16 && !(fp&15);++i) {
+ for(unsigned i=1;i<count && fp>=low && fp-low<=size-16 && !(fp&15);++i) {
   const uint64_t *frame=(const uint64_t *)fp;out[i]=frame[1];
   const uint64_t next=frame[0];if(next<=fp)break;fp=next;
  }
 }
+static void bt_kernel_stack(thread_t thread,uint64_t *out) {bt_kernel_stack_n(thread,out,BT_KFRAMES);}
 #define BT_ROLES 4
 static struct bt_main draft_main[BT_ROLES],published_main[BT_ROLES];
 static struct bt_prev hot_prev[BT_ROLES][BT_MAX_THREADS];
@@ -135,6 +151,7 @@ void boot_ui_trace_task(task_t task,unsigned index,int pid,const char *name,unsi
   boot_ui_trace_phase=role?3:2;
   if(samples[i].index==1) {
    struct bt_main *main=&draft_main[role];main->entry=samples[i];main->pid=pid;main->slide=slide;
+   memcpy(main->kernel,sample_k[i],sizeof(main->kernel));main->kevent=sample_event[i];main->kstate=sample_state[i];main->khint=sample_hint[i];
    if(!main->entry.error)bt_walk_n(&main->entry,read_user,map,main->frames,32);
    main->error=main->entry.error;
    uint64_t info[2]={0},image[3]={0};main->image_error=1;
@@ -234,6 +251,13 @@ unsigned boot_ui_trace_role_rows(unsigned role,char rows[][120],unsigned max,uns
   for(unsigned row=0;row<3;++row) {
    int at=snprintf(rows[n],120,"STK%c %02u",c,row*8+1);
    for(unsigned i=0;i<8 && at>0 && at<119;++i)at+=snprintf(rows[n]+at,120-at," %llx",m->frames[row*8+i]);
+   ++n;
+  }
+  // The kernel side of the same sample (macOS run38: loginwindow's main thread stayed at one load from the shared cache for minutes).
+  if(n<max)snprintf(rows[n++],120,"STK%c kern st=%x hint=%u ev=%llx",c,m->kstate,m->khint,(unsigned long long)VM_KERNEL_UNSLIDE_OR_PERM(m->kevent));
+  for(unsigned row=0;row<2 && n<max && m->kernel[row*6];++row) {
+   int at=snprintf(rows[n],120,"STK%c k%02u",c,row*6+1);
+   for(unsigned i=0;i<6 && at>0 && at<119;++i)at+=snprintf(rows[n]+at,120-at," %llx",(unsigned long long)VM_KERNEL_UNSLIDE(m->kernel[row*6+i]));
    ++n;
   }
  } else if(published_pid[role]) {
@@ -355,6 +379,31 @@ int boot_kthread_report(const char *name,char *out,unsigned size) {
  task_unlock(kernel_task);
  return found;
 }
+// The nth kernel thread whose name starts with prefix (IOKit's matching threads, "IOConfigThread_..."): its name, then the same line as
+// boot_kthread_report. 0 when found, -1 when busy or when there are fewer.
+int boot_kthread_report_nth(const char *prefix,unsigned nth,char *name,unsigned name_size,char *out,unsigned size) {
+ out[0]=0;name[0]=0;
+ if(!task_lock_try(kernel_task))return -1;
+ int found=-1;thread_t thread;unsigned seen=0;const size_t plen=strlen(prefix);
+ queue_iterate(&kernel_task->threads,thread,thread_t,task_threads) {
+  char tn[64];tn[0]=0;thread_get_thread_name(thread,tn);
+  if(strncmp(tn,prefix,plen) || seen++!=nth)continue;
+  strlcpy(name,tn,name_size);
+  uint64_t frames[BT_KFRAMES]={0};unsigned state=0,hint=0;uint64_t event=0;
+  bool irq=ml_set_interrupts_enabled(false);
+  if(simple_lock_try(&thread->sched_lock,&thread_lck_grp)) {
+   bt_kernel_stack(thread,frames);state=(unsigned)thread->state;hint=(unsigned)thread->block_hint;event=(uint64_t)thread->wait_event;
+   thread_unlock(thread);found=0;
+  }
+  ml_set_interrupts_enabled(irq);
+  if(found)break;
+  int at=snprintf(out,size,"st=%x hint=%u ev=%llx k",state,hint,(unsigned long long)VM_KERNEL_UNSLIDE_OR_PERM(event));
+  for(unsigned i=0;i<BT_KFRAMES && frames[i] && at>0 && (unsigned)at<size;++i)at+=snprintf(out+at,size-(unsigned)at," %llx",(unsigned long long)VM_KERNEL_UNSLIDE(frames[i]));
+  break;
+ }
+ task_unlock(kernel_task);
+ return found;
+}
 // Every other processor asked to check its ASTs again, as the scheduler's own preemption signal does. For a thread that was made runnable
 // while the processor meant to run it never took the signal. out: per processor its state, the priority it runs at and the signal bits
 // still pending before this one was sent (bits that stay set mean a processor that does not take its interrupts).
@@ -463,6 +512,288 @@ static int cs_ptime_one(proc_t p,void *arg) {
  r.abs=cs_ptime_now;r.pid=pid;r.user_us=cs_us(du);r.system_us=cs_us(ds);r.priority=(int16_t)task->priority;
  const uint32_t n=boot_ptime_count;boot_ptime_ring[n&(CS_PTIME_RING-1)]=r;boot_ptime_count=n+1;
  return 0;   // PROC_RETURNED
+}
+// Stuck threads: a thread that has sat in the same kernel-side wait, without a context switch, for 20 s or more. Counted are an
+// uninterruptible wait of a user process's thread (a busy page, a lock, I/O) and, in any thread, a wait for a VM object or page even
+// when it is interruptible: a page fault waits for a busy page that way, and so may the thread that holds another page busy. Such a
+// wait that never ends is a kernel deadlock, and the process just stops without a word (macOS: loginwindow in the 4K shared region
+// pager; vm_object_upl_request and vm_object_copy_delayed, run53 to run61). The scan covers the live processes, the kernel's own
+// threads (VM waits only: most of them idle in an uninterruptible wait) and the tasks that are terminated but not gone: a process
+// killed while one of its threads sits in such a wait leaves the process list, and the thread still holds what it held.
+// Rows, per thread (n counts the threads shown):
+//  SKn p<pid> <name> tid=<id> <seconds>s hint=<block hint> ev=<wait event> st=<thread state: 1 waiting, 8 uninterruptible> [dead]
+//      name: the process's, a kernel thread's own; dead: the task is terminated.
+//  SKn k <kernel return addresses 1 to 6, unslid>
+//  SKn f, SKn g, SKn h <the return addresses that follow, up to 24 in all>: eight digits stand for an address with the upper half
+//      of the first address on row k.
+//  SKn o <object> [file=<name> | vp=<vnode>] [sh=<shadow levels down to that file>] pip=<paging_in_progress>
+//      aip=<activity_in_progress> [pg=<offset of the busy page> pf=<page flags>] res=<resident pages> fl=<object flags>
+//      The VM object a thread with a VM block hint waits for: hint 0x16 the object of the busy page, 0x17 to 0x1d the object whose
+//      event it is. pf: 1 busy, 2 absent, 4 cleaning, 8 laundry, 10 free when done, 20 wanted, 40 overwriting, 80 dirty, 100 error,
+//      bits 12 to 15 the queue state (vm_page_q_state_t). fl: 1 internal, 2 pager ready, 4 pager created, 8 true share, 10 alive,
+//      20 code signed, 40 has wired pages, 80 page list request in progress, 100 has a shadow, 200 has a copy object,
+//      400 terminating, 800 the shared cache, bits 12 to 15 the copy strategy.
+// The first row adds the external pageout queue: a file page queued there holds an activity reference on its object until the
+// pageout thread takes it. A kernel without VM block hints (BT_STUCK_VM 0) has neither the VM waits nor the object rows.
+// boot_stuck_scan(seconds) is called once per log round.
+#define BT_STUCK 6
+#define BT_STUCK_SEEN 512
+#define BT_STUCK_PROBE 8
+#define BT_STUCK_FRAMES 24
+struct bt_stuck {int pid;char name[20];uint64_t tid,event,kernel[BT_STUCK_FRAMES];unsigned hint,seconds,state,kind;
+                 uint64_t object,vnode,offset;uint32_t activity,resident;uint16_t paging,oflags,page;uint8_t have,depth;char file[36];};
+static struct bt_stuck *stuck_draft,*stuck_published;   // allocated at the first scan: the kernel's __DATA has no room for them
+static unsigned stuck_draft_count,stuck_published_count,stuck_clock,stuck_total;
+static struct {uint64_t tid,event;uint32_t switches;uint16_t since,seen;} stuck_seen[BT_STUCK_SEEN];
+#if BT_STUCK_VM
+static bool stuck_vm_hint(unsigned hint) {return hint==kThreadWaitPageBusy || (hint>=kThreadWaitPLReqInProgress && hint<=kThreadWaitPageInThrottle);}
+#else
+static bool stuck_vm_hint(unsigned hint) {(void)hint;return false;}
+#endif
+// The seconds a thread has been seen in this wait with no context switch. Thread ids hash with linear probing, and an entry no scan
+// has refreshed for 15 s is free again (its thread left the wait or ended), so two waiting threads with the same hash each keep one.
+static unsigned stuck_age(uint64_t tid,uint64_t event,uint32_t switches) {
+ const uint16_t now=(uint16_t)stuck_clock;
+ __typeof__(stuck_seen[0]) *seen=NULL,*spare=NULL;
+ for(unsigned probe=0;probe<BT_STUCK_PROBE;++probe) {
+  __typeof__(stuck_seen[0]) *slot=&stuck_seen[(tid+probe)&(BT_STUCK_SEEN-1)];
+  if(slot->tid==tid) {seen=slot;break;}
+  if(!spare && (!slot->tid || (uint16_t)(now-slot->seen)>=15))spare=slot;
+ }
+ if(seen && seen->event==event && seen->switches==switches) {seen->seen=now;return (uint16_t)(now-seen->since);}
+ if(!seen)seen=spare;
+ if(seen) {seen->tid=tid;seen->event=event;seen->switches=switches;seen->since=now;seen->seen=now;}
+ return 0;
+}
+// A row for the next stuck thread; when all are taken, a thread in a VM wait replaces one that is not.
+static struct bt_stuck *stuck_slot(bool vm) {
+ if(stuck_draft_count<BT_STUCK)return &stuck_draft[stuck_draft_count++];
+ if(vm)for(unsigned i=BT_STUCK;i-->0;)if(!stuck_vm_hint(stuck_draft[i].hint))return &stuck_draft[i];
+ return NULL;
+}
+// The object, and for a busy page the page, that a thread in a VM wait waits for. The caller holds the thread's lock with the
+// thread still in that wait: the thread references the object it sleeps on and cannot run, so the object stays. Every structure is
+// nevertheless copied through ml_nofault_copy (a pointer that is not what it should be ends the read, it cannot fault), no lock is
+// taken, and the values are one unsynchronized look. An internal object's file is that of the first file object in its shadow chain.
+#if BT_STUCK_VM
+static void stuck_vm_object(struct bt_stuck *r) {
+ vm_offset_t object=0;
+ if(r->hint==kThreadWaitPageBusy) {
+  struct vm_page page;
+  if(ml_nofault_copy((vm_offset_t)r->event,(vm_offset_t)&page,sizeof(page))!=sizeof(page))return;
+  object=(vm_offset_t)VM_PAGE_OBJECT(&page);r->offset=page.vmp_offset;r->have|=2;
+  r->page=(uint16_t)((page.vmp_busy?1U:0)|(page.vmp_absent?2U:0)|(page.vmp_cleaning?4U:0)|(page.vmp_laundry?8U:0)|(page.vmp_free_when_done?0x10U:0)|
+                     (page.vmp_wanted?0x20U:0)|(page.vmp_overwriting?0x40U:0)|(page.vmp_dirty?0x80U:0)|(page.vmp_error?0x100U:0)|(((unsigned)page.vmp_q_state&15U)<<12));
+ } else object=(vm_offset_t)r->event-(r->hint-kThreadWaitPLReqInProgress);
+ struct vm_object copy;
+ if(!object || ml_nofault_copy(object,(vm_offset_t)&copy,sizeof(copy))!=sizeof(copy))return;
+ r->object=object;r->have|=1;
+ r->paging=copy.paging_in_progress;r->activity=copy.activity_in_progress;r->resident=copy.resident_page_count;
+ r->oflags=(uint16_t)((copy.internal?1U:0)|(copy.pager_ready?2U:0)|(copy.pager_created?4U:0)|(copy.true_share?8U:0)|(copy.alive?0x10U:0)|
+                      (copy.code_signed?0x20U:0)|(copy.wired_page_count?0x40U:0)|(copy.vmo_pl_req_in_progress?0x80U:0)|(copy.shadow?0x100U:0)|
+                      (copy.vo_copy?0x200U:0)|(copy.terminating?0x400U:0)|(copy.object_is_shared_cache?0x800U:0)|(((unsigned)copy.copy_strategy&15U)<<12));
+ for(unsigned depth=0;depth<4;++depth) {
+  if(!copy.internal) {
+   memory_object_t pager=copy.pager;
+   if(pager && ml_validate_nofault((vm_offset_t)pager,sizeof(*pager)+2*sizeof(void *)) && memory_object_is_vnode_pager(pager)) {
+    struct vnode *vp=vnode_pager_lookup_vnode(pager);
+    r->vnode=(uint64_t)(uintptr_t)vp;r->depth=(uint8_t)depth;
+#ifdef VNODE_PAGER_PEEK_NAME
+    if(vp)vnode_pager_peek_name(vp,r->file,sizeof(r->file));
+    for(char *c=r->file;*c;++c)if(*c<0x21 || *c>0x7e)*c='?';
+#endif
+   }
+   return;
+  }
+  const vm_offset_t shadow=(vm_offset_t)copy.shadow;
+  if(!shadow || ml_nofault_copy(shadow,(vm_offset_t)&copy,sizeof(copy))!=sizeof(copy))return;
+ }
+}
+#else
+static void stuck_vm_object(struct bt_stuck *r) {(void)r;}
+#endif
+// kind: 0 a live process, 1 the kernel's task, 2 a terminated task.
+static void stuck_task(task_t task,int pid,const char *name,unsigned kind) {
+ if(!task_lock_try(task))return;
+ const unsigned limit=kind==1?2000:96;unsigned visited=0;thread_t thread;
+ queue_iterate(&task->threads,thread,thread_t,task_threads) {
+  if(++visited>limit)break;
+  // Of the kernel's threads only those in a VM wait are locked; the state is read again under the lock.
+  if(kind==1 && !stuck_vm_hint((unsigned)thread->block_hint))continue;
+  bool irq=ml_set_interrupts_enabled(false);
+  if(!simple_lock_try(&thread->sched_lock,&thread_lck_grp)){ml_set_interrupts_enabled(irq);continue;}
+  const unsigned state=(unsigned)thread->state,hint=(unsigned)thread->block_hint;const bool vm=stuck_vm_hint(hint);
+  if((state&(TH_WAIT|TH_RUN))==TH_WAIT && (vm || (kind!=1 && (state&TH_UNINT)))) {
+   const uint64_t tid=thread->thread_id,event=(uint64_t)thread->wait_event;
+   const unsigned age=stuck_age(tid,event,thread->c_switch);
+   if(age>=20) {
+    ++stuck_total;
+    struct bt_stuck *r=stuck_slot(vm);
+    if(r) {
+     memset(r,0,sizeof(*r));
+     r->pid=pid;r->tid=tid;r->event=event;r->hint=hint;r->seconds=age;r->state=state;r->kind=kind;
+     // thread_get_thread_name writes up to MAXTHREADNAMESIZE (64) bytes.
+     char full[64];full[0]=0;
+     if(kind==1){thread_get_thread_name(thread,full);full[sizeof(full)-1]=0;}
+     strlcpy(r->name,full[0]?full:name,sizeof(r->name));
+     bt_kernel_stack_n(thread,r->kernel,BT_STUCK_FRAMES);
+     if(vm)stuck_vm_object(r);
+    }
+   }
+  }
+  thread_unlock(thread);ml_set_interrupts_enabled(irq);
+ }
+ task_unlock(task);
+}
+static int stuck_one(proc_t p,void *arg) {
+ (void)arg;
+ task_t task=proc_task(p);
+ if(task && task!=kernel_task)stuck_task(task,proc_pid(p),proc_best_name(p),0);
+ return 0;   // PROC_RETURNED
+}
+void boot_stuck_scan(unsigned seconds) {
+ static unsigned last;
+ if(seconds<last+5)return;
+ if(!stuck_draft) {
+  struct bt_stuck *both=(struct bt_stuck *)IOMallocAligned(2*BT_STUCK*sizeof(struct bt_stuck),4096);
+  if(!both)return;
+  memset(both,0,2*BT_STUCK*sizeof(struct bt_stuck));stuck_published=both+BT_STUCK;stuck_draft=both;
+ }
+ last=seconds;stuck_clock=seconds;stuck_draft_count=0;stuck_total=0;
+ proc_iterate((1U<<0)|(1U<<2),stuck_one,NULL,NULL,NULL);
+ stuck_task(kernel_task,0,"kernel_task",1);
+ // The terminated tasks' queue keeps a task until its last reference goes, and that cannot go while one of its threads waits.
+ if(lck_mtx_try_lock(&tasks_threads_lock)) {
+  task_t task;unsigned visited=0;
+  queue_iterate(&terminated_tasks,task,task_t,tasks) {
+   if(++visited>256)break;
+   proc_t p=(proc_t)get_bsdtask_info(task);
+   stuck_task(task,p?proc_pid(p):-1,p?proc_best_name(p):"?",2);
+  }
+  lck_mtx_unlock(&tasks_threads_lock);
+ }
+ memcpy(stuck_published,stuck_draft,BT_STUCK*sizeof(struct bt_stuck));stuck_published_count=stuck_draft_count;
+}
+#define SK_ADD(...) do{if(at>=0 && at<119){const int w=snprintf(row+at,(size_t)(120-at),__VA_ARGS__);at=w<0?119:at+w;}}while(0)
+// Return addresses of a stuck thread from index `from`, as many as the row holds and none past `to`; after the first row an address
+// with the upper half of the first address is written short. Returns the index of the first address not written.
+static unsigned stuck_frames(char *row,int at,const uint64_t *frames,unsigned from,unsigned to) {
+ const uint64_t upper=(uint64_t)VM_KERNEL_UNSLIDE(frames[0])>>32;
+ unsigned k=from;
+ for(;k<to && frames[k];++k) {
+  const uint64_t pc=(uint64_t)VM_KERNEL_UNSLIDE(frames[k]);
+  const bool brief=from && (pc>>32)==upper;
+  if(at+(brief?9:17)>119)break;
+  if(brief)SK_ADD(" %08x",(unsigned)pc);else SK_ADD(" %llx",(unsigned long long)pc);
+ }
+ return k;
+}
+unsigned boot_stuck_rows(char rows[][120],unsigned max) {
+ unsigned n=0,shown=0;
+ if(!max)return 0;
+ ++n;   // the first row is written last, with the count of threads the rows had room for
+ // Threads in a VM wait first: they carry the object rows.
+ for(unsigned pass=0;pass<2;++pass)for(unsigned i=0;i<stuck_published_count;++i) {
+  const struct bt_stuck *r=&stuck_published[i];
+  if(stuck_vm_hint(r->hint)!=!pass)continue;
+  unsigned frames=0;while(frames<BT_STUCK_FRAMES && r->kernel[frames])++frames;
+  // The addresses after the sixth: rows f, g and (when few of them can be written short) h, built first to know how many there are.
+  char deep[3][120];unsigned deep_rows=0;
+  for(unsigned next=6;next<frames && deep_rows<3;++deep_rows) {
+   char *row=deep[deep_rows];int at=0;SK_ADD("SK%u %c",shown,"fgh"[deep_rows]);next=stuck_frames(row,at,r->kernel,next,frames);
+  }
+  if(n+2+deep_rows+(r->have&1)>max)continue;
+  char *row=rows[n++];int at=0;
+  SK_ADD("SK%u p%d %s tid=%llx %us hint=%u ev=%llx st=%x%s",shown,r->pid,r->name,(unsigned long long)r->tid,r->seconds,r->hint,
+         (unsigned long long)VM_KERNEL_UNSLIDE_OR_PERM(r->event),r->state,r->kind==2?" dead":"");
+  row=rows[n++];at=0;SK_ADD("SK%u k",shown);stuck_frames(row,at,r->kernel,0,6);
+  for(unsigned k=0;k<deep_rows;++k)strlcpy(rows[n++],deep[k],120);
+  if(r->have&1) {
+   row=rows[n++];at=0;
+   SK_ADD("SK%u o %llx",shown,(unsigned long long)VM_KERNEL_UNSLIDE_OR_PERM(r->object));
+   if(r->file[0])SK_ADD(" file=%s",r->file);else if(r->vnode)SK_ADD(" vp=%llx",(unsigned long long)VM_KERNEL_UNSLIDE_OR_PERM(r->vnode));
+   if(r->depth)SK_ADD(" sh=%u",r->depth);
+   SK_ADD(" pip=%u aip=%u",r->paging,r->activity);
+   if(r->have&2)SK_ADD(" pg=%llx pf=%x",(unsigned long long)r->offset,r->page);
+   SK_ADD(" res=%u fl=%x",r->resident,r->oflags);
+  }
+  ++shown;
+ }
+#if BT_STUCK_VM
+ snprintf(rows[0],120,"stuck threads now %u (shown %u) | external pageout laundry=%u busy=%u",stuck_total,shown,
+          vm_pageout_queue_external.pgo_laundry,(unsigned)vm_pageout_queue_external.pgo_busy);
+#else
+ snprintf(rows[0],120,"stuck threads now %u (shown %u)",stuck_total,shown);
+#endif
+ return n;
+}
+// Busiest kernel threads: CPU time each kernel_task thread used since the last scan, the top BT_KCPU by time, as
+// "name(or tid) ms" over the interval. macOS run47: top showed kernel_task at 178 % of a CPU on an idle desktop.
+#define BT_KCPU 8
+#define BT_KCPU_SEEN 1024
+struct bt_kcpu {uint64_t tid,used;char name[28];};
+static struct bt_kcpu kcpu_published[BT_KCPU];
+static unsigned kcpu_published_count,kcpu_interval,kcpu_total_ms;
+// The time each thread had at the last scan, hashed by thread id with linear probing. An entry no scan has refreshed since the one
+// before the current is free again (its thread ended), so two live threads with the same hash each keep a slot.
+#define BT_KCPU_PROBE 16
+static struct {uint64_t tid,time;uint32_t scan;} kcpu_seen[BT_KCPU_SEEN];
+void boot_kcpu_scan(unsigned seconds) {
+ static unsigned last;
+ if(seconds<last+10)return;
+ const unsigned interval=seconds-last;
+ if(!task_lock_try(kernel_task))return;
+ static uint32_t scan;
+ last=seconds;++scan;
+ struct bt_kcpu top[BT_KCPU];memset(top,0,sizeof(top));uint64_t total=0;thread_t thread;unsigned visited=0;
+ queue_iterate(&kernel_task->threads,thread,thread_t,task_threads) {
+  if(++visited>2000)break;
+  const uint64_t tid=thread->thread_id,now=recount_thread_time_mach(thread);
+  __typeof__(kcpu_seen[0]) *seen=NULL,*spare=NULL;
+  for(unsigned probe=0;probe<BT_KCPU_PROBE;++probe) {
+   __typeof__(kcpu_seen[0]) *slot=&kcpu_seen[(tid+probe)&(BT_KCPU_SEEN-1)];
+   if(slot->tid==tid) {seen=slot;break;}
+   if(!spare && (!slot->tid || (uint32_t)(scan-slot->scan)>1))spare=slot;
+  }
+  const bool known=seen!=NULL;
+  if(!seen)seen=spare;
+  if(!seen)continue;
+  const uint64_t used=known && now>=seen->time?now-seen->time:0;
+  seen->tid=tid;seen->time=now;seen->scan=scan;
+  if(!known || !used || (thread->state&TH_IDLE))continue;
+  total+=used;
+  for(unsigned k=0;k<BT_KCPU;++k) {
+   if(top[k].used>=used)continue;
+   for(unsigned m=BT_KCPU-1;m>k;--m)top[m]=top[m-1];
+   // thread_get_thread_name writes up to MAXTHREADNAMESIZE (64) bytes: into a buffer of that size, then the row's shorter field.
+   // (Writing it straight into the 28-byte field overran the stack: "Kernel stack memory corruption detected", macOS run48.)
+   char full[64];full[0]=0;thread_get_thread_name(thread,full);full[sizeof(full)-1]=0;
+   top[k].tid=tid;top[k].used=used;strlcpy(top[k].name,full,sizeof(top[k].name));
+   break;
+  }
+ }
+ task_unlock(kernel_task);
+ uint64_t frequency=0;__asm__ volatile("mrs %0, cntfrq_el0":"=r"(frequency));
+ // recount_thread_time_mach is in mach time units; the board's user timebase may be scaled, the ratio between rows is what counts.
+ for(unsigned k=0;k<BT_KCPU;++k)top[k].used=frequency?top[k].used*1000/frequency:0;
+ memcpy(kcpu_published,top,sizeof(kcpu_published));kcpu_published_count=BT_KCPU;kcpu_interval=interval;
+ kcpu_total_ms=frequency?(unsigned)(total*1000/frequency):0;
+}
+unsigned boot_kcpu_rows(char rows[][120],unsigned max) {
+ unsigned n=0;
+ if(!kcpu_interval || !max)return 0;
+ snprintf(rows[n++],120,"kernel threads: %u ms of CPU in %u s",kcpu_total_ms,kcpu_interval);
+ for(unsigned i=0;i<kcpu_published_count && n<max;i+=2) {
+  int at=snprintf(rows[n],120,"KC");
+  for(unsigned k=i;k<i+2 && k<kcpu_published_count && at>0 && at<100;++k) {
+   const struct bt_kcpu *r=&kcpu_published[k];
+   if(!r->used)continue;
+   if(r->name[0])at+=snprintf(rows[n]+at,120-at," %s %llums",r->name,(unsigned long long)r->used);
+   else at+=snprintf(rows[n]+at,120-at," t%llx %llums",(unsigned long long)r->tid,(unsigned long long)r->used);
+  }
+  ++n;
+ }
+ return n;
 }
 static void cs_ptime_pass(void) {
  cs_ptime_now=mach_absolute_time();
@@ -892,4 +1223,33 @@ void boot_user_stack_here(struct boot_user_stack *out) {
   if(known)continue;
   out->images[images].base=hit.base;memcpy(out->images[images].uuid,hit.uuid,16);++images;
  }
+}
+
+// exit-trace=NAME[,NAME...] (default WindowServer,loginwindow): the user frames of a listed process's exit() call, on the kernel log, with
+// the shared cache slide (subtract it, then symbolize against the cache). macOS run37: WindowServer called exit(0) 19 s after it started
+// with nothing in its own log that said why. The kernel's exit() calls this (macos-droidvm-k27-parity.patch) before exit1.
+void native_exit_trace(int pid,const char *name,int status) {
+ static char list[128];static int state;
+ if(!state){state=PE_parse_boot_arg_str("exit-trace",list,sizeof(list))?2:1;if(state==1)strlcpy(list,"WindowServer,loginwindow",sizeof(list));}
+ if(!name||!*name)return;
+ const size_t length=strlen(name);bool listed=false;
+ for(const char *at=list;*at;){
+  const char *end=strchr(at,',');const size_t n=end?(size_t)(end-at):strlen(at);
+  if(n==length && !strncmp(at,name,n)){listed=true;break;}
+  if(!end)break;at=end+1;
+ }
+ if(!listed)return;
+ thread_t thread=current_thread();arm_saved_state_t *saved=thread->machine.upcb;
+ if(!saved || !is_saved_state64(saved))return;
+ struct bt_entry e;memset(&e,0,sizeof(e));
+ e.pc=BT_STRIP_USER_PC((uint64_t)get_saved_state_pc(saved));e.lr=BT_STRIP_USER_PC((uint64_t)get_saved_state_lr(saved));
+ e.fp=(uint64_t)get_saved_state_fp(saved);
+ uint64_t frames[18]={e.pc,e.lr};
+ vm_map_t map=current_map();
+ bt_walk_n(&e,read_user,map,&frames[2],16);
+ const unsigned slide=(unsigned)current_task()->task_shared_region_slide;
+ printf("exit-trace: pid %d %s status %d cache+%x frames %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",pid,name,status,slide,
+  frames[0],frames[1],frames[2],frames[3],frames[4],frames[5],frames[6],frames[7],frames[8]);
+ printf("exit-trace: pid %d more %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",pid,frames[9],frames[10],frames[11],frames[12],frames[13],
+  frames[14],frames[15],frames[16],frames[17]);
 }

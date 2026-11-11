@@ -38,12 +38,28 @@ static const char lite_jobs[]=
 // The board's always-on switches (pexpert/gen/bootargs.c reads them after the command line, which wins), so the boot loader's line,
 // at most 1000 bytes, carries only what changes between images: the staged system apps' view over /Applications (their icons), the
 // data-protection class kept on the unencrypted Data volume (PosterBoard's wallpaper store), and the camera daemon off (no camera:
-// it held a GPU client and wrote denied trace files every 5 s). The scheduler hygiene checks of a development kernel trace instead
-// of panicking, as a shipping (release) kernel has none: an interrupts-off window of 786 us in a work queue thread's priority change
-// panicked the board (untagged-203fd45bf).
-// This board keeps its own command line: the sheng build set PE_builtin_boot_args here, and those
-// built-in arguments (sched_preemption_disable_debug_mode, interrupt-masked-debug-mode) changed the
-// scheduler and interrupt behaviour early enough to stop the boot before bsd_autoconf.
+// it held a GPU client and wrote denied trace files every 5 s).
+// The scheduler hygiene checks of a development kernel are off, as a shipping (release) kernel has none. Their default mode (2)
+// panics: an interrupts-off window of 786 us in a work queue thread's priority change panicked the board (untagged-203fd45bf).
+// Mode 1 (trace) reports only to kdebug and DTrace, which nothing on this board records, and keeps the whole measurement: every outermost
+// preemption disable masks interrupts and takes a three-frame backtrace and a timestamp, every matching enable another timestamp
+// (osfmk/arm/preemption_disable.c). The interrupt check of xnu-12377 takes a timestamp at every interrupt mask and unmask in any
+// mode, as long as its static key is on (osfmk/arm/machine_routines_common.c; xnu-10063 takes it only while a mode is on). So both
+// modes are 0 and validation_disables turns the two static keys off (0x10000 preemption, 0x40 interrupts; this takes a kernel whose
+// static keys read the built-in arguments, otherwise only the modes apply). Its bit 0x1000 stops the development kernel from
+// zero-filling every other page a process releases with madvise (madvise_free_debug_sometimes, osfmk/vm/vm_object.c), which a
+// release kernel never does. The checks that find kernel defects (assertions 0x800, mapping list 0x4, process reference tracking
+// 0x20000) stay on.
+// The command line wins: validation_disables=0 sched_preemption_disable_debug_mode=1 interrupt-masked-debug-mode=1 traces again.
+// macOS 27.3 also takes here the switches only its kernel reads, which do not fit the command line any more: userspace reads the
+// scaled timebase itself, signatures are authenticated per block at first use, the cover touchpad takes a lone contact, the
+// scheduler's two-cluster matrix, the boot payload's memory returned, the thermal probe (sampled every 100 ms) and the level macOS
+// reads from it, and the board clock. The Metal plugin reads its own switches from kern.bootargs, so they stay on the command line.
+char PE_builtin_boot_args[]="owner-staged-apps=1 owner-dataprotect=1 disable-jobs=com.apple.cameracaptured sched_preemption_disable_debug_mode=0 interrupt-masked-debug-mode=0 validation_disables=0x11040"
+#if XNU_TARGET_OS_OSX
+    " timebase-user=1 cs-lazy=1 keyboard-lone=1 armcpu-edge=1 boot-payload-release=1 thermal=1 thermal-ms=100 thermal-level=1 board-clock=7 gpu-pool=0"
+#endif
+    ;
 static char policy[2048],jobs[200];
 volatile int sheng_watchdog_policy_status=-1;
 
@@ -79,9 +95,7 @@ static int append_job(const char **cursor) {
 int sheng_boot_watchdog_policy(void *process, uint64_t scratch) {
  proc_t p=process;
  int enabled=0,error=0,fd=-1;int32_t result=0;
- /* This board enables the policy unconditionally: the disable-watchdogd boot argument stopped the
-  * boot at the end of early boot on hardware, while the same kernel without it reaches launchd. */
- enabled=1;
+ PE_parse_boot_argn("disable-watchdogd",&enabled,sizeof(enabled));
  if(!PE_parse_boot_argn("disable-jobs",jobs,sizeof(jobs)))jobs[0]=0;jobs[sizeof(jobs)-1]=0;
  int lite=0;PE_parse_boot_argn("lite",&lite,sizeof(lite));if(lite!=1 && lite!=2)lite=0;
  if(enabled!=1)enabled=0;
