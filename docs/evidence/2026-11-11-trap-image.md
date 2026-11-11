@@ -2651,3 +2651,25 @@ kernel but unexercised, and the blocker is SpringBoard surviving to its first fr
 
 Next test needs fastboot: boot bootEU-control.img (no display arguments) and compare. If SpringBoard loops there
 too, the loop is independent of the display changes; if it does not, the display stack is what kills it.
+
+## 05:40: control experiment - the SpringBoard loop is independent of the display changes
+
+The control image (bootEU-control.img, no display arguments at all) was booted and captured for 150 s. It shows the
+same userland loop:
+
+    XNU-EXIT: SpringBoard pid=27  code=5 ...
+    XNU-EXIT: SpringBoard pid=117 code=5 ...   (repeating)
+
+against code=6 (SIGABRT) with the display arguments, but the pattern is the same: SpringBoard starts, traps, is
+restarted, and the rest of the graph (fairplayd, bluetoothd, liveactivitiesd) cycles behind it. Nothing in the display
+stack is running in that image, so the loop is a system/userland condition, not a consequence of the full-panel work.
+
+Consequences:
+
+* the display path cannot be validated further by booting alone - every display observation needs SpringBoard to
+  survive to its first frame, and it does not on the current device state;
+* the earlier boots that did reach a swap (about 2:10 into boot) predate this state change, so the current blocker is
+  the service graph;
+* the next productive step is the launchd policy trim the Pagani record describes (each entry must match the
+  original task's Label and full ProgramArguments), or restoring whatever device state changed since the earlier
+  successful boots.
