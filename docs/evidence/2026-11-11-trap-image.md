@@ -1767,3 +1767,32 @@ published), the usual services cycle, and there is **no kernel panic**.  That co
 
 So the teardown fault is tied to the display registration, and the machine is otherwise stable - which also gives a
 useful baseline: the control image can be left running for long observations.
+
+## 07:25: holding the registration handle does not stop the teardown
+
+The build that keeps `OSMetaClass::preModLoad`'s handle in a global (`bootEU.img`, sha
+`c445a7ebf1ff9f7c0e5a7f7a0465e4dd162f50d110fe09d5e998c29ca4a219a9`) still ends the same way.  Line positions in
+its console log (542 lines):
+
+```
+104: probe entered
+172: seeded surface region ...
+206: adopted default surface ... sid=1
+527: Kernel data abort. at pc 0xfffffff00be80944, lr 0xfffffff00bfe4684
+538: QCOM USB PANIC   (PanicLogDxe dump marker)
+```
+
+so the panic is the current boot's own, and it arrives after the display is fully published with its surface - with
+no display error in between.  The `holding registration handle` line is absent, which means either `preModLoad`
+returned null on that call (and the registration went through a path that never stores a handle) or the line was
+lost in the console backlog; that has to be settled with an unconditional print.
+
+So the fake-kext reference is not (or not only) what frees the metaclass.  The teardown still happens at the same
+place: `NativeLegacyDisplay::MetaClass::~MetaClass` -> `OSMetaClass::~OSMetaClass` with a bogus `this`.
+
+Next, in order:
+
+1. print unconditionally what `preModLoad` returns, and also `postModLoad`'s result, right where they happen;
+2. wrap the object's own destruction: `NativeLegacyDisplay` is ours, so a `printf` in its `free()` (the component
+   can add one) shows whether the display object dies before the metaclass does;
+3. compare with uke, whose `LegacyDisplayStubs.c` may stub the very slot that leads there.

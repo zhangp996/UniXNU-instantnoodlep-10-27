@@ -29,6 +29,9 @@ extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
+/* The handle OSMetaClass::preModLoad returns is the fake kext the late registration belongs to; holding it
+ * here keeps that kext (and with it our class's metaclass) alive for the life of the kernel. */
+static void *gMetaHandle;
 static IOService *gSurfaceRoot;
 static void publish_display(void);
 static void publish_thread(void *, wait_result_t);
@@ -45,6 +48,10 @@ native_legacy_display_probe(void)
 		return;
 	}
 	void *handle = OSMetaClass::preModLoad(g_kernel_kmod_info.name);
+	if (handle && !gMetaHandle) {
+		gMetaHandle = handle;
+		printf("DISPLAY: holding registration handle %p\n", handle);
+	}
 	if (!handle) {
 		printf("DISPLAY: preModLoad failed\n");
 		return;
