@@ -948,3 +948,28 @@ failure; the payload carries the text and is not printed by the kernel.
 
 Next: print that payload.  `abort_with_payload` copies its message into the process exit reason, so a
 small kernel hook can print it - that names the missing library or the failing precondition directly.
+
+
+## 17:20: the build tree had to be rebuilt from scratch, and why
+
+Editing `kern_sig.c` for the exit-reason text needed the tree materialised, and the reset that did
+that destroyed the materialised state: the next build then compiled stock `mockfs_fsnode.c` (the
+`kalloc_type(mockfs_fsnode_t, ...)` mismatch) because the tool believed its patches were already
+applied and skipped them.
+
+Removing `.cache/xnu-work` and building again repopulates it in one pass with the full chain -
+`arch:patches/xnu/series` (which carries `mockfs-typed-allocation.patch`), the SoC series (empty for
+kona), the OS profile series and the device series - and the build succeeds.  One trap on the way:
+`XNU_EXTRA_LD_ARCHIVES` must carry an **absolute** path, otherwise the linker reports
+`file not found: out/.../libRamWatchdog.a`.
+
+Recipe to rebuild cleanly:
+
+```sh
+rm -rf out/<device>/<os>/<config>/tree/.cache/xnu-work
+export XNU_EXTRA_LD_ARCHIVES="-Wl,-force_load,$PWD/out/<device>/<os>/<config>/tree/build/ram-watchdog/libRamWatchdog.a"
+./unixnu build kernel -D ../<device-repo>
+```
+
+The kernel produced this way (`86da2eeb...`) packages into `bootEM.img` (`494bd21c...`) with the AMFI
+no-PMGR patch and the trust-cache gate patch, and the tree is reproducible again.
