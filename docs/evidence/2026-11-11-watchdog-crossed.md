@@ -1041,3 +1041,28 @@ assertion) rather than a missing symbol in the app itself.
 
 Next: map `0x1b08d32ec` and `0x1d2dea4f8` to images.  The cache layout is fixed and only slid once per
 boot, so the offset from the cache base names the library and the offset inside it.
+
+
+## 17:20: the two library PCs are not in the shared region
+
+The console names the shared region's extent during boot:
+
+```
+DYLD shared region: 0x1f7800000 -> 0x1fcc00000
+```
+
+and both library PCs from the previous capture sit **below** it:
+
+```
+liveactivitiesd  0x1d2dea4f8
+SpringBoard      0x1b08d32ec
+```
+
+so they are not in the dyld shared cache at all: they are in images each process maps privately.
+liveactivitiesd trapped at exactly the same address in two different instances, which means that
+mapping is not randomised - a fixed slot, the way Mach-O images without cache membership are laid out
+when the cache is present.
+
+That narrows the search: the next measurement is the image that owns each address, which needs a
+per-process view rather than a cache-wide one - either a `dyld` print setting at boot, or a kernel
+hook that resolves the address to its vnode path before the process dies.
