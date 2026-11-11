@@ -2358,3 +2358,23 @@ The next step is narrow: instrument `kickOnce()`'s decision points (validated re
 `native_legacy_prepare_scanout`, `native_legacy_gpu_offer`) so the failing branch names itself, then let the component's
 own `finishTransfer()` run - which is the documented behaviour ("retain until the swap completes and complete the
 corresponding error path") and the only path that wakes `swap_wait_gated` inside the family's context.
+
+## 02:05: the copy never runs because the probe's own stub says no
+
+`kickOnce()` begins its transfer with:
+
+```cpp
+if(!native_legacy_prepare_scanout()) { native_legacy_transfer_observed(kIOReturnNotReady,request,0); return; }
+```
+
+and `native_legacy_prepare_scanout()` is **this board probe's stub**, which has always returned `false`.  So the
+component's own copy - and therefore `finishTransfer()`, `retireSwap()` and `completeCurrentSwap()` - has never run on
+this port; the probe's separate `present_surface()` was doing all the panel drawing.
+
+The board probe now returns `true` from `native_legacy_prepare_scanout()`, and also logs the values the component's
+accessors see (`native_legacy_surface_width`/`_allocation`, bound to the original IOSurface functions at
+`0xfffffff004b9ebbc`/`0xfffffff004b9ebfc`).
+
+Built image: `bootEU.img` sha `1900a5445581cc3e359d8475394e97db82c4cbeda6b548c35fb2d87b4dac123e`.  The device was not
+attached when it finished, so the next boot will show whether the component's copy succeeds - and if it does, the
+family retires the swap inside its own context and `swap_wait_gated` should stop timing out.
