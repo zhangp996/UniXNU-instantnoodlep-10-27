@@ -809,3 +809,39 @@ the family ends up tearing down a null object.  The wall is exactly the one from
 Until that body exists, the choices are: keep the display published and accept the panic roughly two minutes in
 (useful, because the panel proves the stack is using the service), or revert to the pre-publication image, which
 does not panic but leaves SpringBoard crash-looping on the missing CADisplay.
+
+## 22:20: what the official repository says about the default surface
+
+Yes - the official documentation describes this piece, in two places:
+
+* `docs/porting/display.md` (lines 65-69):
+
+  > The 24A446 adapter supplies the default surface through the original IOSurfaceRoot factory and validates its
+  > backing memory and geometry before transferring ownership to the display family. The family's
+  > `create_default_fb_surface()` slot returns void; its residual return register is not an object pointer.
+
+* The same sentence appears as a finding in about fifteen device records (`fuxi`, `sheng-ad1095445`,
+  `sheng-airalex002`, `sheng-bai805`, `sheng-chenjin1494`, `sheng-enlixk`, `sheng-gkxqh`, `sheng-jsongmax`, ...),
+  each with the implementation contract: "creates a BGRA IOSurface through the original IOSurfaceRoot factory,
+  checks allocation and geometry, and transfers its reference to the family default-surface field.  The void
+  `create_default_fb_surface` slot is invoked by the original start method."
+
+But the same records also state the limit (`fuxi.md:320` and the others):
+
+> The 24A446 default-surface adapter still requires a hardware boot result.
+
+and there is no implementation of it anywhere in the open repositories: `installDefaultSurface` has no
+definition in the component, in the reference board package (`package/LegacyDisplayProbe.cpp`,
+`OfflineGOPComposition.mm`, `OfflineGOPPresentation.mm`, `OfflineGOPResources.mm`), in its scripts, or in the
+UniXNU tooling, and `NATIVE_LEGACY_DEFAULT_SURFACE` only ever appears in the component's `#if`.
+
+So the documentation defines what the adapter must do and where it plugs in (BGRA surface from the original
+IOSurfaceRoot factory, geometry validation, transfer into the family's default-surface field, invoked from the
+original start method, and the warning that the void slot's residual return register is not a pointer), while
+this board has to write the implementation.  Our panic is exactly the documented gap: the family asks for the
+default surface, none exists, and the swap is cancelled.
+
+Kernel-side string work for the next step: the message "No Default FB Surface found" lives in the family's
+`__TEXT` at `0xfffffff0045f6ad7`; it has no `adrp`+`add` cross-reference in the image, so the field offset has
+to be found another way (the referencing code loads it through a literal pool, or the check is inlined into the
+original start method).
