@@ -124,3 +124,31 @@ zzz-shared-region-probe
    或让 `RamWatchDog` 回答它；这条不需要缓存工具。
 2. 两个缓存 PC 的符号：映像表 → 子缓存映射 → 文件偏移这条链已经打通（本文档里的两个文件偏移就是
    这样算出来的），缺的是 `.symbols` 的读取器（7-Zip 26.04 报 "Unsupported Method"）。
+
+## 18:30 补充：官方记录给了符号化方法，三个 PC 全部定位
+
+- 官方 `docs/devices/sirius-huajifruit.md`（同代 21H461 的参考移植）记着：`ipsw dyld a2s` 反查，
+  且 `.symbols`、`.34/.52.dyldlinkedit` 这三个文件是 **LZBITMAP 压缩**，要用 **apfs-fuse** 解。
+  照做成功（7-Zip 26.04 对这三个报 "Unsupported Method"）。两个注意点：缓存要放在**本地盘**上跑
+  ipsw（9p 挂载一律 invalid argument）；`ipsw dsc disass` 会把整份缓存读进内存而 OOM，用 `a2s`/`a2f`。
+- 结果（unslid 地址 = 镜像表地址 + 镜像内偏移）：
+
+| 进程 | 符号 | 结论 |
+| --- | --- | --- |
+| SpringBoard | `-[FBSDisplayMonitor _initWithBookendObserver:transformer:] + 1148` | 走 `__bs_set_crash_log_message("failed to find the main CADisplay")` 后 trap：FBS 主动崩溃，不是错绑 |
+| liveactivitiesd | `SessionSyncEngine func_1c18f6274 + 644` | 局部 Swift thunk 的 nil 分支；参考移植把同一处记作 `SessionCore.Daemon.workloop` 的 Swift 运行时陷阱 |
+| watchdogd | `connect_to_kext() unexpectedly failed - unable to lookup watchdog KEXT service` | 找不到看门狗 user client |
+
+  SpringBoard 分支读出来的常量串：`failed to find the main CADisplay`、`failed to find the symbol for CADisplay`、
+  `two CADisplays had the same displayID(%u)`——整个 `FBSDisplayMonitor` 初始化都在找主 CADisplay。
+
+- 新补丁 `zzz-os-crash-observe.patch`：在 `abort_with_payload_internal()` 打印进程/原因/线程信号状态，
+  用来验证“os_crash 返回了”的假设。内核 `4f0dea31`、镜像 `d0f26181`（`console-bootEV.log`）整次启动
+  有同样的 11 条 `XNU-DYLD-IMAGE` 和同样的 trap，但**没有任何 XNU-OSCRASH 行**：这些进程根本没进
+  `abort_with_payload` 系统调用，假设不成立。补丁本身无输出，留作以后验证真实 abort 也可撤。
+
+**下一步**：
+
+1. SpringBoard：给 CoreAnimation 一个主 `CADisplay`（IOMobileFramebuffer 那条线），否则 FBSDisplayMonitor 会一直崩。
+2. liveactivitiesd：先对照参考移植的 `SessionCore.Daemon.workloop` 记录，再判断是不是板级问题。
+3. watchdogd：发布 `connect_to_kext()` 期望的 user client，或让 `RamWatchdog` 回答。

@@ -130,3 +130,61 @@ one main cache mapping cannot see the subcache ranges, which is why the two PCs 
   another reader.
 * `watchdogd` needs no cache tooling: publish the user client `connect_to_kext()` looks for, or
   make `RamWatchdog` answer it.
+
+## 18:20: the official record has the recipe, and it resolves the three PCs
+
+`docs/devices/sirius-huajifruit.md` (the reference port that booted the same 21H461 userland) records both
+the failure signature and the procedure:
+
+> Crash records on the panel symbolize against the 21H461 arm64 shared cache: unslid address = recorded
+> address - the record's slide (+...), looked up with `ipsw dyld a2s`; three cache files (.symbols,
+> .34 and .52 .dyldlinkedit) are LZBITMAP-compressed in the SystemOS image and need apfs-fuse to extract.
+> liveactivitiesd's SIGTRAP is a Swift runtime trap in SessionSyncEngine under SessionCore.Daemon.workloop
+
+That is exactly the wall this document hit earlier: 7-Zip 26.04 refuses those three files
+("Unsupported Method"), and with them the address cannot be named.  `apfs-fuse` (built from
+sgan81/apfs-fuse) mounts the cryptex image and reads them, and `ipsw` v3.1.745
+(`ipsw dyld a2s`) then resolves any unslid cache address.  The cache must live on a local filesystem:
+over the 9p mount every ipsw command fails with `invalid argument`.
+
+### What the three PCs are
+
+| Trap | Symbol | Meaning |
+| --- | --- | --- |
+| SpringBoard `FrontBoardServices+0x1e2ec` | `-[FBSDisplayMonitor _initWithBookendObserver:transformer:] + 1148` | the branch that calls `__bs_set_crash_log_message()` with **"failed to find the main CADisplay"** and then traps |
+| liveactivitiesd `SessionSyncEngine+0x1d4f8` | `func_1c18f6274 + 644` (local Swift thunk) | the null branch of `cbz x20, <brk #1>`, i.e. a forced unwrap of nil |
+| the call before SpringBoard's trap | `BaseBoard __bs_set_crash_log_message` | a setter that stores the message and returns, by design |
+
+The literal pool behind the SpringBoard branch, dereferenced through the constant CFString:
+
+```
+cfstring 0x1e7a9bf68 -> 0x19f453ecc  "failed to find the main CADisplay"
+cfstring 0x1e7a9f28 -> 0x19f453e90  "failed to find the symbol for CADisplay"
+cfstring 0x1e7a9f55 -> 0x19f453f55  "two CADisplays had the same displayID(%u) -> $@"
+```
+
+So SpringBoard is not dying of a mis-bound call: FrontBoardServices finds no main `CADisplay` and
+crashes on purpose, with the message the crash reporter would carry.  `CADisplay` comes from
+CoreAnimation and needs a display provider - on this board the framebuffer is driven directly, and no
+IOMobileFramebuffer/CoreAnimation display exists, which is the SpringBoard blocker.
+
+### watchdogd: no abort_with_payload call happens
+
+The earlier reading - "`brk #1` follows `bl __os_crash`, so the syscall returned" - was tested with
+`zzz-os-crash-observe.patch`, which prints process, reason and thread signal state in
+`abort_with_payload_internal()`.  Kernel `4f0dea31`, image `d0f26181` (`console-bootEV.log`):
+the same eleven `XNU-DYLD-IMAGE` lines and the same traps, and **zero `XNU-OSCRASH` lines** - the
+syscall is never entered on this boot, so the trap is not a returned `abort_with_payload`.  The
+`__os_crash` import in `watchdogd` must be resolved to the same kind of message-setter the BaseBoard
+frame shows; the actionable part stays the string itself:
+"connect_to_kext() unexpectedly failed - unable to lookup watchdog KEXT service".
+
+## Next (revised)
+
+* **SpringBoard**: publish a main display for CoreAnimation (an IOMobileFramebuffer-backed
+  `CADisplay`), or the FBSDisplayMonitor assertion will keep firing.  This is the wall in front of the
+  UI, not a code-signing or shared-cache problem.
+* **liveactivitiesd**: the trap is a nil force-unwrap in SessionSyncEngine; the reference port names the
+  same site as `SessionCore.Daemon.workloop`.  Compare its record before treating this as a board bug.
+* **watchdogd**: publish the watchdog user client `connect_to_kext()` looks for (or make RamWatchdog
+  answer it); the probe patch can stay or be dropped, it prints nothing on a boot without abort_with_payload.
