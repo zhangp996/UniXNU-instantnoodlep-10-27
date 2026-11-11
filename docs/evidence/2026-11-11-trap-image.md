@@ -2453,3 +2453,18 @@ the waiting client.  On this port `native_legacy_gpu_offer()` is a board-probe s
 The stub now returns `true` (the frame is taken by the probe's own copy, which already runs in the swap-validation
 hook), so the component should retire each swap early inside the family's work loop.  Image
 `382b9569758a087e61c2a18d3b134a002e71f21362c89a39233e091047a3b8e2` is built and waiting for the device.
+
+## 03:35: the early-retire path is enabled; the recent boots do not reach the first swap
+
+With `native_legacy_gpu_offer()` returning `true`, the component takes its early-retire branch
+(`retireSwap(request,true)` -> `IOMobileFramebufferLegacy::completeCurrentSwap()` inside the family's work loop), which is
+the mechanism the Pagani port documents for a CPU/GPU hand-off: retire before the copy, copy outside the gate.
+
+The two boots since then did not reach the compositor's first swap inside their capture windows at all (the last one
+printed only 80 lines in 110 seconds, with `watchdogd` and `liveactivitiesd` exiting in a loop), so the branch is
+still unobserved on hardware.  The swap appears at roughly 2-4 minutes into boot on this board, and that timing moves
+with how far the service graph gets before the display server submits its first frame.
+
+The image to test is `bootEU.img` sha
+`382b9569758a087e61c2a18d3b134a002e71f21362c89a39233e091047a3b8e2`; a capture that covers the first swap
+(start ~120 s, run 200 s or more) is what the next session needs.
