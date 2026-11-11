@@ -1582,3 +1582,29 @@ The port's probe (`package/LegacyDisplayProbe.cpp`, 58 KB) then shows the workar
 
 This board's probe now does the same: seed +0x17c0, enable +0x1780, start, adopt +0x1620 into +0x1618, with the
 region and descriptor retained.
+
+## 05:40: the community recipe works - the default surface now exists
+
+With the uke recipe in the probe, the same boot shows:
+
+```
+DISPLAY: seeded surface region 0xfffffff8877268c0 bytes=33554432
+DISPLAY: surfaces default=0 temp=0xfffffff6ba853a78
+DISPLAY: adopted default surface 0xfffffff6ba853a78 sid=1 region=0xfffffff8877268c0 descriptor=0xfffffff887725c10
+```
+
+* the seeded region made the family's own `create_default_fb_surface` (slot 299) build the temporary surface -
+  it exists now, with `sid=1`;
+* it is adopted into `+0x1618`, with the surface, its region and its descriptor retained;
+* and the whole `AFB/IOMFB: No Default FB Surface found` + `swap_wait_gated` + `slot 345` chain **no longer
+  appears** in the console.  The wall this session was chasing is gone.
+
+What remains is a different failure: about a minute in, the same looking but differently reached data abort at
+`pc 0xfffffff00be80944` (`OSMetaClass::~OSMetaClass + 0x1c`), `lr 0xfffffff00bfe4684`
+(`NativeLegacyDisplay::MetaClass::~MetaClass`), with `x0 = 0` and `x21 = 0xfffffff00578b960`.  Nothing in the
+console precedes it except the usual `watchdogd` and `liveactivitiesd` traps, so this is a teardown ordering
+issue of the class object rather than the surface path.
+
+Next: find who tears the metaclass down (the family's `stop`/`free` path versus our retained object), and
+whether the uke port's extra step - keeping `activeLegacyDisplay` and never releasing the adopted surface - is
+what avoids it there.
