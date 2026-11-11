@@ -1885,3 +1885,29 @@ put the compositor's frame on the panel or name the exact width field.
 
 Image: `instantnoodlep-artifacts/bootEU.img`, sha
 `0af6c29b09851ecabb3fd5d6547a98cbf07b7e54fddc9e39342cf43083198a42`.
+
+## 08:30: why only the top of the panel shows our frame
+
+The copy now works - `present copied 480 rows x 4320 bytes (frame 1)` - but the panel only shows it in its upper part.
+The reason is the geometry the kernel is handed, not the copy:
+
+```
+DarwinBoot: video base 0x9C000000  1080x480  row 4320 bytes  32 bpp
+DISPLAY: present surface=... 1080x480 stride=4352 ... console=0 base=0x9c000001 1080x480 rb=4320
+```
+
+The framebuffer window this kernel receives is **1080x480** (the loader's console window inside the panel's
+memory), so a full-frame copy is 480 rows = 2,073,600 bytes.  The panel itself is taller (the UniXNU menu below
+is drawn by the loader at the panel's own size, 1080x2400), and those rows are not part of the kernel's window -
+they still hold whatever the loader left there.
+
+So the frame is complete but clipped: the compositor's 1080x480 surface now lands correctly in the 480-row window,
+and the rest of the panel belongs to a different mapping.
+
+To fill the panel the port needs one of:
+
+1. the loader to hand over the panel-sized window (1080x2400) instead of the 480-row console window;
+2. or the display driver to program the panel/DPU so the kernel owns the full scanout (the sibling ports do this
+   - uke's DISPLAY-AREA work and kebab's `KebabFramebuffer` both treat the panel as 1080x2400 and present there);
+3. or a window expansion through the platform expert, if the firmware already scans out a larger area from the
+   same base.
