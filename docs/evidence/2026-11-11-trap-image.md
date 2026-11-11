@@ -2780,3 +2780,23 @@ the same call path, so the recipe is:
 3. ./unixnu build kernel, payload, bootimg, boot, and read the report on the serial console.
 
 That is a new kernel change rather than a configuration change, which is where this session stops.
+## 07:30: community search for the SpringBoard-loop problem
+
+Searching the official device records (docs/devices) and the ports they link:
+
+* the sheng-based ports (tkings4chan, bai805, enlixk, ad1095445) all document the same diagnostic tool for exactly
+  this stage: `sheng-log=1` + `boot-ui-trace=1` starts a **separate process-capture worker**, and
+  `boot-ui-focus3=chronod` adds the display-query client to `backboardd` and `SpringBoard`; arm64e return-address
+  PAC is stripped so the captured stacks are readable.  Enlixk/UniXNU-sheng carries the regression for the sampler
+  (scripts/check-boot-ui-trace.py).
+* uke's record notes that the panic/reset path distinguishes jetsam OOM messages from corpse messages in the log,
+  which is the same distinction this board now needs;
+* sirius-huajifruit's display log shows the neighbouring state (GOP display registered, a client opens the
+  user client, "No Default FB Surface found", SpringBoard crashed on the previous run), i.e. the same sequence this
+  board went through before the default surface was adopted.
+
+None of the records contains a fix for 'Too many corpses being created' itself; the community tool for seeing why a
+userland process dies is the ui-trace worker, which this port does not carry.
+
+Cheap experiment queued before any port of that worker: `lw_corpses=0` (image e09af0e1...), which takes the
+lightweight-corpse rate limit out of the path so a full corpse can be produced for SpringBoard's abort.
