@@ -2498,3 +2498,31 @@ It also explains the ordering we kept seeing: the timeout branch runs first (slo
 `OSMetaClass::~OSMetaClass` fault follows it a moment later - the family's error path is what frees the metaclass.
 Fixing swap completion removes the timeout branch entirely; implementing slot 345 properly removes the panic even
 when a swap does time out.
+
+## 04:00: the component is buildable again, and slot 345 is now isTimingEnabled - one link symbol left
+
+Following the Pagani port (which documents slot 345 as `isTimingEnabled()`, called from `swap_wait_gated`'s timeout
+branch at `0xfffffff00578c1c8`, the exact caller this board logs):
+
+* the component's generated ABI header now declares `virtual bool isTimingEnabled()=0;` for slot 345 and the
+  `LEAF(345)` entry is gone from `NATIVE_LEGACY_LEAVES`;
+* `NativeLegacyDisplay.cpp` gains `bool isTimingEnabled() override {return primary && bootMapping && logicalPM;}`
+  (the Pagani body is `primary && bootMapping && displayOn`; `logicalPM` is this component's name for the power state);
+* **the component compiles again** - the two blockers were the generated `meta_features.h` include
+  (`build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT`) and clang-24's new
+  `-Wmissing-designated-field-initializers` warning being an error
+  (`-Wno-missing-designated-field-initializers`).
+
+The archive rebuilds with the new object, but the kernel link now stops on
+
+```
+Undefined symbols for architecture arm64:
+  "__GLOBAL__sub_I_NativeLegacyDisplay.cpp", referenced from:
+      _native_legacy_display_probe in libNativeLegacyDisplay.late.a(LegacyDisplayProbe.o)
+```
+
+i.e. the freshly compiled component object no longer carries the translation unit's static initialiser that the
+probe object expects.  The next step is to reproduce the original object's initialiser behaviour (the original
+`.late.o` was 384,278 bytes against our 385,152) - either by matching the original compile flags (the device's
+`scripts/build-gop-legacy-display.py` sets them) or by moving the globals that need dynamic initialisation into a
+form that emits the symbol.
