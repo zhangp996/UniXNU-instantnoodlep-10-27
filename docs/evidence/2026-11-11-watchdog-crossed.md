@@ -774,3 +774,33 @@ Next session, in order:
    instruction, branch to the epilogue);
 3. verify on hardware: the `Only allowed processes` lines stop and some of keybagd/amfid/securityd
    start exiting cleanly.
+
+
+## 16:10: the trust-cache gate patch works, but the services are killed with SIGKILL
+
+`scripts/patch-amfi-trustcache-gate.py` replaces the `tbz` at `0xfffffff004ab73b8` (the predicate that
+decided whether a caller may query the trust cache) with a `nop`.  On hardware the log then shows
+
+```
+AppleMobileFileIntegrityUserClient::isCdhashInTrustCache(...): Process 22 is checking if a cdhash is in the trust cache
+AppleMobileFileIntegrityUserClient::isCdhashInTrustCache(...): Returning IOReturn 0x0 to process 22
+```
+
+and the `Only allowed processes can check the trustcache` line is gone, so the gate patch does what it
+was meant to.
+
+The services still die, and the exit record says how: `rv = 9` is **signal 9 (SIGKILL)**, not exit
+status 9 (an exit status of 9 would be 2304 = 0x900).  Reading the same field for the others:
+
+```
+bluetoothd        0    exit 0
+IOMFB_FDR_Loader  256  exit 1
+...               3328 exit 13
+amfid, keybagd, securityd, rapportd, mobiletimerd, sleepd   9   SIGKILL
+watchdogd         5    SIGTRAP
+```
+
+AMFI explicitly says it is not the killer (`Launch Constraint Violation (not enforcing)`), and the logs
+contain no jetsam activity, so the kill comes from launchd or from the code-signing kill path.  The
+next measurement is to print `WTERMSIG`/`WEXITSTATUS` separately (to remove any doubt), and to look
+for launchd's reason for terminating the job (a failed spawn, a missed check-in, or a watchdog).
