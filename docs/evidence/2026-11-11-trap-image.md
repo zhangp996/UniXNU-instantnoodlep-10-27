@@ -1374,3 +1374,34 @@ IOUserClient2022::externalMethod(uint32_t, IOExternalMethodArguments *, IOExtern
 So a 2022 client must be driven through `IOUserClient::callExternalMethod()`, which routes to the
 `IOUserClient2022::externalMethod(selector, opaque)` overload; calling the five-argument `externalMethod` is what
 panics.  The probe now uses `callExternalMethod`.
+
+## 03:45: what the main repository actually contains about the surface
+
+A whole-checkout search (`/home/dev/unixnu/UniXNU`, excluding `out/`) for the surface terms returns only the
+documentation, the component's call site, and the device records - no implementation.  But the profile ABIs hold
+something useful, if only for another OS:
+
+`profiles/os/ipados-27.0.1-24A446/abi/original-classes.json` records four classes:
+
+* `IOMobileFramebufferLegacy`: size `0x1dd8`, 379 slots (168 base), named slots
+  (`isMainDisplay` 186, `getDotPitch` 190, `supportedFrameInfo` 216, `getDisplayDimensions` 261,
+  `startHardware` 305, `kickSwapQueue` 307, `completeCurrentSwap` 312, `validateSwap` 313,
+  `getRefreshAttributes` 319, `collectCompletionReports` 358), the pure slots, and named fields
+  (`current_swap` 0x1a40, `pending_head` 0x1a48, `pending_tail` 0x1a50, `vsync_clients` 0x1ab8,
+  `display_width` 0x1bf0, `display_height` 0x1bf4) - and **no default-surface field**;
+* `IOMFBSwapIORequest`: the swap request layout, whose `surfaces` field sits at 0xb80 (with rects, options and
+  `request_id` 0x3d4), so surfaces travel in the request, not in the framebuffer;
+* `IOSurface`: the descriptor accessor functions - `descriptor`, `width`, `height`, `stride`, `allocation`,
+  `format`, `planes` - i.e. exactly the values a create-descriptor must carry (the keys our dictionary already
+  uses);
+* `IOHIDDevice`.
+
+Our own profile `ipados-17.7.11-21H461` has no `abi/original-classes.json` at all, so none of this was ever
+generated for this build; the display class layout we have came from the audit header instead.
+
+So the main repository documents *what* the descriptor contains and *where* surfaces travel, but nowhere the call
+that creates one: that remains the user-client external method (the 2022 two-argument
+`externalMethod(selector, opaque)`), with the factory slot 141 already proved callable.
+
+Housekeeping: an untracked copy of this board's probe had been left in the main checkout's `package/`; it was
+removed, and `git status` there is back to its previous state (only the submodule states that were already there).
