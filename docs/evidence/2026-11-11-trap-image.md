@@ -2673,3 +2673,35 @@ Consequences:
 * the next productive step is the launchd policy trim the Pagani record describes (each entry must match the
   original task's Label and full ProgramArguments), or restoring whatever device state changed since the earlier
   successful boots.
+
+## 05:55: from-scratch check of every change in this session
+
+Changes, in order, with what each can and cannot affect:
+
+1. firmware (drivers/DarwinBoot): the 480-row clamp removed and the DARWINBOOT_VIDEO_FOR_XNU zero-video block replaced
+   by an unconditional copy. Verified on hardware: the kernel receives 1080x2376 and the loader covers the panel.
+2. kernel (osfmk/arm/io_map.c): IO_MAP_SIZE 8 -> 32 MiB. Needed for the 10,264,320-byte panel mapping; after it the
+   console reports 1080x2376 and ml_io_map no longer fails.
+3. probe (package/LegacyDisplayProbe.cpp): prepare_scanout now returns true, gpu_offer returns true, bootarg-gated
+   completion, nub slack, diagnostics. None of these run unless the display component starts.
+4. component (drivers/GopFramebuffer/NativeLegacyDisplay.cpp) and its ABI header: slot 345 is bool isTimingEnabled()
+   instead of the noreturn void opaque345() guard. Current build returns true unconditionally for the test.
+5. kernel args: -no_corpses added.
+
+Evidence that the loop is not caused by any of the above: the control image - no display arguments, an older
+kernel, none of this session's display code active - boots and shows the same SpringBoard loop (code=5, SIGTRAP,
+against code=6 SIGABRT with the display arguments). The loop is therefore a system/userland condition of the
+current device state, not a regression from the display work.
+
+What did visibly change is the panic: before the slot 345 fix the swap timeout ended in the family's guard and a
+kernel data abort (the screen photograph). With the fix the timeout is handled and the machine continues - into the
+pre-existing SpringBoard loop. The Apple logo that was visible earlier belonged to that panic screen (the compositor
+had drawn its logo before the abort).
+
+Candidates for the system-level loop, none of them display code:
+
+* the data ramdisk is reused across every run (out/.../data/owner-data-3g.dbr); repeated panics during the display
+  work may have left it in a state SpringBoard aborts on - rebuilding it fresh is the cheapest test;
+* the service graph trims the Pagani record documents (identityservicesd, locationd, CommCenter, bluetoothd,
+  iomfb_fdr_loader, iconservicesagent), each matched to the original task's Label and ProgramArguments;
+* the stock boot image would show whether the loop predates all of this work on the device.
