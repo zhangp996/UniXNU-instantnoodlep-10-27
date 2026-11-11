@@ -739,3 +739,39 @@ So slot 345 is the default-framebuffer-surface leaf: returning without a surface
 a null object and the later metaclass teardown crashes.  The next step is to implement it - create the surface
 through the real IOSurfaceRoot factory over the GOP nub's memory, validate its geometry, hand ownership to the
 display - and to keep the guard's return from being reachable in that path.
+
+## 21:55: where the default surface is supposed to come from
+
+The component already contains the hook for the missing piece, but no implementation of it exists anywhere in
+the open-source tree:
+
+```cpp
+/* NativeLegacyDisplay.cpp, inside startHardware() after the GOP mapping check */
+#if defined(NATIVE_LEGACY_DEFAULT_SURFACE) && NATIVE_LEGACY_DEFAULT_SURFACE
+    // The family calls its void slot 316 after startHardware. Our backend supplies the client's default surface.
+    if (valid) valid = installDefaultSurface(width, height);
+#endif
+```
+
+* `installDefaultSurface(uint32_t, uint32_t)` is only *called*; no definition exists in the component, in the
+  reference board package (`package/LegacyDisplayProbe.cpp`), in the reference scripts, or in the UniXNU
+  tooling.  The macro `NATIVE_LEGACY_DEFAULT_SURFACE` appears nowhere else either, so the reference builds
+  without it - which matches its own records: the desktop was never reached there either.
+* The device records of the iOS 26 boards describe what the implementation must do: "The 24A446 adapter creates
+  a BGRA IOSurface through the original IOSurfaceRoot factory, checks allocation and geometry, and transfers
+  its reference to the family default-surface field. The void `create_default_fb_surface` slot is invoked by
+  the original start method."
+
+So the next piece of work is ours to write, in the board probe:
+
+1. compile `NativeLegacyDisplay.cpp` with `-DNATIVE_LEGACY_DEFAULT_SURFACE=1`;
+2. implement `installDefaultSurface(width, height)`: create a BGRA surface through the original IOSurfaceRoot
+   factory over the nub's framebuffer memory, validate allocation, stride, pixel format and geometry;
+3. transfer the reference into the family's default-surface field (the offset has to be derived from the
+   family's own `create_default_fb_surface`/`startHardware` code - the generated header only carries the
+   dimension and swap-queue offsets);
+4. keep the abstract-slot guard unreachable on that path.
+
+The phone is on the panic screen from the previous run (`OSMetaClass::~OSMetaClass` with a null `this`), its
+serial console is gone and neither `fastboot` nor `adb` sees it, so no further device measurement is possible
+until it is rebooted by hand.
