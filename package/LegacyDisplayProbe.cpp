@@ -199,7 +199,57 @@ native_legacy_display_late_probe(void)
 /* --- diagnostics the component asks for ---------------------------------- */
 
 extern "C" bool native_legacy_prepare_scanout(void) { return false; }
-extern "C" bool native_legacy_gop_mapping_observed(IOService *, IOMemoryMap *, uint32_t, uint32_t) { return true; }
+static bool
+publish_word(IORegistryEntry *entry, const char *name, uint32_t value)
+{
+	OSData *existing = OSDynamicCast(OSData, entry->getProperty(name));
+	if (existing) {
+		uint32_t current = 0;
+		if (existing->getLength() == sizeof(current)) {
+			memcpy(&current, existing->getBytesNoCopy(), sizeof(current));
+		}
+		return current == value;
+	}
+	OSData *data = OSData::withBytes(&value, sizeof(value));
+	bool ok = data && entry->setProperty(name, data);
+	if (data) {
+		data->release();
+	}
+	return ok;
+}
+
+/* The component calls this when it maps the provider's framebuffer.  The firmware GOP mode and the
+ * UI scale become the published display geometry, as the reference board does at phase 4. */
+extern "C" bool
+native_legacy_gop_mapping_observed(IOService *object, IOMemoryMap *mapping, uint32_t width, uint32_t height)
+{
+	unsigned scale = 0;
+	PE_parse_boot_argn("offline-legacy-unit-scale", &scale, sizeof(scale));
+	if (!scale) {
+		return true;
+	}
+	unsigned phase = 0;
+	PE_parse_boot_argn("offline-legacy-phase", &phase, sizeof(phase));
+	PE_Video video = {};
+	if (scale < 1 || scale > 3 || phase != 4 || PE_current_console(&video) ||
+	    video.v_width != width || video.v_height != height || video.v_rotate ||
+	    !mapping || mapping->getPhysicalAddress() != video.v_baseAddr) {
+		printf("DISPLAY: mapping check refused scale=%u phase=%u video=%lux%lu mapping=%p\n",
+		    scale, phase, (unsigned long)video.v_width, (unsigned long)video.v_height, (void *)mapping);
+		return false;
+	}
+	IORegistryEntry *chosen = IORegistryEntry::fromPath("/chosen", gIODTPlane);
+	if (!chosen) {
+		printf("DISPLAY: no /chosen node\n");
+		return false;
+	}
+	bool ok = publish_word(chosen, "display-scale", scale) &&
+	    publish_word(chosen, "display-rotation", video.v_rotate);
+	printf("DISPLAY: chosen display-scale=%u rotation=%lu ok=%d\n", scale,
+	    (unsigned long)video.v_rotate, ok ? 1 : 0);
+	chosen->release();
+	return ok;
+}
 extern "C" bool native_legacy_gpu_offer(void *, IOMemoryDescriptor *, uint64_t, uint32_t, uint32_t, uint32_t) { return false; }
 extern "C" void native_legacy_gpu_fallback_observed(int) {}
 extern "C" void native_legacy_pm_observed(unsigned, IOReturn, unsigned long) {}
@@ -216,12 +266,17 @@ extern "C" void native_legacy_frame_colors_observed(const uint32_t *, const uint
 extern "C" void native_legacy_vsync_observed(unsigned, unsigned) {}
 extern "C" void native_legacy_surface_rejected(uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, uint64_t, uint64_t) {}
 
-/* A slot the owned backend does not implement must not be reached silently. */
-extern "C" __attribute__((noreturn, noinline)) void
+/* Bring-up: an abstract slot the owned backend does not implement yet.  Record the first few
+ * hits and return instead of taking the machine down, so the boot can show the next wall. */
+extern "C" __attribute__((noinline)) void
 native_legacy_backend_guard(unsigned slot, void *object, void *caller)
 {
-	printf("DISPLAY: unimplemented legacy slot %u (object=%p caller=%p)\n", slot, object, caller);
-	panic("instantnoodlep legacy display slot %u is not implemented", slot);
+	static unsigned guard_calls;
+	if (guard_calls < 8) {
+		guard_calls++;
+		printf("DISPLAY: unimplemented legacy slot %u (object=%p caller=%p), returning\n",
+		    slot, object, caller);
+	}
 }
 
 /* GPU trace and Adreno fences: this board has no GPU driver yet. */

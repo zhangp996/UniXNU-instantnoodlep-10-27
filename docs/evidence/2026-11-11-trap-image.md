@@ -658,3 +658,45 @@ So the display is found, and the next wall is the display **mode** the firmware 
 window is 1080x480 (the 2 MiB 480-row hand-off), while the panel is 1440x3168, and FBSDisplayMode refuses the
 values it is handed.  The next step is to make the published display report a valid mode - real panel geometry,
 scale and refresh - instead of the kernel console's 480-row window.
+
+## 21:20: the scale lands, the family calls an abstract slot, and the device drops off USB
+
+Two more boots with the published display.
+
+**bootFC** - with `display-scale` published into `/chosen`:
+
+```
+DISPLAY: nub 0xfffffff501809a20 attach=1 start=1 mem=0x9c000001+0x1fa400
+DISPLAY: dt attach=1
+DISPLAY: chosen display-scale=2 rotation=0 ok=1
+DISPLAY: display attach=1 start=1
+```
+
+The boot then panicked in our own guard:
+
+```
+DISPLAY: unimplemented legacy slot 345 (object=0xfffffff334e75000 caller=0xfffffff00578c1cc)
+instantnoodlep legacy display slot 345 is not implemented @LegacyDisplayProbe.cpp:274
+```
+
+The caller `0xfffffff00578c1cc` lies in the prelinked family's `__TEXT_EXEC`
+(`0xfffffff00576c000 + 0x36f74`), so the original code asked the concrete backend for slot 345.  In the ABI
+table slots 337, 338 and 345 all point at `___cxa_pure_virtual` (0xfffffff00c0098ac) and are marked abstract,
+i.e. they are leaves only the owned backend can implement - the reference's QEMU observations recorded
+`guard_slot = 0`, so this path is new for this board.
+
+**bootFD** - the guard now logs the first eight hits and returns instead of panicking:
+
+```
+DISPLAY: chosen display-scale=2 rotation=0 ok=1
+DISPLAY: display attach=1 start=1
+```
+
+No panic, 461 console lines, six traps, and in that window the only owners are `watchdogd+0xab0c` and
+`SessionSyncEngine+0x1d4f8` - no SpringBoard trap at all (`bootFA`, the image from before the display was
+published, had eighteen SpringBoard lines).  A later live read could not confirm how long that holds: after
+`bootFD` the USB console disappeared (COM14 gone, `fastboot devices` and `adb devices` both empty), so the phone
+needs a manual reboot before the next measurement.
+
+**Next:** identify slot 345 - disassemble the family around `0xfffffff00578c1cc` to see which interface it
+expects the backend to answer, implement it in the probe instead of returning silently, and re-run.
