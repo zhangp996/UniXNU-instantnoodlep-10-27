@@ -2963,3 +2963,17 @@ Consequences for the next attempt:
   abort()), so the remaining options are a launchd override that keeps the job's stderr, or the ui-trace worker the
   sheng ports use;
 * raising memory available to the crash-info allocation (larger RAM window, less Data) is the other lever.
+## 10:30: back on the pre-change firmware
+
+kernel_small.bin was restored from kernel_small.bin.old (the firmware that shows the loader hand-off with the Apple
+logo) and the image rebuilt as bootEU.img dcd66a10...; the full-panel firmware is kept at
+kernel_small.fullpanel for whenever it is wanted again.
+
+The boot confirms the old window is back:
+
+    DISPLAY: bootargs video base=0x9c000001 w=1080 h=480 rb=4320 depth=32 display=1
+    DISPLAY: GOP console 0x9c000001 1080x480 depth=32 stride=4320
+
+so the kernel draws in the top 480 rows again and the hand-off page (Apple logo plus the loader text) covers the
+panel as it did before this session's firmware work.  The kernel still carries this session's diagnostics (slot 345
+fix, crash-report probe, corpse cap 64, lw_corpses=0, sheng-crashlog=1); none of them change what the screen shows.
