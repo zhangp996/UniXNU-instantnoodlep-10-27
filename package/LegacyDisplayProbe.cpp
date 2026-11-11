@@ -159,6 +159,15 @@ publish_display(void)
 	}
 	IOService *surface = matching ? IOService::waitForMatchingService(matching, 5000000000ULL) : nullptr;
 	printf("DISPLAY: IOSurface root found=%d\n", surface ? 1 : 0);
+	if (surface) {
+		const uintptr_t *vtable = *(const uintptr_t **)surface;
+		const OSMetaClass *meta = surface->getMetaClass();
+		printf("DISPLAY: IOSurfaceRoot %p class=%s size=0x%x vtable=%p\n", surface,
+		    meta->getClassName(), (unsigned)meta->getClassSize(), (void *)vtable);
+		for (unsigned i = 0; i < 8; i++) {
+			printf("DISPLAY:   vt[%u]=0x%llx\n", i, (unsigned long long)vtable[i]);
+		}
+	}
 	if (surface) surface->release();
 	if (list) list->release();
 	for (int i = 0; i < 2; ++i) if (names[i]) ((OSObject *)names[i])->release();

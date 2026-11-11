@@ -1184,3 +1184,22 @@ Both routes end at the same place: **nothing ever created an IOSurface**.  Reach
 prelinked IOSurfaceRoot's virtual interface audited the same way the display family's was (its vtable slots and
 class layout), because the IOSurface kext exports no class symbols - only `_gIOSurfaceIdentifier` and
 `_gIOSurfaceTag`.
+
+## 01:25: the IOSurfaceRoot audit is staged
+
+The next measurement only needs the device: the probe now prints, right after it finds the surface root,
+
+```
+DISPLAY: IOSurfaceRoot <obj> class=<className> size=<classSize> vtable=<address>
+DISPLAY:   vt[0..7]
+```
+
+so the class layout and the vtable address come out of a normal boot.  With that address,
+`_agent/vt_audit.py` enumerates the slots and prints, for each entry, the strings its first instructions
+reference - which is how the display family's slots were identified - so the surface-creating method can be
+shortlisted before anything is called.
+
+Image: `instantnoodlep-artifacts/bootEU.img`, sha256
+`7f67638f99d3098e3a333f3553ba15be58632f107171e16ed23bceb95040e548`.
+
+The phone is not enumerated at the moment (no `VID_1209`, no `fastboot`), so the boot is pending.
