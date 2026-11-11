@@ -917,3 +917,34 @@ binaries carry the platform flags and run.
 That leaves two things to finish: the SpringBoard/liveactivitiesd SIGTRAP, and - for a release-quality
 image - a trust cache that covers the cryptex binaries so the platform-only policy can be turned back
 on.
+
+
+## 17:10: decoding the exit-reason namespace - the storm was jetsam, not launchd
+
+`bsd/sys/reason.h` defines the namespaces:
+
+```c
+0 INVALID  1 JETSAM  2 SIGNAL  3 CODESIGNING  4 HANGTRACER
+5 TEST     6 DYLD    7 LIBXPC  8 OBJC         9 EXEC  10 SPRINGBOARD
+```
+
+so the records read exactly as:
+
+```
+ns=0                    normal exit                (bluetoothd, fairplayd.A2)
+ns=1  sub=0x4           JETSAM kill                (the eleven services before the ADT change)
+ns=2  sub=0x5           SIGNAL, signal 5           (SpringBoard, liveactivitiesd: SIGTRAP)
+```
+
+The SIGKILL storm was therefore **jetsam**, not launchd.  It never printed anything, which is why
+searching for `jetsam` in the console found nothing; the namespace on the exit record was the only
+evidence.  That also matters for the fix: the 512 MiB window is small for a full service graph, so
+memory pressure - not a policy - is what cleared those jobs, and the platform-only policy change
+removed the pressure by letting the jobs settle instead of restarting in a loop.
+
+SpringBoard and liveactivitiesd die of SIGTRAP (`ns=2 sub=5`).  On Darwin a trap of this kind is
+usually `abort_with_payload`, which dyld uses to report a failed load, or a Swift precondition
+failure; the payload carries the text and is not printed by the kernel.
+
+Next: print that payload.  `abort_with_payload` copies its message into the process exit reason, so a
+small kernel hook can print it - that names the missing library or the failing precondition directly.
