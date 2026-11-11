@@ -1835,3 +1835,27 @@ Also recorded: the kernel build does not track `build/native-legacy-display/libN
 after changing the probe the build must be forced (touch a kernel source or delete the kernel output, and keep the
 archive members complete - the probe must define every `native_legacy_*` and `native_gpu_trace_*` symbol the
 component references).
+
+## 07:55: the swap is accepted, the copy fails with kIOReturnCannotWire and zero bytes
+
+The presentation-logging build produced the two lines that explain the abandoned swap:
+
+```
+DISPLAY: swap accepted=1 reason=0 request=0xfffffff45b80e000 surface=0xfffffff45bd86bf0
+         req_surfaces=fffffff45bd86bf0,0,0,0
+DISPLAY: transfer rc=0xe00002d8 source=0xfffffff45b80e000 bytes=0
+IOMFB: swap_wait_gated: CommandWake didn't happen even after 5 seconds ... cancelling swaps
+DISPLAY: abstract slot 345 (object=0xfffffff45badc000 caller=0xfffffff00578c1cc); panicking
+```
+
+* the swap's first layer really carries the adopted surface pointer, so the surface is in the request;
+* the component's copy attempt returns `0xE00002D8` (`kIOReturnCannotWire`) with **zero bytes**, i.e. the
+  geometry it read for the surface is empty, so nothing can be wired and nothing is copied;
+* the wait then times out and the family reaches abstract slot 345, which is where the guard panics.
+
+So the surface-side numbers the component sees are the next thing to fix, not the guard.  The component gets them
+through the accessors that `original-bindings.S` binds to the family's own functions; the build that logs the
+surface's own fields at `+0x60/+0x64/+0x68/+0x80/+0x90` plus its descriptor and region is ready
+(`instantnoodlep-artifacts/bootEU.img`, sha
+`6c7da76279acf5aec88b9e904dedb386741739e4b9b86cf53f664b289a893303`) and will show whether the adopted temporary
+surface is laid out the way those accessors expect.

@@ -442,7 +442,13 @@ extern "C" void native_legacy_registration_observed(IOService *) {}
 extern "C" void native_legacy_retirement_observed(IOService *) {}
 extern "C" void native_legacy_client_enter(task_t, uint32_t) {}
 extern "C" void native_legacy_client_observed(IOReturn, IOUserClient *) {}
-extern "C" void native_legacy_swap_stage(unsigned) {}
+extern "C" void native_legacy_swap_stage(unsigned stage)
+{
+	static unsigned n;
+	if (n++ < 8) {
+		printf("DISPLAY: swap stage %u\n", stage);
+	}
+}
 extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned reason, const void *request,
     const void *surface)
 {
@@ -453,20 +459,52 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 		if (request) {
 			memcpy(surfaces, (const unsigned char *)request + 2624, sizeof(surfaces));
 		}
+		uint32_t sw = 0, sh = 0, sstride = 0, sfmt = 0;
+		uint64_t salloc = 0;
+		void *sdesc = nullptr, *sregion = nullptr;
+		if (surface) {
+			memcpy(&sw, (unsigned char *)surface + 0x60, 4);
+			memcpy(&sh, (unsigned char *)surface + 0x64, 4);
+			memcpy(&sstride, (unsigned char *)surface + 0x68, 4);
+			memcpy(&sfmt, (unsigned char *)surface + 0x80, 4);
+			memcpy(&salloc, (unsigned char *)surface + 0x90, 8);
+			memcpy(&sdesc, (unsigned char *)surface + 0x30, 8);
+			memcpy(&sregion, (unsigned char *)surface + 0x28, 8);
+		}
 		printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
 		    accepted ? 1 : 0, reason, request, surface,
 		    (unsigned long long)surfaces[0], (unsigned long long)surfaces[1],
 		    (unsigned long long)surfaces[2], (unsigned long long)surfaces[3]);
+		printf("DISPLAY: surface geom %ux%u stride=%u fmt=%08x alloc=%llu desc=%p region=%p\n",
+		    sw, sh, sstride, sfmt, (unsigned long long)salloc, sdesc, sregion);
 	}
 }
 
 /* Diagnostic hooks the display component calls but this board does not use yet. */
-extern "C" void native_legacy_copy_timing_observed(uint64_t, uint64_t) {}
+extern "C" void native_legacy_copy_timing_observed(uint64_t ticks, uint64_t bytes)
+{
+	static unsigned n;
+	if (n++ < 4) {
+		printf("DISPLAY: copy timing ticks=%llu bytes=%llu\n", (unsigned long long)ticks, (unsigned long long)bytes);
+	}
+}
 extern "C" void native_legacy_frame_colors_observed(const uint32_t *, const uint64_t *, uint64_t) {}
 extern "C" void native_legacy_frame_observed(unsigned, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) {}
 extern "C" void native_legacy_surface_rejected(uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, uint64_t, uint64_t) {}
-extern "C" void native_legacy_transfer_observed(IOReturn, const void *, uint64_t) {}
-extern "C" void native_legacy_vsync_observed(unsigned, unsigned) {}
+extern "C" void native_legacy_transfer_observed(IOReturn rc, const void *source, uint64_t bytes)
+{
+	static unsigned n;
+	if (n++ < 6) {
+		printf("DISPLAY: transfer rc=0x%x source=%p bytes=%llu\n", (unsigned)rc, source, (unsigned long long)bytes);
+	}
+}
+extern "C" void native_legacy_vsync_observed(unsigned a, unsigned b)
+{
+	static unsigned n;
+	if (n++ < 4) {
+		printf("DISPLAY: vsync %u %u\n", a, b);
+	}
+}
 /* Abstract-slot guard: the component declares it noreturn, so it must not return. */
 extern "C" __attribute__((noreturn, noinline)) void
 native_legacy_backend_guard(unsigned slot, void *object, void *caller)
