@@ -2634,3 +2634,20 @@ reach the swap at about 2:10, so this is boot-to-boot variance, not a fixed wall
 Artifacts: `instantnoodlep-artifacts/bootEU.img` (latest, sha `489eb188...`, with `-no_corpses` and the slot 345
 fix), `kernel_small.bin.old` (the pre-change firmware, for a quick revert), and the logs under
 `docs/evidence/logs/`.
+
+## 05:20: the payload carries the new kernel; the panic screen was from an earlier boot
+
+payload.json records kernel_sha256 = 4fa02fe1deb386d29f7997730e83fa65a4134dcc1f2188761ffb75ac84c913a3 (the
+AMFI-patched copy of the kernel built at 01:48), and that kernel's symbols contain
+
+    fffffff00bfe4668 s __ZN19NativeLegacyDisplay15isTimingEnabledEv      (and no opaque345)
+
+so the image booted at 02:03 carries the slot 345 fix. That means the 'abstract slot 345' panic in the photograph
+belongs to an earlier boot: PanicLogDxe prints the previous boot's panic on the current screen.
+
+What the current boot shows is the userland loop - SpringBoard repeatedly exiting with code 6 (SIGABRT),
+fairplayd.A2 and bluetoothd cycling, no display submission and no panic. So the slot 345 fix is in the running
+kernel but unexercised, and the blocker is SpringBoard surviving to its first frame.
+
+Next test needs fastboot: boot bootEU-control.img (no display arguments) and compare. If SpringBoard loops there
+too, the loop is independent of the display changes; if it does not, the display stack is what kills it.
