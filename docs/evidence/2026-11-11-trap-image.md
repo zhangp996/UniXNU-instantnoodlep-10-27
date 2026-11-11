@@ -2157,3 +2157,37 @@ Two ways forward, both understood:
    full-screen and the probe's copy - which already maps 10.4 MiB successfully later in boot - fills the panel.
    This needs the component's consistency checks (which compare `PE_current_console` against
    `getDisplayDimensions` in several places) to follow the same override.
+
+## 00:20: the kernel gets the full panel - 1080x2376
+
+Two board-level bring-up switches had been hiding this, both found and changed:
+
+1. **DarwinBoot deliberately zeroed the video** for the kernel:
+
+   ```c
+   // Bring-up switch: hand the kernel no video at all. ...
+   #if !defined (DARWINBOOT_VIDEO_FOR_XNU) || (DARWINBOOT_VIDEO_FOR_XNU == 0)
+     ZeroMem (Args->Video, sizeof (Args->Video));
+   #else
+     CopyMem (Args->Video, Video, sizeof (Video));
+   ```
+
+   Our rebuilt firmware took the zero path, which is why every boot after the firmware change had no console.
+   The block now always hands the video over;
+
+2. **the kernel's IO submap was 8 MiB** (`osfmk/arm/io_map.c: #define IO_MAP_SIZE (8ul << 20)`), too small for the
+   panel's 10,264,320-byte frame buffer, so `ml_io_map` failed at console time. It is now 32 MiB.
+
+With both, the same boot reports:
+
+```
+DISPLAY: bootargs video base=0x9c000001 w=1080 h=2376 rb=4320 depth=32 display=1
+DISPLAY: GOP console 0x9c000001 1080x2376 depth=32 stride=4320
+DISPLAY: adopted default surface 0xfffffff62fd15480 sid=1 region=... descriptor=...
+```
+
+So the kernel console, the display geometry and the adopted default surface are all at the panel's real size
+(1080x2376), with the DarwinBoot hand-off page already covering the whole panel (green pulse bar included).
+
+Image: `instantnoodlep-artifacts/bootEU.img`, sha
+`881755292e6845c57bb319c7452d16375abfacc9918ca3b6de0a143ed3e83ea4`.
