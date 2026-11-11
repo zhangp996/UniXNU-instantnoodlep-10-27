@@ -700,3 +700,42 @@ needs a manual reboot before the next measurement.
 
 **Next:** identify slot 345 - disassemble the family around `0xfffffff00578c1cc` to see which interface it
 expects the backend to answer, implement it in the probe instead of returning silently, and re-run.
+
+## 21:40: the panel shows the display stack using our service, then a NULL metaclass teardown
+
+The panic screen from the relaxed-guard build carries four useful lines above the panic block:
+
+```
+AFB: default surface: No Default FB Surface found. Return error
+IOMFB: swap_wait_gated: CommandMake didn't happen even after 5 seconds.
+       Seems system in bad state, cancelling swaps
+DISPLAY: unimplemented legacy slot 345 (object=0xfffffff44ac0b000 caller=0xfffffff00578c1cc), returning
+panic(cpu 0 caller 0xfffffff00c00b2d0): Kernel data abort. at pc 0xfffffff00be80944, lr 0xfffffff00bfe4684
+  x0: 0  x1: 0  esr: 0x96000045  far: 0x0
+```
+
+Symbolised against the built kernel:
+
+| Address | Symbol |
+| --- | --- |
+| `0xfffffff00be80944` (pc) | `OSMetaClass::~OSMetaClass() + 0x1c` |
+| `0xfffffff00bfe4684` (lr) | `NativeLegacyDisplay::MetaClass::~MetaClass()` |
+| `0xfffffff00c00b2d0` (caller) | `_panic_with_thread_kernel_state` |
+| `0xfffffff00578c1cc` (slot-345 caller) | `IOMobileFramebufferLegacy::opaque243() + 0xd7c` |
+
+So the display stack really reached our published service: it asked the family for the **default framebuffer
+surface** ("No Default FB Surface found. Return error"), the compositor's swap then waited five seconds for a
+command that never came and cancelled, the family asked the backend for slot 345, and after that returned the
+teardown ran into a NULL `this` in `OSMetaClass::~OSMetaClass` (`far = 0`, `x0 = 0`) through our own metaclass
+destructor.
+
+"Default FB Surface" is exactly the piece `porting/display.md` documents for this class:
+
+> The 24A446 adapter supplies the default surface through the original IOSurfaceRoot factory and validates its
+> backing memory and geometry before transferring ownership to the display family. The family's
+> `create_default_fb_surface()` slot returns void; its residual return register is not an object pointer.
+
+So slot 345 is the default-framebuffer-surface leaf: returning without a surface is what leaves the family with
+a null object and the later metaclass teardown crashes.  The next step is to implement it - create the surface
+through the real IOSurfaceRoot factory over the GOP nub's memory, validate its geometry, hand ownership to the
+display - and to keep the guard's return from being reachable in that path.
