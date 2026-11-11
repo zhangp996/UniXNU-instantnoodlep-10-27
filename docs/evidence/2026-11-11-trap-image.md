@@ -1445,3 +1445,40 @@ the framebuffer side or porting `KebabFramebuffer` as well, is the proven path.
 Kept for reference: the patch was fetched to `/root/kebab_0093.patch` (81 KB) and the repository's ABI records
 (`docs/standardization-run-20261029/abi/IOSurfaceRootUserClient.json`, `IOCoreSurfaceRoot.json`) describe the same
 service from the contract side.
+
+## 04:25: what porting the built-in surface means for this board
+
+The sibling's source is now extracted from its display patch: `KebabSurface.h` (76 lines) and
+`KebabSurface.cpp` (1,369 lines).  Its public shape is small:
+
+```c
+class KebabSurface : public OSObject {            /* id, geometry, planes, values dictionary,
+                                                     pixel descriptor, shared state page, kernel map */
+    uintptr_t kernelAddress();
+};
+KebabSurface *kebab_surface_copy(uint32_t id);
+KebabSurface *kebab_surface_create_physical(uint64_t phys, uint32_t width, uint32_t height,
+    uint32_t bytesPerRow, uint32_t pixelFormat);
+mach_port_name_t kebab_surface_port_in_task(KebabSurface *surface, task_t task);
+```
+
+behind which sit the `IOCoreSurfaceRoot` service, its user client and the selector table (13 limits, 0 create,
+4/34/35 lookup and ports, 9/10/11 values, 27 bulk attachments, traps for retain/lock/release), plus the
+`KebabFramebuffer` (AppleCLCD) that CPU-copies swaps and drives vsync from a timer.
+
+**The conflict to decide on:** this board's prelink already carries the original `com.apple.iokit.IOSurface`, and it
+is *loaded and running* - the probe matches `IOCoreSurfaceRoot` and creates an `IOSurfaceRootUserClient` from it.
+The family also lists `com.apple.iokit.IOSurface` in `OSBundleLibraries`, so removing the kext would stop the
+framebuffer family from loading.  The sibling avoids the problem because its kernel never had Apple's kext.
+
+So the two coherent paths are:
+
+1. **Incremental (current)**: keep the original IOSurface kext and find the create call on its user client - the
+   remaining unknown is the selector for the 2022 `externalMethod(selector, opaque)`; the factory slot 141 is
+   already proved and every wrong selector answers with an error instead of crashing;
+2. **Sibling architecture**: drop Apple's IOSurface (and, for consistency, the closed framebuffer family) from the
+   prelink roots and provide `KebabSurface`-style native services, which is what has a reported working GUI - but it
+   replaces everything this board has built so far.
+
+Path 1 costs one measurement at a time and keeps the working display publication; path 2 is a rewrite with a known
+end state.  Both need a decision before code is written.
