@@ -1656,3 +1656,30 @@ validations together with the request's four surface pointers at +2624.
 
 This is also the half of own-present that needs no new binding: the component's copy path can only work once these
 accessors answer, and the validation log tells which layers the compositor actually submits.
+
+## 06:30: reading PanicLogDxe correctly - the dumped panic belongs to the previous boot
+
+The console capture after a boot ends with the usual tail
+
+```
+QCOM USB PANIC pending_at_start=7 dropped_at_start=0 buffer_capacity=4194304
+QCOM PANIC END
+```
+
+and the panic block above it is the **saved panic from the previous boot**, printed by PanicLogDxe, not the current
+one.  This explains the apparent contradiction in this session: a boot whose payload is built from the newest probe
+still showed `slot 345` and `create_surface ... sel0` lines, because those were the previous image's dying words.
+The current boot's own log is everything before that block.
+
+With that reading:
+
+* the newest image does reach `found the region, family built the temp surface (sid=1), adopted into +0x1618`, and
+  the `IOMFB: driver commit` line - no default-surface error;
+* the panic that follows belongs to the older build, and the current one has to be judged on a fresh boot watched
+  past the two-minute mark;
+* the surface accessors (descriptor +0x30, width +0x60, height +0x64, stride +0x68, format +0x80, allocation +0x90)
+  and the swap-validation log are in this build and have not been exercised yet, because no swap has reached the
+  component so far in a window we captured.
+
+So the next measurement is a clean boot of the current image with the console watched from ~100 s to ~200 s, looking
+for `DISPLAY: swap ...` lines (the compositor's layer ids) and for whether the metaclass panic still occurs.
