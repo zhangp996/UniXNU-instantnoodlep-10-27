@@ -48,9 +48,9 @@ native_legacy_display_probe(void)
 		return;
 	}
 	void *handle = OSMetaClass::preModLoad(g_kernel_kmod_info.name);
+	printf("DISPLAY: preModLoad(%s)=%p\n", g_kernel_kmod_info.name, handle);
 	if (handle && !gMetaHandle) {
 		gMetaHandle = handle;
-		printf("DISPLAY: holding registration handle %p\n", handle);
 	}
 	if (!handle) {
 		printf("DISPLAY: preModLoad failed\n");
@@ -443,67 +443,6 @@ extern "C" void native_legacy_retirement_observed(IOService *) {}
 extern "C" void native_legacy_client_enter(task_t, uint32_t) {}
 extern "C" void native_legacy_client_observed(IOReturn, IOUserClient *) {}
 extern "C" void native_legacy_swap_stage(unsigned) {}
-/* Original IOSurface layout (uke's audit): sid +0x10, region +0x28, descriptor +0x30,
- * stride +0x68, format +0x80, allocation +0x90; the first words carry width/height. */
-extern "C" IOMemoryDescriptor *native_legacy_surface_descriptor(OSObject *surface)
-{
-	void *descriptor = nullptr;
-	if (surface) {
-		memcpy(&descriptor, (unsigned char *)surface + 0x30, sizeof(descriptor));
-	}
-	return (IOMemoryDescriptor *)descriptor;
-}
-
-extern "C" uint64_t native_legacy_surface_width(OSObject *surface)
-{
-	uint32_t value = 0;
-	if (surface) {
-		memcpy(&value, (unsigned char *)surface + 0x60, sizeof(value));
-	}
-	return value;
-}
-
-extern "C" uint64_t native_legacy_surface_height(OSObject *surface)
-{
-	uint32_t value = 0;
-	if (surface) {
-		memcpy(&value, (unsigned char *)surface + 0x64, sizeof(value));
-	}
-	return value;
-}
-
-extern "C" uint64_t native_legacy_surface_stride(OSObject *surface)
-{
-	uint32_t value = 0;
-	if (surface) {
-		memcpy(&value, (unsigned char *)surface + 0x68, sizeof(value));
-	}
-	return value;
-}
-
-extern "C" uint64_t native_legacy_surface_allocation(OSObject *surface)
-{
-	uint64_t value = 0;
-	if (surface) {
-		memcpy(&value, (unsigned char *)surface + 0x90, sizeof(value));
-	}
-	return value;
-}
-
-extern "C" uint32_t native_legacy_surface_format(OSObject *surface)
-{
-	uint32_t value = 0;
-	if (surface) {
-		memcpy(&value, (unsigned char *)surface + 0x80, sizeof(value));
-	}
-	return value;
-}
-
-extern "C" uint32_t native_legacy_surface_planes(OSObject *)
-{
-	return 1;
-}
-
 extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned reason, const void *request,
     const void *surface)
 {
@@ -520,3 +459,23 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 		    (unsigned long long)surfaces[2], (unsigned long long)surfaces[3]);
 	}
 }
+
+/* Diagnostic hooks the display component calls but this board does not use yet. */
+extern "C" void native_legacy_copy_timing_observed(uint64_t, uint64_t) {}
+extern "C" void native_legacy_frame_colors_observed(const uint32_t *, const uint64_t *, uint64_t) {}
+extern "C" void native_legacy_frame_observed(unsigned, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t) {}
+extern "C" void native_legacy_surface_rejected(uint64_t, uint64_t, uint32_t, uint32_t, uint64_t, uint64_t, uint64_t) {}
+extern "C" void native_legacy_transfer_observed(IOReturn, const void *, uint64_t) {}
+extern "C" void native_legacy_vsync_observed(unsigned, unsigned) {}
+/* Abstract-slot guard: the component declares it noreturn, so it must not return. */
+extern "C" __attribute__((noreturn, noinline)) void
+native_legacy_backend_guard(unsigned slot, void *object, void *caller)
+{
+	printf("DISPLAY: abstract slot %u (object=%p caller=%p); panicking\n", slot, object, caller);
+	panic("instantnoodlep legacy display abstract slot %u", slot);
+}
+
+extern "C" int native_gpu_trace_enabled(void) { return 0; }
+extern "C" void native_gpu_trace_record(uint32_t, uint32_t, const uint64_t *, uint32_t) {}
+extern "C" bool native_adreno_fences(uint32_t *, uint32_t *) { return false; }
+extern "C" bool native_adreno_fences_detail(uint32_t *, uint32_t *, uint32_t *) { return false; }

@@ -1796,3 +1796,42 @@ Next, in order:
 2. wrap the object's own destruction: `NativeLegacyDisplay` is ours, so a `printf` in its `free()` (the component
    can add one) shows whether the display object dies before the metaclass does;
 3. compare with uke, whose `LegacyDisplayStubs.c` may stub the very slot that leads there.
+
+## 07:40: the first accepted swap with a real surface, and the next two walls
+
+This boot is the first one that actually ran the newest probe (the earlier images were built from a stale kernel,
+because `unixnu build kernel` does not track the display archive - forcing a relink took deleting and restoring
+the kernel output, and the build then needed the archive's member set to be complete again).  What it shows:
+
+```
+DISPLAY: preModLoad(__kernel__)=0xfffffff521552e80
+DISPLAY: adopted default surface 0xfffffff520f6f7e0 sid=1 region=... descriptor=...
+DISPLAY: swap accepted=1 reason=0 request=0xfffffff521bcc000 surface=0xfffffff520f72480
+         req_surfaces=fffffff520f72480,0,0,0
+IOMFB: swap_wait_gated: CommandWake didn't happen even after 5 seconds ... cancelling swaps
+DISPLAY: abstract slot 345 (object=0xfffffff3549ae000 caller=0xfffffff00578c1cc); panicking
+panic: instantnoodlep legacy display abstract slot 345 @LegacyDisplayProbe.cpp:475
+```
+
+So:
+
+* the compositor's swap is **accepted** (`reason=0`) and the first layer already carries the adopted default
+  surface pointer - the surface work is real end to end;
+* presentation does not complete: the swap wait times out with "CommandWake didn't happen", so the family never
+  gets its completion;
+* when it gives up, the family reaches **abstract slot 345**, and the restored guard now panics there on purpose
+  (the component declares it noreturn).
+
+The two open items are therefore concrete:
+
+1. **slot 345** must be implemented instead of guarded - the caller is the family's `opaque243 + 0xd7c`, the
+   call is `this`-only, and it runs when a swap is abandoned.  The uke port's `LegacyDisplayStubs.c` is the
+   place to look for what it stubs;
+2. **presentation completion**: the component's copy path has the original surface accessors bound now
+   (`original-bindings.S` points them at the family's own functions), so the remaining piece is to make
+   `kickSwapQueue`/`prepare_scanout` actually copy the surface and retire the request so the wait becomes a wake.
+
+Also recorded: the kernel build does not track `build/native-legacy-display/libNativeLegacyDisplay.late.a`;
+after changing the probe the build must be forced (touch a kernel source or delete the kernel output, and keep the
+archive members complete - the probe must define every `native_legacy_*` and `native_gpu_trace_*` symbol the
+component references).
