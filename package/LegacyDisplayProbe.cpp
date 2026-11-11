@@ -7,6 +7,7 @@
 #include <IOKit/IOMemoryDescriptor.h>   // also declares IOMemoryMap
 #include <IOKit/IOUserClient.h>
 #include <libkern/c++/OSMetaClass.h>
+#include <libkern/c++/OSKext.h>
 #include <kern/task.h>
 #include <kern/thread.h>
 #include <pexpert/pexpert.h>
@@ -25,9 +26,18 @@ extern "C" void native_legacy_display_late_probe(void);
 extern "C" void
 native_legacy_display_probe(void)
 {
+	static bool family_loaded;
 	static bool registered;
 
 	printf("DISPLAY: probe entered (registered=%d)\n", registered ? 1 : 0);
+	if (!family_loaded) {
+		/* The family carries no OSBundleRequired, so the prelinker leaves it to be loaded on
+		 * demand; nothing in this port asks for it yet. */
+		OSReturn rc = OSKext::loadKextWithIdentifier("com.apple.iokit.IOMobileGraphicsFamily");
+		printf("DISPLAY: load family kext rc=0x%x loaded=%d\n", (unsigned)rc,
+		    OSKext::isKextWithIdentifierLoaded("com.apple.iokit.IOMobileGraphicsFamily") ? 1 : 0);
+		family_loaded = true;
+	}
 	if (registered) {
 		return;
 	}

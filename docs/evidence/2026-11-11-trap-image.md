@@ -576,3 +576,49 @@ therefore rejects any class-scoped open by construction.
 `apfs_is_valid_class` in the prelinked kext to print the calling process before deciding whether it matters; or
 build a content-protected Data volume with real class keys, which needs the keystore/keybag path this port does
 not have yet.
+
+## 20:40: the family just needed to be asked for
+
+The open question from the previous section - why the prelinked `com.apple.iokit.IOMobileGraphicsFamily`
+never registers its classes - is answered by the prelink entry itself:
+
+| Bundle | `OSBundleRequired` |
+| --- | --- |
+| `com.apple.driver.AppleMobileFileIntegrity` | `Root` |
+| `com.apple.iokit.IOSurface` | `Console` |
+| `com.apple.filesystems.apfs` | `Local-Root` |
+| `com.apple.iokit.IOMobileGraphicsFamily` | **absent** |
+
+All the `_Prelink*` keys are present for the family (`_PrelinkExecutableLoadAddr` 0xfffffff0045f5780,
+`_PrelinkExecutableSize` 0x9708, `_PrelinkExecutableSourceAddr`, `_PrelinkKmodInfo` 0xfffffff006b2e6c0,
+bundle path and relative executable path), so the image is complete; the family simply has no
+`OSBundleRequired`, and XNU only loads such kexts when something asks for them.  Nothing in this port did.
+
+The probe now calls `OSKext::loadKextWithIdentifier("com.apple.iokit.IOMobileGraphicsFamily")` before it
+registers its own class, and that is all it needed:
+
+```
+DISPLAY: load family kext rc=0x0 loaded=1
+DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=1 mobilefb=1
+DISPLAY: registerered family meta=0xfffffff006b35940 name=IOMobileFramebufferLegacy size=0x18a0
+DISPLAY: meta[0] NativeLegacyDisplay size=0x1ae0 super=IOMobileFramebufferLegacy
+DISPLAY: meta[1] IOMobileFramebufferLegacy size=0x18a0 super=IOMobileFramebufferService
+DISPLAY: meta[2] IOMobileFramebufferService size=0x90 super=IOMobileFramebuffer
+DISPLAY: meta[3] IOMobileFramebuffer size=0x90 super=IOService
+DISPLAY: meta[4] IOService size=0x88 super=IORegistryEntry
+DISPLAY: meta[5] IORegistryEntry size=0x28 super=OSObject
+DISPLAY: meta[6] OSObject size=0x10 super=-
+```
+
+* `loadKextWithIdentifier` returns 0 and `isKextWithIdentifierLoaded` reports 1.
+* The original class registers with the exact size the reference records (0x18a0) and its full ancestry
+  (`IOMobileFramebufferService` -> `IOMobileFramebuffer` -> `IOService`), so the owned class now answers both
+  `metaCast("IOMobileFramebufferLegacy")` and `metaCast("IOMobileFramebuffer")` (`legacy=1 mobilefb=1`).
+* Our concrete class is 0x1ae0 because `NativeLegacyDisplay` adds its own members on top of the 0x18a0 base;
+  the base size is what the reference's check compares.
+
+The userland side is unchanged in this boot: SpringBoard still traps in
+`-[FBSDisplayMonitor _initWithBookendObserver:transformer:] + 1148` because no display service is published
+yet - the probe stops after allocating.  The next step is `init`/`start`/`registerService` with the GOP
+console as the provider, which is what turns the allocated object into the `CADisplay` QuartzCore looks for.
+Console: `docs/evidence/logs/2026-11-11-bootFA-console.log`.
