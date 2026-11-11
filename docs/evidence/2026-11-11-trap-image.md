@@ -3435,3 +3435,20 @@ results do not count.
 
 `build_payload.sh` (fresh copy + both AMFI patches + payload), then `pack_boot.sh`.  `restore_owner_data.sh` must not
 be used without the copy step.
+## 06:20: the empty accelerator stub panics the kernel - first real execution of that patch
+
+The image built through the corrected pipeline (fresh kernel + both AMFI patches) reached the new code for the first
+time and panicked at once:
+
+    DISPLAY: probe entered (registered=0)
+    DISPLAY: preModLoad(__kernel__)=0xfffffff819c69480
+    log: process stack capture enabled
+    ACCEL-STUB: empty IOAcceleratorES published (no backend)
+    panic(cpu 0 caller 0xfffffff00c01f26c): Kernel data abort. at pc 0xfffffff00be850bc, lr 0xfffffff00be84ee8
+
+So the ported `MiniAcceleratorES` publishes and then faults: the stub has never been exercised before, because every
+earlier image carried a stale kernel.  Its source is the mondrian `0212-k60-empty-accelerator` patch, which attaches
+the stub to a provider that this kernel sets up differently.
+
+Next image disables it with its own boot argument (`accel_stub=0`) and keeps the GOP presenter (`fb-presenter=1`),
+so the two changes can be judged separately.
