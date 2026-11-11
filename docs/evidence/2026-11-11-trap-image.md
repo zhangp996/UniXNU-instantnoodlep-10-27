@@ -2131,3 +2131,29 @@ look should be at where the kernel maps the framebuffer for the console on this 
 
 The previous firmware is kept at `kernel_small.bin.old`; restoring it returns the 1080x480 window and a working
 boot.
+
+## 11:20: the black screen was our own panel clear; removed
+
+The image that went black was the one carrying both the whole-panel clear and `boot-progress=2`: the probe
+cleared 10,368,000 bytes at 0x9c000000 and nothing repainted the console afterwards (the serial log shows
+`Early boot complete` right after, so the machine was healthy).  Both were removed and the image rebuilt:
+
+* `clear_panel()` is no longer called (the function stays unused);
+* `boot-progress=2` was dropped from the kernel arguments;
+* the previous firmware (`kernel_small.bin.old`) is back in place, so the device is in its known-good state:
+  console text in the 480-row window, display experiments intact.
+
+The full-panel experiment stands where it was: with the DarwinBoot clamp removed, the **loader** covers the whole
+panel (menu plus pulse bar) and reports 1080x2376, but the **kernel** gets no video because
+`initialize_screen()` defers the mapping and `ml_io_map()` cannot give it 10,264,320 bytes at
+`startup_phase < STARTUP_SUB_KMEM` - the very limit the clamp's comment described.
+
+Two ways forward, both understood:
+
+1. **kernel side**: make the deferred framebuffer mapping succeed for the panel size (a different map call or a
+   larger early VA window), which restores the console at 1080x2376;
+2. **display side**: keep the console in its 480-row window and advertise the panel size to the compositor
+   (`installBootDimensions(1080, 2376)` with the nub memory covering 4320 x 2376), so the compositor renders
+   full-screen and the probe's copy - which already maps 10.4 MiB successfully later in boot - fills the panel.
+   This needs the component's consistency checks (which compare `PE_current_console` against
+   `getDisplayDimensions` in several places) to follow the same override.
