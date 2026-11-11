@@ -973,3 +973,35 @@ export XNU_EXTRA_LD_ARCHIVES="-Wl,-force_load,$PWD/out/<device>/<os>/<config>/tr
 
 The kernel produced this way (`86da2eeb...`) packages into `bootEM.img` (`494bd21c...`) with the AMFI
 no-PMGR patch and the trust-cache gate patch, and the tree is reproducible again.
+
+
+## 17:40: a 4 GiB window removes jetsam completely
+
+Raising `owned_memory_size` from `0x20000000` (512 MiB) to `0x100000000` (4 GiB) works and changes the
+system completely:
+
+```
+vm_page_bootstrap: 992422 free pages        (about 4.06 GiB, versus roughly 130k pages before)
+```
+
+A late capture on that image shows ten clean exits and six SIGTRAPs, and **no jetsam kill at all**:
+
+```
+bluetoothd, fairplayd.A2, DumpPanic, com.apple.datami   code=0
+tccd                                     running, dyld shared region unnested
+AMFI isCdhashInTrustCache                Returning IOReturn 0x0
+apfs tx_flush                            normal statistics
+SpringBoard, liveactivitiesd             code=5 ns=2 sub=5 (SIGTRAP)
+```
+
+So the service graph runs, the filesystem stays healthy and the only remaining failure is the
+SpringBoard/liveactivitiesd trap.
+
+One correction from the same run: the platform flags (`cs=0x22002301`) appear on the services that run
+through this boot too, so the earlier `amfi-only-platform-code` result and this one agree - the
+difference between the two earlier runs was memory pressure, not the policy.
+
+SpringBoard's trap carries **no** `reason_string` (the `XNU-EXITREASON` line never appears), so it is a
+real trap instruction rather than `abort_with_payload`, i.e. a Swift runtime trap or a deliberate
+`brk`.  The next measurement is the faulting user PC: hook the exception delivery for
+`EXC_BREAKPOINT` on these two processes and symbolise the address against the shared cache.
