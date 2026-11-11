@@ -319,7 +319,9 @@ extern "C" int native_owner_watchdog_service(void)
     int error = fuxi_ram_watchdog_prepare();
     native_panel_mark(1, error ? 0x00FF0000u : 0x0000FF00u);
     if (error) {
-        panic("ram watchdog prepare failed: %d", error);
+        /* Bring-up: the backend is optional now (an absent ram-system-watchdog argument must not
+         * stop the boot); the red block still says it did not register. */
+        printf("ram watchdog backend not registered: %d\n", error);
     }
     return 0;
 }
