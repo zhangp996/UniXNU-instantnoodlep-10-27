@@ -1712,3 +1712,34 @@ Decisive control experiment for the next boot: build the same kernel with the di
 (`offline-mobile-graphics-load`, `offline-legacy-*`) so nothing registers the class at all.
 If the panic disappears, it is the registration/teardown of our class; if it stays, it is unrelated to the display
 and belongs to the boot's process-failure storm.
+
+## 07:00: control experiment - the panic belongs to the display registration
+
+Built the same kernel with every display argument removed (`bootEU-control.img`,
+sha `954c262c5e1a029cb32476a4554a2d94e827a9260ff894f17c70978908e371e1`, base args only) and booted it:
+
+```
+DISPLAY: late probe (load handled by offline-mobile-graphics-load)   <- the only display line
+... launchd, watchdogd trap, liveactivitiesd trap, apfs class-open message, fairplayd, bluetoothd ...
+```
+
+575 console lines, **no kernel data abort, no panic**.  With the display arguments, the same kernel panics about two
+minutes in at `OSMetaClass::~OSMetaClass + 0x1c` reached from `NativeLegacyDisplay::MetaClass::~MetaClass`.
+
+So the teardown fault is caused by this board's display registration itself - not by the boot's process-failure
+storm, and not by the default-surface path (which no longer errors).
+
+The remaining question is therefore narrow: what destroys the metaclass.  The class is registered through
+`OSMetaClass::preModLoad(g_kernel_kmod_info.name)` and `postModLoad(handle)`, i.e. against a fake kext created for
+late registration; the destructor then runs with a bogus `this` (0xfffffff00ba131cb-like code addresses appear in
+the registers).  Candidates: the fake kext being freed, or the family's kext unloading and taking the subclass
+metaclass with it.
+
+Next measurements, cheapest first:
+
+1. keep the `preModLoad` handle in a global and print it at shutdown paths, or re-register the class through the
+   family's own kmod identity so both lifecycles match;
+2. print from a destructor-like probe: a static object inside the board archive whose destructor logs the moment the
+   kext/fake-kext teardown begins;
+3. compare with the uke port, which registers the same way but never lets its display object reach `stop`: it keeps
+   `activeLegacyDisplay` and never releases it, and its `stop`/`detach` calls exist only on failure paths.
