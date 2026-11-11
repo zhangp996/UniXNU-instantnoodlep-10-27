@@ -2566,3 +2566,27 @@ Two things to try next:
    this service loop), then check that the timeout no longer panics;
 2. look at the service loop itself (`-no_corpses`, launchd policy, or the `liveactivitiesd` crash at
    `SessionSyncEngine+0x1d4f8`), since a boot that never reaches the compositor cannot validate the display path.
+
+## 04:35: SpringBoard starts and dies before the compositor submits a frame
+
+The longer live capture finally shows the display server's neighbourhood, but still no swap:
+
+```
+XNU-EXIT: SpringBoard pid=267 code=6 ns=2 sub=0x6 cs=0x22002301
+Process[267] crashed: SpringBoard. Too many corpses being created.
+XNU-EXIT: SpringBoard pid=317 code=6 ns=2 sub=0x6 cs=0x22002301
+```
+
+No `DISPLAY: swap accepted`, no `swap_wait_gated`, and **no display panic** - the slot 345 fix is in the kernel but the
+timeout path is never reached because SpringBoard aborts (code 6) before the compositor's first submission.
+
+So the next blocker is not the display driver: it is SpringBoard/backboardd surviving long enough to submit a frame.
+Two candidates worth trying, both cheap:
+
+1. `-no_corpses` in the kernel arguments (the Pagani record uses it to keep repeated crashes from collecting large
+   core files, which is exactly the `Too many corpses` state here);
+2. the service-loop trims the Pagani record lists (identityservicesd, locationd, CommCenter, bluetoothd,
+   iomfb_fdr_loader, iconservicesagent) - each must still match the original task's Label and ProgramArguments.
+
+Until one of those lets SpringBoard live past its first frame, the display path cannot be validated further: every
+swap-related observation needs the compositor to submit.
