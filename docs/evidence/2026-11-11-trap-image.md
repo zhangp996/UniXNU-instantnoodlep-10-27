@@ -3182,3 +3182,50 @@ Port sheng's `scripts/build-gop-legacy-display.py` (28 KB) and its `legacy-displ
 repository, add `build-gop-legacy-display.py` to the `[kernel] archives` list, and let the build generate the ABI
 header and compile the component the way sheng does - then the slot-345 handling and the swap path follow sheng's
 qualified layout instead of this session's hand edits.
+
+## 14:30: file-by-file comparison with UniXNU/UniXNU-sheng
+
+**Totals (excluding .git, out, build, assets, firmware):** 495 files there, 231 here, 61 shared (19 of them
+differ), 434 only there, 170 only here.
+
+### The 19 shared files that differ
+
+`.github/workflows/package.yml`, `.gitignore`, `AGENTS.md`, `README.md`, `board.toml`, `feeds.toml`,
+`package/BootProcessWorker.c`, `package/BootProgress.c`, `package/BootUiTraceDetails.h`, `package/BootUiTraceProbe.c`,
+`package/BootWatchdogPolicy.c`, `package/GeniI2c.h`, `package/LegacyDisplayProbe.cpp`, `package/ShengAdsp.h`,
+`patches/xnu/series`, `porting.toml`, `proprietary-files.txt`, `scripts/build-boot-progress.py`, `unixnu.lock`.
+
+**The display and diagnosis files this session has been hand-patching are exactly the files that differ** - their
+copies are the maintained ones, ours are modified forks of an older revision.
+
+### Only there, by area
+
+* `drivers/QcomIris/*` (video), Adreno GPU probes, audio, wifi, bluetooth, touch, backlight, battery, BoardClock - a
+  complete device bring-up;
+* `package/`: 142 files (Adreno*, Adsp*, Backlight, Audio, Bluetooth, Battery, AirLibrary, AcceleratorABI...);
+* `scripts/`: 204 files, including **build-gop-legacy-display.py / -27.py / build-gop-framebuffer.py**,
+  `legacy-display-24A446.json`, and checks for boot progress, process probe and ui-trace;
+* `configs/`: four defconfigs (sheng, ipados26, ipados27, macos) against one here;
+* `patches/`: 24 device patches against 23 here, but the **series differ**: 3 there against 16 here, because this
+  board carries many local diagnostics (trap pc, exit observe, usb debug, panic region, deferred framebuffer mapping,
+  shared-region probe).
+
+### Only here
+
+`docs/` (72 evidence files), `kits/` (26), 23 extra local patches, `components/` (14), 13 drivers (UFS, USB, RamBlock,
+verified root), 13 package files (this session's probe, stubs, policy) and 5 scripts.
+
+### The file that answers today's open question
+
+sheng starts the process-stack worker from **`package/BootLog.c`** (line 2851, under `boot-ui-trace=1`):
+
+~~~c
+if (PE_parse_boot_argn("boot-ui-trace", &trace, sizeof trace) && trace == 1) boot_process_start();
+~~~
+
+not from `BootProgress.c` as this board tried - and this port has no `BootLog.c` at all.  That is why the diagnostic
+page's process and ui-trace rows stayed empty however the call was wired: the only caller of the worker lives in a
+file this repository does not carry.
+
+The image already built (f6eb618e, with the probe calling `boot_process_start()` itself plus the JOP and vsync fixes)
+is the first that may actually fill those rows; it still has to be booted.
