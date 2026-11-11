@@ -2404,3 +2404,26 @@ names the failing value directly.  The last attempt panicked before the swap, so
 If height is 0, the fix is to have the adopted default surface report its geometry through the original accessor
 (e.g. publish it as a real IOSurface entry in the root, which is what the family's temp surface should already be),
 and the component's copy - and therefore the family's own swap retirement - should follow.
+
+## 03:00: everything the layout check compares is correct; the window missed the swap
+
+The last boot with the printing build shows every quantity the component's bounds check needs:
+
+```
+DISPLAY: accessor width=1080 height=2376 alloc=10342400 descLen=10342400 mapLen=10342400
+DISPLAY: present surface=... 1080x2376 stride=4352 ... console=0 base=0x9c000001 1080x2376 rb=4320
+DISPLAY: present copied 2376 rows x 4320 bytes (frame 1)
+DISPLAY: transfer rc=0xe00002c2 ... bytes=0        <- kIOReturnBadArgument
+```
+
+so width, height, allocation, descriptor length and mapped length all match the panel, and the remaining failure is
+inside `native_legacy_copy_layout()` / `native_legacy_copy_pixels()` (both compare against
+`stride * height`, where destination stride is the console's 4320 and source stride 4352).
+
+The probe now gives the nub memory 64 KiB of slack past `rowBytes * height` so every `>=` comparison in those checks
+is comfortably satisfied (image `811ff215...`).
+
+The boot that carried it did not reach the swap inside the capture window (the compositor submits about 2:10 into
+boot, and the window ended at 3:10 with the machine already in its idle/abandoned state), so the result is still
+outstanding - one boot captured over 110-240 s will show whether the copy now succeeds and the family retires the
+swap itself.
