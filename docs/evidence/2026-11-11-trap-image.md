@@ -2837,3 +2837,34 @@ boot with the same two prints.
 
 The observations that stand: backboardd never logs anything, SpringBoard aborts within seconds of starting, the
 display driver itself registers correctly, and no swap is ever submitted on these boots.
+## 08:30: community survey results and the porting plan
+
+### What the repositories have
+
+1. **uke: package/CrashLogProbe.c** (17 KB, self-contained, boot arg `sheng-crashlog=1`) - walks
+   /private/var/mobile/Library/Logs/CrashReporter with namei/vnode and prints backboardd/SpringBoard reports into
+   the kernel log, plus the launch paths of apps ("because a process that never execs leaves no crash report at
+   all").  Started as a kernel thread that sleeps 60 s then scans every 90 s.  The file is now copied into
+   package/CrashLogProbe.c on this board; it is not built yet.
+2. **the build wiring already exists for this class of file**: scripts/build-sheng-source-storage.py keeps
+   `bsd_sources = {'BootWatchdogPolicy.c', 'BootDiagExport.c', 'WifiFirmware.c', 'BluetoothFirmware.c'}` compiled with
+   kern_exec's flags, and our kernel does contain `sheng_boot_watchdog_policy` and the disabled.plist path - so
+   adding CrashLogProbe.c to that set and calling `uke_crash_log_start()` from
+   `sheng_boot_watchdog_policy()` is the whole port (no XNU patch change needed).
+3. **BootDiagExport.c** (`sheng-diag-export`, "the unified log, crash reports and a screenshot, read through the
+   VFS") is referenced by that same script but is not present in this device repository - it can be taken from a
+   sheng device repository if the crash-report probe alone is not enough.
+
+### What the records say about the symptom
+
+* uke: "backboardd pid62/341/373 分别在 154/210/267s 以 **SIGNAL6** 退出；SpringBoard 因 /usr/libexec/backboardd
+  respawn 终止并重启" - i.e. the same code 6 loop this board shows, attributed to backboardd aborting.
+* uke's reference notes: userdata needs SpringBoard `BKNoWatchdogs`/`FBLaunchWatchdogExceptions` and an IOWatchdog
+  stub so watchdogd does not `_PanicOnCrash` - matching this board's `watchdogd ... ns=2 sub=0x5`.
+* Pagani: slot 345 is `isTimingEnabled()` (implemented here already).
+
+### Port status
+
+CrashLogProbe.c is in place but not compiled: the next two edits are adding it to `bsd_sources` in
+scripts/build-sheng-source-storage.py and calling `uke_crash_log_start()` at the end of
+`sheng_boot_watchdog_policy()`, then booting with `sheng-crashlog=1`.
