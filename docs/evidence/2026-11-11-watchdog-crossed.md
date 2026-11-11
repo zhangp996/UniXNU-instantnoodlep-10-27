@@ -520,3 +520,29 @@ the carrier authorises it) and the kebab approach (the kernel pre-maps it before
 whether dyld ever calls `shared_region_map_and_slide_2_np` - a counter at the entry of
 `vm_shared_region_map_file` - is the next measurement, and the kernel-side pre-map is the fallback if
 dyld never gets that far.
+
+## 13:35: the shared region is fine and SpringBoard is being spawned
+
+`SR-MAP: calls=1 failures=0` puts the shared-region question to rest: dyld does call
+`vm_shared_region_map_file`, and the call succeeds, so the cache is mapped and the earlier
+`carrier=0/0` only meant the carrier hook was not the path taken (the cache was on the process root's
+own mount).
+
+The exit log then shows how far userland has come:
+
+```
+XNU-EXIT: SpringBoard      pid=132 code=5 ns=2 sub=0x5
+Process[132] crashed: SpringBoard. Too many corpses being created.
+XNU-EXIT: liveactivitiesd  pid=133 code=5 ns=2 sub=0x5
+XNU-EXIT: bluetoothd       pid=134 code=0 ns=0 sub=0x0
+XNU-EXIT: fairplayd.A2     pid=126 code=0 ns=0 sub=0x0
+```
+
+* `bluetoothd` and `fairplayd.A2` exit cleanly (code 0, no reason), i.e. those services ran;
+* `SpringBoard` and `liveactivitiesd` die on a breakpoint (`ns=2 sub=0x5`), which is a normal
+  bring-up failure for a service that finds something missing, and SpringBoard being spawned at all
+  means launchd got far enough to start the UI process.
+
+Next: catch SpringBoard's breakpoint - the kernel already reports the user backtrace for a critical
+exit in some community ports (`0277-kebab-critical-watchdog-user-backtrace.patch`); the same
+treatment for SpringBoard, or reading its crash reason from the panic text, is the next step.

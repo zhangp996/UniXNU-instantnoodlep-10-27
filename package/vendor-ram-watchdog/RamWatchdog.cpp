@@ -52,6 +52,9 @@ static void ram_watchdog_block_report(void)
             extern volatile int native_owner_data_stage;
             extern unsigned long native_owner_cache_carrier_accepts;
             extern unsigned long native_owner_cache_carrier_rejects;
+            extern unsigned long native_sr_map_calls;
+            extern unsigned long native_sr_map_failures;
+            printf("SR-MAP: calls=%lu failures=%lu\n", native_sr_map_calls, native_sr_map_failures);
             printf("RWSTATE: online=%llu mem=%llu capacity=%llu big=%llu dataStage=%d carrier=%lu/%lu\n",
                    native_ram_block_state[0], native_ram_block_state[1],
                    native_ram_block_state[2], native_ram_block_state[3],
