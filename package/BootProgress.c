@@ -635,6 +635,45 @@ int boot_progress_prepare_scanout(void) {
 void boot_progress_cancel_scanout(void) {
   __atomic_store_n(&display.yield_requested,0,__ATOMIC_RELEASE);
 }
+
+/* BRINGUP: the ui-trace probes only fill boot_process_rows for the diagnostic page. Mirror those rows to the
+ * kernel log so the serial console shows them without a photograph. */
+extern char boot_process_rows[10][120];
+static void
+boot_rows_printer(void *arg, wait_result_t result)
+{
+	static char last[10][120];
+	(void)arg; (void)result;
+	for (;;) {
+		assert_wait_timeout((event_t)&last, THREAD_UNINT, 4000, NSEC_PER_MSEC);
+		thread_block(THREAD_CONTINUE_NULL);
+		for (unsigned i = 0; i < 10; i++) {
+			const char *row = boot_process_rows[i];
+			if (row[0] == 0 || row[0] == ' ') continue;
+			if (__builtin_memcmp(row, last[i], sizeof(last[i])) == 0) continue;
+			__builtin_memcpy(last[i], row, sizeof(last[i]));
+			printf("PROC[%u] %s\n", i, row);
+		}
+	}
+}
+
+static void
+boot_rows_start(void)
+{
+	unsigned enabled = 0;
+	static unsigned started;
+	thread_t thread;
+	printf("BRINGUP-ROWS: boot_rows_start called\n");
+	if (!PE_parse_boot_argn("boot-ui-trace", &enabled, sizeof(enabled)) || enabled != 1) return;
+	if (__atomic_exchange_n(&started, 1, __ATOMIC_ACQ_REL)) return;
+	if (kernel_thread_start_priority(boot_rows_printer, 0, BASEPRI_KERNEL, &thread) == KERN_SUCCESS) {
+		thread_deallocate(thread);
+		printf("BRINGUP-ROWS: printer thread started\n");
+	} else {
+		printf("BRINGUP-ROWS: printer thread failed\n");
+	}
+}
+
 void boot_progress_init(void) {
     /* Uke's crash-report probe: starts its worker under sheng-crashlog=1 and mirrors CrashReporter
      * entries (backboardd, SpringBoard) into the kernel log. */
@@ -644,6 +683,7 @@ void boot_progress_init(void) {
         extern void boot_process_start(void);
         boot_process_start();
     }
+    boot_rows_start();
     {
         extern void uke_crash_log_start(void);
         uke_crash_log_start();

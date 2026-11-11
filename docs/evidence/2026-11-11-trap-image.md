@@ -3017,3 +3017,22 @@ Port status, after fixing the chain of missing headers and hooks:
 
 The probes do not print: they fill boot_process_rows/boot_ui_trace rows for the **diagnostic page**, so the image now
 also passes `boot-progress=2` (bootEU.img bed9c995...) to draw them on the panel.
+
+## 12:15: the ui-trace code is in the kernel but its rows stay empty
+
+The instrumented image (kernel strings verified: BRINGUP-ROWS, boot_rows_printer, boot_process_rows and the
+boot_progress_init symbol are all present) boots to 'Early boot complete' without a single PROC[ row on the serial
+console.  Two things follow:
+
+* the instrumentation prints of boot_rows_start happen at arm_init, before the USB serial console is up, so their
+  absence in the log proves nothing;
+* the PROC rows never appear, so **boot_process_rows stays empty** - either boot_process_start() did not start its
+  worker (boot-ui-trace parse at arm_init) or boot_process_capture() does not fill the rows on this port.
+
+Everything else in the port is in place: sources compile with the osfmk record, BootTraceStubs supplies the sheng
+hook variables, the objects are archived, boot_process_start/boot_process_capture/boot_ui_trace_begin are linked, and
+the kernel builds with exit 0.  What is missing is evidence that the capture worker runs and what it writes.
+
+Cheapest next step: print from inside the capture path (BootProcessProbe.c) once per pass - one line at the start of
+boot_process_capture() and one after the target loop - so the serial shows whether it runs and whether proc_iterate
+returns anything, instead of relying on arm_init prints that the console cannot show.
