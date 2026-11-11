@@ -3147,3 +3147,38 @@ today), a working GPU + DPU scanout stack on their SoC, backlight/power knobs, a
 Implication: on SM8250 the only presentation available is still the CPU copy this port already does at 1080x2376; the
 missing link to SpringBoard is the refresh/complete protocol the display exposes to the system, which is what
 \`sheng-vsync\` and the swap path control.
+## 14:05: careful comparison with UniXNU/UniXNU-sheng - the decisive difference
+
+### The repositories are of different kinds
+
+* `UniXNU/UniXNU` is the framework (build system, shared drivers/kits/patches, docs);
+* `UniXNU/UniXNU-sheng` is a **device repository** - the sibling of `UniXNU-instantnoodlep`.
+
+### Device repository, field by field
+
+| item | sheng | instantnoodlep (ours) |
+| --- | --- | --- |
+| kernel args | 52 | 28 |
+| kernel archives | 19, including **build-gop-legacy-display-27.py** | 16, **no display builder at all** |
+| display build scripts | `build-gop-legacy-display.py`, `build-gop-legacy-display-27.py`, `build-gop-framebuffer.py`, `legacy-display-24A446.json`, `legacy-display-26C5035r.json` | none |
+| GPU stack | `component:Adreno740`, `fetch-adreno-inputs.py`, `prepare-sheng-gmu.py`, `prepare-sheng-gpu-smmu.py`, `prepare-sheng-gmu-votes.py`, `build-adreno740-kits.py`, `build-adreno740-accelerator.py` | none |
+| other drivers | AKS, AppleKeyStoreState, audio, wifi, bluetooth, touch, cpufreq, backlight | USB debug, UFS, verified root, RAM block, ram-watchdog, boot-progress |
+
+### What this means
+
+The display component on this board has never been built by a build step.  It is an archive assembled by hand
+(`rebuild_archive.sh` re-archiving a `compile-command.json` scraped from an earlier build), with an ABI header whose
+`LEAF(345)` entry was edited by hand.  sheng instead **generates** that header from the framework's
+`scripts/audit-mobile-graphics-legacy.py` audit (`build/display-analysis/mobile-graphics-legacy-abi.json`, which this
+tree also produces) and compiles the component and probe with the builder's own defines and ABI layout.
+
+So the same component source is not necessarily the same binary: our header, defines and vtable treatment differ from
+sheng's generated ones, and that is the most plausible reason the same display architecture behaves differently at
+the swap/completion stage.
+
+### Concrete next step
+
+Port sheng's `scripts/build-gop-legacy-display.py` (28 KB) and its `legacy-display-24A446.json` into this device
+repository, add `build-gop-legacy-display.py` to the `[kernel] archives` list, and let the build generate the ABI
+header and compile the component the way sheng does - then the slot-345 handling and the swap path follow sheng's
+qualified layout instead of this session's hand edits.
