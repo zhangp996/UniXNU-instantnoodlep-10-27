@@ -860,3 +860,30 @@ whatever enforces the platform-binary policy (and whatever kills jobs that fail 
 ordinary ad-hoc processes.  That is consistent with a system-wide event - jetsam, a launchd-wide
 cleanup, or a watchdog sweep - rather than per-service bugs, and it makes the code-signing/platform
 flag the next thing to explain.
+
+
+## 16:50: the docs name the policy behind the cs split
+
+`docs/zh/concepts/security.md:38` says the ADT property `/chosen/amfi-only-platform-code` keeps AMFI in
+the **platform-code policy**, and `drivers/kexts.md:150-154` says AMFI checks code against the trust
+cache and that the payload's cache must carry the CD hashes.  The built payload's ADT does carry the
+property (four occurrences in `payload.img`), so AMFI is in platform-code-only mode on this board.
+
+That explains the two-tier `cs` split exactly:
+
+```
+fsck, mount, seputil, launchd, SpringBoard   cs=0x22002301   platform binaries, trusted, run
+amfid, keybagd, securityd, ptpd, timed, ...  cs=0x1          not platform, SIGKILLed
+```
+
+The early platform binaries come from the boot volume, whose hashes are in the boot trust cache the
+payload carries.  The killed services come from the SystemOS cryptex and Data, whose binaries are
+not in that cache, so they are ordinary ad-hoc code under a platform-only policy - and something in
+that policy clears them.
+
+Next, in order:
+
+1. confirm which volume each killed binary lives on (SystemOS cryptex versus boot volume), which the
+   log can answer once the exec path is printed;
+2. give AMFI a trust cache that covers the cryptex binaries, as the docs require for kexts;
+3. or, for bring-up, relax the platform-only policy and see whether the storm stops.
