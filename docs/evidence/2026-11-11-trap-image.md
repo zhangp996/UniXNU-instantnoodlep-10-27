@@ -2887,3 +2887,22 @@ board is:
 
 The probe itself needs no changes: it takes its own boot argument and starts its worker thread after 60 s, printing
 into msgbuf, which the serial console already carries.
+
+## 09:15: the crash-report probe port was attempted and rolled back
+
+Porting uke's CrashLogProbe.c into this port's boot-progress archive was tried end to end and rolled back, with
+these findings kept for the next attempt:
+
+1. the object is compiled by **scripts/build-boot-progress.py**, which builds BootProgress.o and BootProgressStubs.o
+   into libBootProgress.a; that script has to gain the probe (and the kernel build re-runs it, so both the device
+   repository and the assembled tree copy must change);
+2. the probe must be compiled with the **BSD record** (bsd/DEVELOPMENT/kern_exec.o.json), not BootProgress's
+   osfmk/startup record - the osfmk record produced typedef redefinitions and misc_protos errors.  With the BSD
+   record the file compiles (332 warnings, no errors) once `vnode_readdir64` is declared explicitly (the exported
+   <sys/vnode_internal.h> in EXPORT_HDRS omits it);
+3. **the kernel link does not honour `weak_import`** (the build script says so): a weak call from BootProgress.o to
+   `uke_crash_log_start` fails the link with `Undefined symbols: _uke_crash_log_start`, so the probe's object must
+   always be in the same archive as the caller - there is no optional path.
+
+Rolled back to a buildable tree (kernel build exit 0, image `8bf8c20c...`); package/CrashLogProbe.c stays in the
+repository as the source for the next attempt, with the two fixes above already known.

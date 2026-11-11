@@ -29,6 +29,11 @@ extern void thread_terminate_self(void);
 #endif
 #include <pexpert/pexpert.h>
 
+/* This port's include order resolves <sys/vnode_internal.h> to the exported header, which omits
+ * the directory iterator; declare the prototype it needs. */
+extern int vnode_readdir64(struct vnode *, struct uio *, int, int *, int *, vfs_context_t);
+
+
 extern kern_return_t kernel_thread_start_priority(thread_continue_t continuation,
     void *parameter, int priority, thread_t *new_thread);
 #define BASEPRI_PREEMPT 92

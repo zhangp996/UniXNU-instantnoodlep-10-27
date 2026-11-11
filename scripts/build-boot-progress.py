@@ -20,7 +20,9 @@ OUT = ROOT / 'build/boot-progress'
 OUT.mkdir(parents=True, exist_ok=True)
 record = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/osfmk/DEVELOPMENT/startup.o.json')
                     .read_text().strip().rstrip(','))
-source = ROOT / 'kits' / 'instantnoodlep' / 'BootProgress.c'
+source = next((p for p in (ROOT / 'kits' / 'instantnoodlep' / 'BootProgress.c',
+                          ROOT / 'package' / 'BootProgress.c') if p.is_file()),
+             ROOT / 'kits' / 'instantnoodlep' / 'BootProgress.c')
 obj = OUT / 'BootProgress.o'
 # The renderer draws with Mu-Silicium's GLYPH_FONT. Take the firmware checkout's copy
 # when the tree has one, so the page and the panic screen share glyphs; the kernel step
