@@ -6,6 +6,12 @@
 #include <IOKit/IOLib.h>
 #include <IOKit/IOMemoryDescriptor.h>   // also declares IOMemoryMap
 #include <IOKit/IOUserClient.h>
+#include <IOKit/IODeviceMemory.h>
+#include <IOKit/IODeviceTreeSupport.h>
+#include <libkern/c++/OSArray.h>
+#include <libkern/c++/OSData.h>
+#include <libkern/c++/OSDictionary.h>
+#include <libkern/c++/OSString.h>
 #include <libkern/c++/OSMetaClass.h>
 #include <libkern/c++/OSKext.h>
 #include <kern/task.h>
@@ -20,6 +26,8 @@ extern "C" IOService *native_legacy_display_allocate(void);
 
 extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
+extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
+static IOService *pendingDisplay;
 
 /* --- functional entries ------------------------------------------------- */
 
@@ -98,16 +106,85 @@ native_legacy_display_probe(void)
 			mc = mc->getSuperClass();
 		}
 	}
+	if (display->init()) {
+		unsigned phase = 0;
+		PE_parse_boot_argn("offline-legacy-phase", &phase, sizeof(phase));
+		printf("DISPLAY: init ok phase=%u, retained for publication\n", phase);
+		pendingDisplay = display;
+	} else {
+		printf("DISPLAY: init failed\n");
+		display->release();
+	}
+}
+
+static void
+publish_display(void)
+{
+	IOService *display = pendingDisplay;
+	if (!display) {
+		printf("DISPLAY: nothing pending to publish\n");
+		return;
+	}
+	pendingDisplay = nullptr;
+	OSReturn rc = OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
+	printf("DISPLAY: IOSurface kext rc=0x%x\n", (unsigned)rc);
+	OSDictionary *matching = OSDictionary::withCapacity(1);
+	const OSObject *names[2] = {OSString::withCString("IOCoreSurfaceRoot"), OSString::withCString("IOSurfaceRoot")};
+	OSArray *list = (names[0] && names[1]) ? OSArray::withObjects(names, 2) : nullptr;
+	if (matching && list) {
+		matching->setObject(gIONameMatchKey, list);
+	}
+	IOService *surface = matching ? IOService::waitForMatchingService(matching, 5000000000ULL) : nullptr;
+	printf("DISPLAY: IOSurface root found=%d\n", surface ? 1 : 0);
+	if (surface) surface->release();
+	if (list) list->release();
+	for (int i = 0; i < 2; ++i) if (names[i]) ((OSObject *)names[i])->release();
+	if (matching) matching->release();
+
+	PE_Video video = {};
+	if (PE_current_console(&video) || !video.v_baseAddr || !video.v_depth) {
+		printf("DISPLAY: no GOP console at publication\n");
+		return;
+	}
+	IOService *parent = IOService::getResourceService();
+	IOService *nub = new IOService;
+	IODeviceMemory *memory = IODeviceMemory::withRange(video.v_baseAddr, video.v_rowBytes * video.v_height);
+	OSArray *ranges = OSArray::withCapacity(1);
+	if (nub && memory && ranges && parent && nub->init()) {
+		ranges->setObject(memory);
+		nub->setDeviceMemory(ranges);
+		nub->setName("NativeGOPFramebuffer");
+		bool attached = nub->attach(parent);
+		bool started = attached ? nub->start(parent) : false;
+		printf("DISPLAY: nub %p attach=%d start=%d mem=0x%llx+0x%llx\n", nub, attached, started,
+		    (unsigned long long)video.v_baseAddr,
+		    (unsigned long long)(video.v_rowBytes * video.v_height));
+		IORegistryEntry *dtParent = IORegistryEntry::fromPath("/arm-io", gIODTPlane);
+		const char type[] = "display-subsystem";
+		OSData *data = OSData::withBytes(type, sizeof(type));
+		if (dtParent && data && nub->setProperty("device_type", data)) {
+			nub->setName("gop-display", gIODTPlane);
+			printf("DISPLAY: dt attach=%d\n", nub->attachToParent(dtParent, gIODTPlane) ? 1 : 0);
+		}
+		if (data) data->release();
+		if (dtParent) dtParent->release();
+		bool dispAttached = display->attach(nub);
+		bool dispStarted = dispAttached ? display->start(nub) : false;
+		printf("DISPLAY: display attach=%d start=%d\n", dispAttached, dispStarted);
+	}
+	if (memory) memory->release();
+	if (ranges) ranges->release();
 }
 
 static void
 display_retry(void *, wait_result_t)
 {
-	/* The original family's classes are not registered yet when offline-legacy-start runs at
-	 * bsd_autoconf; retry once the rest of IOKit has settled. */
+	/* offline-legacy-start runs at bsd_autoconf, before IOKit has settled; give the registry a
+	 * moment, then register the owned class and publish it on the firmware framebuffer. */
 	IOSleep(5000);
 	printf("DISPLAY: retry after 5 s\n");
 	native_legacy_display_probe();
+	publish_display();
 }
 
 extern "C" void

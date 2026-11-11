@@ -622,3 +622,39 @@ The userland side is unchanged in this boot: SpringBoard still traps in
 yet - the probe stops after allocating.  The next step is `init`/`start`/`registerService` with the GOP
 console as the provider, which is what turns the allocated object into the `CADisplay` QuartzCore looks for.
 Console: `docs/evidence/logs/2026-11-11-bootFA-console.log`.
+
+## 21:00: the display publishes, and SpringBoard gets past the CADisplay assertion
+
+The probe now runs the whole publication sequence the reference uses at `offline-legacy-phase=4`:
+
+```
+DISPLAY: init ok phase=4, retained for publication
+DISPLAY: IOSurface kext rc=0x0
+DISPLAY: IOSurface root found=1
+DISPLAY: nub 0xfffffff9e36876a0 attach=1 start=1 mem=0x9c000001+0x1fa400
+DISPLAY: dt attach=1
+DISPLAY: display attach=1 start=1
+```
+
+That is: the family is loaded on demand, the owned class registers with the original identity (0x18a0 base,
+`IOMobileFramebufferLegacy` -> `IOMobileFramebufferService` -> `IOMobileFramebuffer` -> `IOService`), a nub is
+built over the firmware framebuffer memory (`0x9c000001 + 0x1fa400`), attached to the resource service and to
+`/arm-io` as `gop-display`/`display-subsystem`, and the display attaches to it and starts.
+
+**The effect on SpringBoard is visible in the same boot:** the previous image (`bootFA`) logged eighteen
+SpringBoard lines and trapped every instance at `FrontBoardServices+0x1e2ec`
+(`-[FBSDisplayMonitor _initWithBookendObserver:transformer:]`, "failed to find the main CADisplay").  This
+image logs no `+0x1e2ec` trap at all.  SpringBoard now loads one more image (1236 against 1235) and dies at a
+different site:
+
+```
+XNU-TRAP: pc=0x1a05a4744 lr=0x1a05a4744 esr=0xf2000000
+XNU-DYLD-IMAGE: SpringBoard pc=0x1a05a4744 FrontBoardServices+0xf744 load=0x1a0595000 images=1236
+0x19f3d0744: -[FBSDisplayMode _initWithWidth:height:preferredScale:scaleOverride:refreshRate:
+             gamut:hdr:rotation:virtual:validityCheck:] + 580
+```
+
+So the display is found, and the next wall is the display **mode** the firmware framebuffer implies: our console
+window is 1080x480 (the 2 MiB 480-row hand-off), while the panel is 1440x3168, and FBSDisplayMode refuses the
+values it is handed.  The next step is to make the published display report a valid mode - real panel geometry,
+scale and refresh - instead of the kernel console's 480-row window.
