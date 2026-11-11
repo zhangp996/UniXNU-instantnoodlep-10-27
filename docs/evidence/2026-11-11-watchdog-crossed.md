@@ -1005,3 +1005,39 @@ SpringBoard's trap carries **no** `reason_string` (the `XNU-EXITREASON` line nev
 real trap instruction rather than `abort_with_payload`, i.e. a Swift runtime trap or a deliberate
 `brk`.  The next measurement is the faulting user PC: hook the exception delivery for
 `EXC_BREAKPOINT` on these two processes and symbolise the address against the shared cache.
+
+
+## 17:10: the trap PCs, and which process owns each one
+
+`zzz-trap-pc.patch` prints `pc`, `lr`, `esr` and tid from `handle_breakpoint()` (the `ESR_EC_BRK_AARCH64`
+path - a first attempt in `handle_uncategorized` never fired, which is itself the answer to how a Swift
+trap arrives).  The capture gives one trap per dying process:
+
+```
+XNU-TRAP: pc=0x100050b0c lr=0x100050b0c esr=0xf2000001 tid=350
+XNU-EXIT: watchdogd pid=52 code=5 ns=2 sub=0x5
+XNU-TRAP: pc=0x100a99b0c lr=0x100a99b0c esr=0xf2000001 tid=407
+XNU-EXIT: watchdogd pid=93 code=5 ns=2 sub=0x5
+XNU-TRAP: pc=0x1d2dea4f8 lr=0x1d2dea4cc esr=0xf2000001 tid=502
+XNU-EXIT: liveactivitiesd pid=102 code=5
+XNU-TRAP: pc=0x1b08d32ec lr=0x1b08d32ec esr=0xf2000000 tid=257
+XNU-EXIT: SpringBoard pid=27 code=5
+```
+
+Decoding the ESR: EC = 0x3C is `brk` on AArch64, so `esr=0xf2000001` is `brk #1` (the Swift runtime's
+`fatalError`/trap) and `esr=0xf2000000` is `brk #0` (a plain `__builtin_trap`).  The addresses split
+the three failures apart:
+
+```
+watchdogd        0x100050b0c, 0x100a99b0c   its own code, +0x50b0c   brk #1
+liveactivitiesd  0x1d2dea4f8                a shared-cache library  brk #1
+SpringBoard      0x1b08d32ec                another cache library   brk #0
+```
+
+So the replace-the-backend approach works well enough that the real `watchdogd` runs and then traps in
+its own code, while SpringBoard and liveactivitiesd trap *inside* shared-cache libraries rather than
+in their own text - which points at a runtime precondition (Swift or a Foundation/libdispatch
+assertion) rather than a missing symbol in the app itself.
+
+Next: map `0x1b08d32ec` and `0x1d2dea4f8` to images.  The cache layout is fixed and only slid once per
+boot, so the offset from the cache base names the library and the offset inside it.
