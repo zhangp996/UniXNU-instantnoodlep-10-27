@@ -29,6 +29,7 @@ extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
 static void publish_display(void);
+static void publish_thread(void *, wait_result_t);
 
 /* --- functional entries ------------------------------------------------- */
 
@@ -99,13 +100,17 @@ native_legacy_display_probe(void)
 		}
 	}
 	if (display->init()) {
+		thread_t thread = nullptr;
+		if (kernel_thread_start(publish_thread, nullptr, &thread) == KERN_SUCCESS) {
+			thread_deallocate(thread);
+		}
 		unsigned phase = 0;
 		PE_parse_boot_argn("offline-legacy-phase", &phase, sizeof(phase));
 		printf("DISPLAY: init ok phase=%u\n", phase);
-		/* The kernel's offline-mobile-graphics-load probe has already loaded the family; publish
-		 * inline now that the object exists. */
+		/* The kernel's offline-mobile-graphics-load probe calls this entry from bsd_init, right after
+		 * vfsinit; publishing here would block the boot thread (the IOSurface match waits), which the
+		 * storage root cannot afford.  Hand the publication to a kernel thread instead. */
 		pendingDisplay = display;
-		publish_display();
 	} else {
 		printf("DISPLAY: init failed\n");
 		display->release();
@@ -169,6 +174,13 @@ publish_display(void)
 	}
 	if (memory) memory->release();
 	if (ranges) ranges->release();
+}
+
+static void
+publish_thread(void *, wait_result_t)
+{
+	IOSleep(2000);
+	publish_display();
 }
 
 extern "C" void

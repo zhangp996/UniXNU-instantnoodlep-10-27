@@ -1010,3 +1010,45 @@ it removes our hand-rolled load, puts the probe on the documented timing, and sh
 selector-90 call reaches the default-surface code.
 
 The phone is powered down (no `fastboot` entry, no `COM14`), so the image cannot be booted until it is started.
+
+## 23:45: the official load flow works and lands on the same wall
+
+The image with the threaded publication (sha `e44f8753...`) boots through the storage root and the display chain:
+
+```
+DISPLAY: probe entered (registered=0)
+DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=1 mobilefb=1
+DISPLAY: registered family meta=0xfffffff006b35940 name=IOMobileFramebufferLegacy size=0x18a0
+DISPLAY: init ok phase=4
+DISPLAY: late probe (load handled by offline-mobile-graphics-load)
+DISPLAY: IOSurface kext rc=0x0
+DISPLAY: IOSurface root found=1
+DISPLAY: nub 0xfffffff38273c7e0 attach=1 start=1 mem=0x9c000001+0x1fa400
+DISPLAY: dt attach=1
+DISPLAY: chosen display-scale=2 rotation=0 ok=1
+DISPLAY: display attach=1 start=1
+```
+
+and the console also shows `IOMFB: driver commit:`, so the family and the compositor are talking.
+
+**Regression that this build fixed:** the first official-flow attempt published inline from `bsd_init` and the
+storage root died with `NativeUfs.cpp:2073` / "UFS ROOT FAILURE: SystemOS signed volume not found" (`mount timeout,
+window busy 1`).  The publication now runs in a kernel thread two seconds later, which removes the block from the
+boot thread; the UFS root comes up and the display chain follows.
+
+**The wall is unchanged:** two minutes in,
+
+```
+AFB: default surface: No Default FB Surface found. Return error
+IOMFB: swap_wait_gated: CommandMake didn't happen even after 5 seconds. Seems system in bad state, cancelling swaps
+DISPLAY: unimplemented legacy slot 345 (object=0xfffffff54f1cd000 caller=0xfffffff00578c1cc), returning
+panic: Kernel data abort at pc 0xfffffff00be80944 (OSMetaClass::~OSMetaClass + 0x1c),
+       lr 0xfffffff00bfe4684 (NativeLegacyDisplay::MetaClass::~MetaClass), far 0x0
+```
+
+Also seen in this boot: `Maximum number of VM swap files: 5`, `Failed to open swap file 30`,
+`vm_swap_create_file failed @ 115 secs` - the Data volume cannot host the dynamic swap file, separate from the
+display work.
+
+So the ordering and the load path are now the documented ones, and everything that is left is the default-surface
+adapter: create the BGRA IOSurface through the original IOSurfaceRoot factory and hand it to the family field.
