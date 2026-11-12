@@ -79,6 +79,8 @@ extern "C" char boot_process_rows[10][120];
 /* The rows are only refreshed by this call, which the diagnostic page makes; the page is not rendered on
  * this port, so the printer performs the snapshot itself. */
 extern "C" void boot_process_snapshot(void);
+/* The ui-trace rows are written by this snapshot call, which the diagnostic page makes. */
+extern "C" void boot_ui_trace_snapshot(unsigned seconds);
 extern "C" char boot_ui_trace_rows[14][120];
 
 static void
@@ -88,6 +90,10 @@ probe_rows_thread(void *, wait_result_t)
 	for (;;) {
 		delay(4000000);
 		boot_process_snapshot();
+		{
+			static unsigned tick;
+			boot_ui_trace_snapshot(tick += 4);
+		}
 		for (unsigned i = 0; i < 10; i++) {
 			const char *row = boot_process_rows[i];
 			if (!row[0] || row[0] == ' ') continue;
@@ -738,20 +744,7 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 			memcpy(&sdesc, (unsigned char *)surface + 0x30, 8);
 			memcpy(&sregion, (unsigned char *)surface + 0x28, 8);
 		}
-		/* The family frees its own temporary default surface inside surface_complete, which ends presentation
-		 * after the first completions.  Point the display's default surface at the client's own surface instead,
-		 * retaining it so the completion cannot free what is on screen. */
-		if (gDisplay && surface) {
-			void *incoming = (void *)(uintptr_t)surface;
-			((OSObject *)incoming)->retain();
-			static void *previousDefault;
-			if (previousDefault != incoming) {
-				memcpy((unsigned char *)gDisplay + 0x1618, &incoming, sizeof(incoming));
-				previousDefault = incoming;
-				printf("DISPLAY: default surface follows the client %p\n", incoming);
-			}
-		}
-		printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
+printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
 		    accepted ? 1 : 0, reason, request, surface,
 		    (unsigned long long)surfaces[0], (unsigned long long)surfaces[1],
 		    (unsigned long long)surfaces[2], (unsigned long long)surfaces[3]);

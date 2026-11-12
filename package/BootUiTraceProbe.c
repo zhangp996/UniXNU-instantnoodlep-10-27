@@ -343,6 +343,9 @@ void boot_ui_trace_snapshot(unsigned seconds) {
   page+1,pages,!strcmp(published_names[0],"chronod")?'C':(!strcmp(published_names[0],"liveactivitiesd")?'L':'B'),published_pid[0],published_slide[0],published_pid[1],published_slide[1],published_pid[2],published_pid[3],
   published.threads,published.count,published_busy,published_omitted,published.read_failures,
   page>=groups_pages?"MAIN32":"PC/LR/FP8; last=MAIN32");
+ { static unsigned diag; if (diag++ < 6) printf("UITRACE diag: threads=%u groups=%u busy=%u omitted=%u read_failures=%u pid0=%u pid1=%u\n",
+     published.threads, published.count, published_busy, published_omitted, published.read_failures,
+     published_pid[0], published_pid[1]); }
  boot_ui_trace_ready=published.threads!=0;boot_ui_trace_groups=published.count;
  boot_ui_trace_threads=published.threads;boot_ui_trace_pages=pages;
  __atomic_store_n(&trace_lock,0,__ATOMIC_RELEASE);

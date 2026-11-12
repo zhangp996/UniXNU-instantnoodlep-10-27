@@ -127,6 +127,8 @@ void boot_process_capture(void) {
  }
  for(unsigned i=0;i<10;++i)snprintf(capture_rows[i],120,"%.17s: absent from this process pass",targets[i]);
  capture_seen=0;
+ { static unsigned d; if (d++ < 3) printf("CAPTURE diag: begin=%d task=%d publish=%d\n",
+     boot_ui_trace_begin ? 1 : 0, boot_ui_trace_task ? 1 : 0, boot_ui_trace_publish ? 1 : 0); }
  if(boot_ui_trace_begin)boot_ui_trace_begin();
  // No waiting for exec/exit transitions; callouts run outside proc_list_lock.
  proc_iterate(PROC_ALLPROCLIST|PROC_NOWAITTRANS,capture,NULL,selected,NULL);

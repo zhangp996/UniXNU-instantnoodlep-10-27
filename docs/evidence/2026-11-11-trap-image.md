@@ -4027,3 +4027,24 @@ falling 7 -> 4 -> 3).  The client therefore gets no completion/vblank that would
 | Setup | skipped by kernel-written preferences |
 | presentation | 1-3 client frames land on the panel, then stop |
 | next question | which completion/vblank the client waits for |
+## 16:40: the user-space stacks work - SpringBoard's wait chain is decoded
+
+The two snapshot calls the diagnostic page used to make are now made by the probe's printer, and the stacks appear:
+
+    UIT rows: 75, PROC rows: 94, frames: 3, panic: 0
+
+Decoded with the documented tool (`scripts/decode-boot-ui-trace.py`):
+
+    MAIN S p27 image=1abf89000 PC=1cfcb0b58 LR=1cfcb4224
+    trap=ffffffffffffffd1 opt=40700420e remote=6f03 recv=1d03 msgid=0 peer=99 e5
+    frames: 0x1cfcb41b0 0x1cfcb3fb8 0x193ab9538 ...
+
+`trap = UINT64_MAX-46` is the Mach trap marker, so **SpringBoard's main thread is blocked in `mach_msg_trap`**, waiting
+for a message on the port it received from peer pid 99.  That is the wait chain the display page asks for, and it
+finally explains 'running but not presenting': the process is waiting on an event, not on the display.
+
+### Why the rows were empty before
+
+Both the process rows and the ui-trace rows are only refreshed by snapshot functions that the diagnostic page calls
+(`boot_process_snapshot`, `boot_ui_trace_snapshot`).  The page is not rendered on this port, so both arrays stayed zero
+even though the capture workers ran - the workers themselves were fine (`CAPTURE diag: begin=1 task=1 publish=1`).
