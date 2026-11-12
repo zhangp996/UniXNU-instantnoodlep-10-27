@@ -3969,3 +3969,35 @@ no panic.  Two consequences follow from the document:
    which is why the hand-adopted temporary surface is freed by `surface_complete`;
 2. the next step is not more frame work but **capturing the display-server and SpringBoard wait chains**: backboardd and
    SpringBoard never appear in the log, so what they wait on is the question.
+## 16:20: session summary - the port is at the reference's own display milestone
+
+### Reached today, in order
+
+1. the display component is built by the build itself and **qualified** (`build-gop-legacy-display.py` as an archive
+   step: ABI audit against this board's prelinked candidate - 358 slots, nine abstract leaves, vtable check, archive and
+   source hashes in `build-report.json`);
+2. the class registers the embedded way (`__DATA,__mod_init_func` run by the kernel, no `preModLoad`/`postModLoad`);
+   every `OSMetaClass` panic of the afternoon is gone;
+3. the display **starts** - `attach=1 start=1` - once the nub's device memory is exactly `vBytes = rowBytes*height`;
+4. the kernel reaches userland; launchd runs its boot tasks to 'Early boot complete';
+5. **Setup is skipped** by writing the three preference plists the docs list (`com.apple.purplebuddy`,
+   `com.apple.springboard`, `com.apple.migration`) from the kernel;
+6. a userland client swaps through the display and **frames are copied to the panel**: `frame 1, 2, 3`;
+7. two build traps were found and turned into patches: hand edits in `tree/.cache/xnu-work` are erased by a tree
+   rebuild (`IO_MAP_SIZE` fell back to 8 MiB and silently hung the console), and the corpse cap fell back to 4.
+
+### Where that leaves it
+
+The official display page records the reference at exactly this point: **three swaps, no panic, a stationary image**, with
+home-screen startup unverified and the next step named as *capturing the display-server and SpringBoard wait chains*.
+backboardd and SpringBoard never appear in this port's log, so the question is what they wait on, not whether frames
+reach the panel.
+
+### Open items, in the order the docs suggest
+
+1. supply the default surface through the original IOSurfaceRoot factory (the hand-adopted temporary surface is freed by
+   `surface_complete`);
+2. capture the backboardd/SpringBoard wait chain - `boot-ui-trace=1` is on, but the PROC/UIT rows still come out empty,
+   so the worker itself needs checking;
+3. give the App cryptex its own bind once the SystemOS mount is located (SpringBoard's binary does not need it, the
+   App-cryptex daemons do).
