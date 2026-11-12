@@ -3668,3 +3668,29 @@ Changes that made it work, all mechanical:
 * the script writes `build-report.json` (archive and source hashes) which the kernel gate checks.
 
 Image built from that kernel: `fb8b6a4bed0c352f86deaed5de45ebfeee885218664e4d17e1f75035eea55203`.
+
+## 13:40: with the qualified archive the fault is unchanged - it is the registration order
+
+The doc-qualified build boots to the same instruction:
+
+    DISPLAY: probe entered (registered=0)
+    DISPLAY: preModLoad(__kernel__)=0xfffffff4549dabc0
+    panic(cpu 0 caller 0xfffffff00c01c94c): Kernel data abort. at pc 0xfffffff00be850bc, lr 0xfffffff00be84ee8
+
+`0xbe850bc` is `OSMetaClass::postModLoad + 0x448` again.  The archive is now built and qualified by the build itself, so
+the archive contents are not the variable any more: what faults is the registration step.
+
+### Why postModLoad can fault here
+
+`postModLoad` walks every metaclass registered inside the `preModLoad`..`postModLoad` window and finalises it, which
+requires each class's superclass to be resolvable.  The display class's superclass is `IOMobileFramebuffer`, which lives
+in the **prelinked** IOMobileGraphicsFamily; if that family's classes have not been registered yet at the moment the
+probe runs, the walk meets a superclass that cannot be resolved.
+
+That is an ordering question, not a build question: the reference port runs its probe after the prelinked components
+are initialised.  This port runs it at `offline-legacy-start`, which is early enough that the family may not be up.
+
+### Next step
+
+Move the display registration to the first point where the prelinked mobile-graphics family is registered (or call its
+initialiser explicitly before `preModLoad`), keeping the qualified archive exactly as it is now.
