@@ -76,6 +76,9 @@ complete_swap_later(void)
 /* PROBE-ROWS: mirror the diagnostic page's process and ui-trace rows to the serial console. The page
  * renderer is not reached on this port, so the probe starts its own printer. */
 extern "C" char boot_process_rows[10][120];
+/* The rows are only refreshed by this call, which the diagnostic page makes; the page is not rendered on
+ * this port, so the printer performs the snapshot itself. */
+extern "C" void boot_process_snapshot(void);
 extern "C" char boot_ui_trace_rows[14][120];
 
 static void
@@ -84,6 +87,7 @@ probe_rows_thread(void *, wait_result_t)
 	static char lastp[10][120], lastu[14][120];
 	for (;;) {
 		delay(4000000);
+		boot_process_snapshot();
 		for (unsigned i = 0; i < 10; i++) {
 			const char *row = boot_process_rows[i];
 			if (!row[0] || row[0] == ' ') continue;
@@ -733,6 +737,19 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 			memcpy(&salloc, (unsigned char *)surface + 0x90, 8);
 			memcpy(&sdesc, (unsigned char *)surface + 0x30, 8);
 			memcpy(&sregion, (unsigned char *)surface + 0x28, 8);
+		}
+		/* The family frees its own temporary default surface inside surface_complete, which ends presentation
+		 * after the first completions.  Point the display's default surface at the client's own surface instead,
+		 * retaining it so the completion cannot free what is on screen. */
+		if (gDisplay && surface) {
+			void *incoming = (void *)(uintptr_t)surface;
+			((OSObject *)incoming)->retain();
+			static void *previousDefault;
+			if (previousDefault != incoming) {
+				memcpy((unsigned char *)gDisplay + 0x1618, &incoming, sizeof(incoming));
+				previousDefault = incoming;
+				printf("DISPLAY: default surface follows the client %p\n", incoming);
+			}
 		}
 		printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
 		    accepted ? 1 : 0, reason, request, surface,
