@@ -3953,3 +3953,19 @@ adopted surface inside `surface_complete`, i.e. the adoption is undone by the ve
    cannot free the surface that is in use;
 2. find why the client stops after three swaps - it is the first userland client of this display, and its identity is
    the next thing the log should record.
+## 16:10: the official display page describes this exact state
+
+`docs/porting/display.md` records the reference's own result:
+
+> The 24A446 adapter supplies the default surface through the original IOSurfaceRoot factory and validates its backing
+> memory and geometry before transferring ownership to the display family. ... A captured 300-second boot completed
+> **three swaps** without a kernel panic and displayed the Apple logo. Home-screen startup remains unverified; capture the
+> display-server and SpringBoard wait chains before treating a stationary logo as a framebuffer transfer failure.
+
+So this port is at the reference's own milestone: three real client swaps, frames copied to the panel, a stationary image,
+no panic.  Two consequences follow from the document:
+
+1. the default surface must come from the original IOSurfaceRoot factory before ownership moves to the display family -
+   which is why the hand-adopted temporary surface is freed by `surface_complete`;
+2. the next step is not more frame work but **capturing the display-server and SpringBoard wait chains**: backboardd and
+   SpringBoard never appear in the log, so what they wait on is the question.
