@@ -3795,3 +3795,40 @@ So the display path no longer blocks the boot: the run reaches the userland entr
 * the OS volume `disk3s1` mounts but its root snapshot needs an authenticator (the verified-root / owner-root path);
 * the VM swap file cannot be created (94 s), and
 * a data abort inside `___doprnt` follows, i.e. a printf whose argument is not what its format expects.
+## 17:00: the boot reaches userland; SpringBoard never starts because the App cryptex is absent
+
+With the IO map restored to 32 MiB the kernel prints again and the boot runs all the way into userland:
+
+    Darwin Kernel Version 23.6.0: Thu Nov 12 13:44:30 CST 2026
+    DISPLAY: embedded class NativeLegacyDisplay meta=... size=0x1ae0
+    DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=1 mobilefb=1
+    DISPLAY: display attach=1 start=1
+    ...
+    XNU-EXIT: fairplayd.A2 pid=239 code=0 ...
+    XNU-EXIT: bluetoothd pid=238 code=0 ...
+
+launchd itself reports why the graphical stack is missing:
+
+    launchd <Error>: Missing executable detected. Job: 'com.apple.WebBookmarks.webbookmarksd'
+        Executable: '/System/Cryptexes/App/usr/libexec/webbookmarksd'
+
+The OS cryptex (`SystemCryptex`, disk1s1) mounts, but **the App cryptex does not**, so every daemon whose binary lives
+under `/System/Cryptexes/App` is missing - and `spring` appears zero times in the log: SpringBoard is never even
+launched.
+
+The kernel already has a cryptex binder for the OS volume (`native_cryptex_os_bind` in `kern_exec.c`, binding
+`/System` and `/usr` over `/private/preboot/Cryptexes/OS`); what it lacks is the same for the **App** volume, and the
+App cryptex content itself is not in this workspace (no IPSW extract, no App image).
+
+### State of the port at the end of this session
+
+| layer | state |
+| --- | --- |
+| display component | built and qualified by the build (358 slots, vtable, hashes) |
+| class registration | embedded self-registration; `postModLoad` removed |
+| display start | `attach=1 start=1` once the nub length equals `rowBytes*height` |
+| kernel -> userland | reaches launchd and runs daemons |
+| SpringBoard | not launched: App cryptex missing |
+
+Two build traps were fixed and turned into patches: hand edits inside `tree/.cache/xnu-work` are erased by a tree
+rebuild (`IO_MAP_SIZE` fell back to 8 MiB, which silently hung the console, and `TOTAL_CORPSES_ALLOWED` to 4).
