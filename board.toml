@@ -20,7 +20,7 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
 archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
             "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
             "build-software-aes-bindings.py", "build-mockfs-fixture.py", "build-libpthread-kernel.py",
-            "component:ShengUfs", "build-verified-block-bridge.py", "component:RamBlock", "component:GopFramebuffer",
+            "component:ShengUfs", "build-verified-block-bridge.py", "component:RamBlock", "component:GopFramebuffer", "build-gop-legacy-display.py",
             "component:VirtioMmioBlock", "component:VerifiedRoot", "component:QcomXnuUsbDebug", "build-boot-progress.py", "build-ram-watchdog.py"]
 defconfig = "instantnoodlep_defconfig"
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]

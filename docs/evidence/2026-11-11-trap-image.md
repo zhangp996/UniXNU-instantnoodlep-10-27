@@ -3645,3 +3645,26 @@ Extend the qualifier to also assemble the archive it is responsible for - the qu
 board probe (and the bindings object that the builder emits) - and register `qualify-gop-legacy-display.py` in
 `[kernel] archives`.  Then the build produces the qualified `libNativeLegacyDisplay.late.a` itself and the
 `test -f` passes.
+## 13:30: the display archive is now produced by the build and qualified
+
+`build-gop-legacy-display.py` is registered in `[kernel] archives`, lives in the device repository, and runs with this
+toolchain; the build log now shows, for every kernel build:
+
+    PASS: original Legacy has 358 slots with nine abstract leaves; original generic client/start/dispatch entries identified
+    NativeLegacyDisplay: -Werror build and arm64-apple-ios17.0 object audit passed
+    PASS: qualified late display archive produced: build/native-legacy-display/libNativeLegacyDisplay.late.a
+    build-report.json written
+
+and the kernel gate that used to fail (`test -f "$LEGACY_DISPLAY_ARCHIVE"`, then the archive/source hash comparison)
+passes: `KERNEL BUILD EXIT: 0`, prelink produced, kernel sha256 `c4168172...`.
+
+Changes that made it work, all mechanical:
+
+* slot 345 declared in the generated header (`isTimingEnabled`), removed from `NATIVE_LEGACY_LEAVES`;
+* `-Wno-missing-designated-field-initializers` in the framework's `build-arm-driver.py`;
+* `llvm-objcopy --globalize-symbol` replaced by `scripts/globalize-static-init.py` (Mach-O nlist patch);
+* probe compiles from `kits/instantnoodlep/LegacyDisplayProbe.cpp` with the board's flags;
+* the companion components (HID, keystore, process, trace, log, reset) are absent from this board and dropped;
+* the script writes `build-report.json` (archive and source hashes) which the kernel gate checks.
+
+Image built from that kernel: `fb8b6a4bed0c352f86deaed5de45ebfeee885218664e4d17e1f75035eea55203`.
