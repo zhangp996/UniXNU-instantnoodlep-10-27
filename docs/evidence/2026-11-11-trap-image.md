@@ -3930,3 +3930,26 @@ options are:
 1. run the documented step on a Mac (`./unixnu build payload --skip-setup ...`), or
 2. write the same three preference plists from the kernel right after the volatile Data mount - the port already does
    this for `disabled.plist`, so the writer exists and only needs the Setup-skip payloads.
+## 15:55: real client frames are presented; the adopted surface is freed on the first completion
+
+With `offline-legacy-adopt=1` the probe adopts the family's temporary surface:
+
+    DISPLAY: adopted default surface 0xfffffff43c0e4e88 sid=1 region=... descriptor=...
+
+and a userland client then swaps through the display:
+
+    DISPLAY: swap accepted=1 reason=0 request=0xfffffff3561d1000 surface=0xfffffff43c0e0b98
+    DISPLAY: present copied 2376 rows x 4320 bytes (frame 1)
+    DISPLAY: swap stage 1
+    IOMFB: surface_complete : Freeing up Default Temp surface - Surface = 0x...43c0e4e88
+    DISPLAY: present copied ... (frame 2, frame 3)
+
+so the compositor's frames reach the panel - three of them - and then the client stops asking.  The family frees the
+adopted surface inside `surface_complete`, i.e. the adoption is undone by the very completion path that follows it.
+
+### Two things to fix, both local to the swap path
+
+1. make the default surface follow the client's incoming surface instead of the family's temporary one, so completion
+   cannot free the surface that is in use;
+2. find why the client stops after three swaps - it is the first userland client of this display, and its identity is
+   the next thing the log should record.

@@ -804,3 +804,70 @@ extern "C" int native_gpu_trace_enabled(void) { return 0; }
 extern "C" void native_gpu_trace_record(uint32_t, uint32_t, const uint64_t *, uint32_t) {}
 extern "C" bool native_adreno_fences(uint32_t *, uint32_t *) { return false; }
 extern "C" bool native_adreno_fences_detail(uint32_t *, uint32_t *, uint32_t *) { return false; }
+
+/* The Setup-skip preferences from docs/zh/guide/skip-setup.md. A fresh Data seed otherwise boots into Setup,
+ * the state in which launchd never starts SpringBoard; the documented tool needs macOS to write them, so they
+ * are written here at the same point the watchdog override runs. */
+#include <sys/fcntl.h>
+#include <sys/uio.h>
+#include <sys/vnode.h>
+#include <sys/vnode_if.h>
+#include <sys/mount.h>
+
+static int
+native_write_preference(const char *path, const char *body, size_t length)
+{
+	vfs_context_t ctx = vfs_context_current();
+	vnode_t vp = NULLVP;
+	int error = vnode_open(path, FWRITE | O_CREAT | O_TRUNC, 0644, 0, &vp, ctx);
+	if (error) {
+		return error;
+	}
+	error = vn_rdwr(UIO_WRITE, vp, (caddr_t)(uintptr_t)body, (int)length, 0, UIO_SYSSPACE, IO_NODELOCKED,
+	    vfs_context_ucred(ctx), NULL, current_proc());
+	if (!error) {
+		(void)VNOP_FSYNC(vp, MNT_WAIT, ctx);
+	}
+	(void)vnode_close(vp, FWRITE, ctx);
+	return error;
+}
+
+extern "C" int
+native_owner_setup_skip(void)
+{
+	static const char purple[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>SetupDone</key><true/><key>SetupFinishedAllSteps</key><true/>"
+	    "<key>SetupVersion</key><integer>11</integer><key>daemonizeNeedsToRun</key><false/>"
+	    "</dict></plist>\n";
+	static const char springboard[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>BKNoWatchdogs</key><true/><key>MCForceShowCloudConfigurationUI</key><false/>"
+	    "<key>SBDisableAutoDim</key><true/><key>SBDontDimOrLockOnAC</key><true/><key>SBDisableIdleSleep</key><true/>"
+	    "<key>FBLaunchWatchdogExceptions</key><dict><key>com.apple.purplebuddy</key><integer>100</integer></dict>"
+	    "</dict></plist>\n";
+	static const char migration[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict><key>LastSystemVersion</key><string>21H461</string></dict></plist>\n";
+	const char *const dir = "/private/var/mobile/Library/Preferences";
+	vfs_context_t ctx = vfs_context_current();
+	vnode_t dvp = NULLVP;
+	int dir_error = vnode_lookup(dir, 0, &dvp, ctx);
+	if (!dir_error) {
+		vnode_put(dvp);
+	}
+	int purple_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.purplebuddy.plist",
+	    purple, sizeof(purple) - 1);
+	int spring_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.springboard.plist",
+	    springboard, sizeof(springboard) - 1);
+	int migration_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.migration.plist",
+	    migration, sizeof(migration) - 1);
+	printf("DISPLAY: setup-skip dir=%d purplebuddy=%d springboard=%d migration=%d\n",
+	    dir_error, purple_error, spring_error, migration_error);
+	return (purple_error || spring_error || migration_error) ? 1 : 0;
+}
