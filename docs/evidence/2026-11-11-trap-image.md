@@ -4048,3 +4048,30 @@ finally explains 'running but not presenting': the process is waiting on an even
 Both the process rows and the ui-trace rows are only refreshed by snapshot functions that the diagnostic page calls
 (`boot_process_snapshot`, `boot_ui_trace_snapshot`).  The page is not rendered on this port, so both arrays stayed zero
 even though the capture workers ran - the workers themselves were fine (`CAPTURE diag: begin=1 task=1 publish=1`).
+
+## 17:05: repository comparison and the container skeleton lsd needs
+
+Comparing `UniXNU/UniXNU` (2047 files, the framework) with `UniXNU/UniXNU-sheng` (495 files, a device repository)
+shows they share only ten files, so they are not comparable directly.  The relevant find is
+`patches/xnu-12377/sheng-wifi-launchd-cache.patch`, which mounts two overlays before the cryptex and LaunchServices
+setup:
+
+    /private/var/ngpu/xpc      -> /System/Library/xpc      (launchd.plist, foreground_user_endpoints.plist)
+    /private/var/ngpu/wifi-bin -> /usr/libexec             (launchd_cache_loader and the service binaries)
+
+i.e. sheng supplies the precompiled launchd job dictionary explicitly, and the docs' sm-t970 record names the same wall:
+SpringBoard waits on LaunchServices while lsd waits on **database seeding**.
+
+Layout probes on this board now say:
+
+    /System/Library/xpc                              = 0   (present)
+    /System/Library/xpc/launchd.plist                = 0
+    /System/Library/xpc/foreground_user_endpoints.plist = 0
+    /usr/libexec/launchd_cache_loader                = 0
+    /private/var/db/launchservices                   = 2   (missing)
+    /private/var/mobile/Containers/Data/InternalDaemon/5C583048-.../Library/Caches = 2 (missing)
+    /private/var/mobile/Containers/Shared/SystemGroup = 2  (missing)
+
+so the launchd side is present but **the container skeleton is not**: the directories `docs/zh/guide/skip-setup.md`
+has its tool create (`/private/var/containers/{Bundle,Data/System,Shared/SystemGroup,Temp}`) were never made, and
+lsd's own store directory is absent.  That is the concrete gap behind 'lsd waits in filt_wlwait_continue'.
