@@ -3496,3 +3496,30 @@ The original-family approach is not failing on display protocol details; it is f
 registered through a fake module.  A class defined **inside the kernel** (the way HakiOS's Mini stand-in and the
 framework's own `NativeMobileDisplay` are built) has proper metaclass metadata and does not need preModLoad/postModLoad
 at all.
+## 12:15: with the real static initialiser, the panic moved into postModLoad
+
+The doc-aligned registration (preModLoad -> the component's real `__GLOBAL__sub_I_NativeLegacyDisplay.cpp` ->
+postModLoad) builds and links, but the device panics in the same place as before:
+
+    DISPLAY: probe entered (registered=0)
+    DISPLAY: preModLoad(__kernel__)=0xfffffffacab9daa0
+    panic(cpu 0 caller 0xfffffff00c01c94c): Kernel data abort. at pc 0xfffffff00be850bc, lr 0xfffffff00be84ee8
+
+`0xbe850bc` is `OSMetaClass::postModLoad + 0x448` and the return address `0xbe84ee8` is `postModLoad + 0x274`, so the
+fault is inside postModLoad itself, not in the component's initialiser (which now really runs).
+
+### What the document asks for that this port still lacks
+
+`docs/porting/display.md` requires the device's `scripts/build-gop-legacy-display.py` to *qualify ABI methods against a
+prelinked candidate* before producing the late archive, and to supply the matching candidate and audit inputs.  This
+port has the audit (`build/display-analysis/mobile-graphics-legacy-abi.json`) but never supplies the prelinked
+candidate: the display class's superclass (`IOMobileFramebuffer`) lives in the prelinked mobile-graphics family, and
+if that family's metaclasses are not registered when postModLoad walks the pending class list, the walk meets a
+dangling superclass and faults.
+
+### Next step (document order)
+
+1. Load the prelinked mobile-graphics family before the display registers (the probe already has
+   `OSKextLoadKextWithIdentifier`; it must run and succeed first),
+2. then preModLoad -> static init -> postModLoad,
+3. and only then attach/start the display.
