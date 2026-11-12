@@ -353,9 +353,9 @@ jobs:
           echo "trust cache: $TRUST"
           echo "Data seed: $DATA"
           if [ -n "$TRUST" ]; then
-            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" --data-ramdisk "$DATA" 2>&1 | tee "$RUNNER_TEMP/payload.log"
+            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --trust-cache "$TRUST" --data-ramdisk "$DATA" --skip-setup 2>&1 | tee "$RUNNER_TEMP/payload.log"
           else
-            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" 2>&1 | tee "$RUNNER_TEMP/payload.log"
+            ./unixnu build payload -D "$DEVICE_DIR" --unique-chip-id "${{ inputs.unique_chip_id }}" --skip-setup 2>&1 | tee "$RUNNER_TEMP/payload.log"
           fi
 
       - name: Collect the tree logs
