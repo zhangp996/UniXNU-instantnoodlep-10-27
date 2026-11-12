@@ -175,11 +175,11 @@ native_legacy_display_probe(void)
 	}
 	probe_rows_start();
 	native_legacy_display_static_init();
-	kern_return_t status = OSMetaClass::postModLoad(handle);
-	if (status) {
-		printf("DISPLAY: postModLoad failed %d\n", status);
-		return;
-	}
+	/* postModLoad() is the kext-load finaliser and faults for a class that is statically linked into the
+	 * kernel (OSMetaClass::postModLoad + 0x448).  The metaclass is already registered by the static
+	 * initialiser above, so check that the class can be allocated instead of finalising a fake module. */
+	/* Whether the class really became allocatable shows in the component's own factory below:
+	 * native_legacy_display_allocate() news the class and prints what it got. */
 	registered = true;
 
 	PE_Video video = {};

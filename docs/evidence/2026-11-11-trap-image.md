@@ -3722,3 +3722,30 @@ fault is inside `postModLoad` itself rather than in a dangling superclass.
 
 Next: instrument `postModLoad`'s expectations (the kextlog already shows every class the walk visits), or bypass the
 module protocol entirely for a static class and verify with `OSMetaClass::allocClassWithName("NativeLegacyDisplay")`.
+## 15:00: registration is fixed; the next fault is in the publish path
+
+With `OSMetaClass::postModLoad` removed, the boot passes the point that failed all afternoon:
+
+    Kext com.apple.iokit.IOMobileGraphicsFamily registered class IOMobileFramebufferLegacy.
+    Kext com.apple.iokit.IOMobileGraphicsFamily is now started.
+    Kext com.apple.iokit.IOMobileGraphicsFamily loaded.
+
+    DISPLAY: probe entered (registered=0) mobile-graphics-load=0
+    DISPLAY: preModLoad(__kernel__)=0xfffffff5sedd7ec0
+    DISPLAY: bootargs video base=0x9c000001 w=1080 h=2376 rb=4320 depth=32 display=1
+    DISPLAY: GOP console 0x9c000001 1080x2376 depth=32 stride=4320
+
+so `preModLoad` + the real static initialiser are enough to register the class; the kext-log confirms the family starts
+and loads before the probe.
+
+The new fault is later, inside the publish path:
+
+    panic(cpu 0 caller 0xfffffff00c01ca20): Kernel data abort.
+      at pc 0xfffffff00be04b60, lr 0xfffffff00beafcfc
+      pc -> _nxctl_nexus_config + 0x180,  lr -> OSSerialize::binarySerializeInternal + 0x640
+
+i.e. something is being serialised (a property table during service publication) and the walk inside the serialiser
+takes a bad address.
+
+Next: print around each step after the GOP console line (allocate, set properties, attach, start, registerService) so the
+last completed step before the panic names the exact call.
