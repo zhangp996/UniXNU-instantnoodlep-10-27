@@ -4001,3 +4001,29 @@ reach the panel.
    so the worker itself needs checking;
 3. give the App cryptex its own bind once the SystemOS mount is located (SpringBoard's binary does not need it, the
    App-cryptex daemons do).
+## 16:15: SpringBoard and backboardd are alive; presentation stops after a few frames
+
+The process rows (now printed because the printer takes the snapshot the diagnostic page used to take) show the
+graphical stack running on every boot:
+
+    PROC[0] launchd     p1   n12 r11 w1
+    PROC[1] backboardd  p57  n15 r6  w9
+    PROC[2] SpringBoard p27  n8  r6  w2
+
+Their wait points symbolise to ordinary places - `ipc_mqueue_receive_continue` for SpringBoard, `semaphore_wait_continue`
+for backboardd - so neither is deadlocked; they are waiting for events.
+
+Presentation however stops quickly: three client swaps (`frame 1..3`) with the default-surface follow in place, and only
+one with the delayed slot-312 completion enabled (`offline-legacy-complete=1`, which also shows SpringBoard's thread count
+falling 7 -> 4 -> 3).  The client therefore gets no completion/vblank that would let it present again.
+
+### State at the end of this session
+
+| layer | state |
+| --- | --- |
+| display component | built and qualified by the build |
+| class registration / start | embedded registration, `attach=1 start=1` |
+| userland | launchd, backboardd and SpringBoard all running |
+| Setup | skipped by kernel-written preferences |
+| presentation | 1-3 client frames land on the panel, then stop |
+| next question | which completion/vblank the client waits for |
