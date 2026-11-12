@@ -531,6 +531,13 @@ publish_display(void)
 				}
 				((OSObject *)temp)->retain();
 				memcpy((unsigned char *)display + 0x1618, &temp, sizeof(temp));
+				/* Clear the family's temporary slot as well: surface_complete frees whatever it finds
+				 * there, and that free is what ended presentation after the first few swaps. */
+				{
+					void *none = nullptr;
+					memcpy((unsigned char *)display + 0x1620, &none, sizeof(none));
+				}
+				printf("DISPLAY: clear the family's temporary slot\n");
 				printf("DISPLAY: adopted default surface %p sid=%u region=%p descriptor=%p\n",
 				    temp, (unsigned)sid, surface_region, surface_descriptor);
 			}

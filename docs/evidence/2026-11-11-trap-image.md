@@ -4136,3 +4136,22 @@ Implement what the page describes for the reference adapter: supply the default 
 IOSurfaceRoot factory** (create the surface, validate its backing memory and geometry) and then transfer ownership
 to the display family, instead of adopting the family's temporary surface.  That removes both the
 `PurpleGfxMem` miss and the `surface_complete` free of the adopted surface.
+## 18:58: clearing the family's temporary slot removes the free; the client still stops after three swaps
+
+With `offline-legacy-adopt=1` and the family's temporary slot (+0x1620) cleared after adoption, the boot log no
+longer contains either the free or its message:
+
+    DISPLAY: adopted default surface 0xfffffff509613e30 sid=1 region=... descriptor=...
+    DISPLAY: clear the family's temporary slot
+    DISPLAY: present copied 2376 rows x 4320 bytes (frame 1..3)
+    (no 'Freeing up Default Temp surface', no panic)
+
+so `surface_complete` no longer frees the surface the compositor is presenting.  The frame count is unchanged at
+three, and after frame 3 the client simply stops calling swap - which is the same three-swap point the reference
+page records and the same place its own note leaves home-screen startup unverified.
+
+### What that leaves
+
+The surface lifetime half of checklist step 4 is now clean.  What remains is the client's side of step 4 / the wait
+chain: SpringBoard blocks in `mach_msg_trap` on lsd, and lsd blocks in `filt_wlwait_continue` - so the third swap
+is where the compositor stops because its next event never arrives, not because the display refused a frame.
