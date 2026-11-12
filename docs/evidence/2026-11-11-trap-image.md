@@ -3580,3 +3580,23 @@ companion objects (HID, keystore, process, trace, log, reset) that this reposito
 
 Option 1 is the document's own path and removes exactly the class-registration risk that produced
 `OSMetaClass::postModLoad` and `allocClassWithName` faults.
+## 12:45: the qualifier runs - the audit passes, the component compile is the remaining stop
+
+Running the reference qualifier in this tree with the Linux substitutions:
+
+    PASS: original Legacy has 358 slots with nine abstract leaves; original generic client/start/dispatch entries identified
+    Service adds no operational overrides; Legacy initialization/start/backend contracts still require implementation and runtime qualification
+
+So the ABI audit against this board's prelinked candidate **passes**: 358 slots, nine abstract leaves, and the generic
+client/start/dispatch entries identified.  That is the document's qualification step working on this board's inputs.
+
+It then stops at the component build:
+
+    drivers/GopFramebuffer/NativeLegacyDisplay.cpp:536: error: only virtual member functions can be marked 'override'
+
+i.e. `isTimingEnabled()` (the swap-timeout probe this session added) is an override in the source while the tree's
+`OriginalMobileFramebufferABI.h` does not declare that virtual.  The display build directory carries this port's edited
+header (slot 345 declared, `LEAF(345)` removed); the framework header the qualifier compiles against does not.
+
+So the two headers have to be reconciled before the qualifier can finish, and that reconciliation is exactly what the
+document means by keeping ABI inputs and the component in step.
