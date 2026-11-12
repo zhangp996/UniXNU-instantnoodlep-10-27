@@ -3848,3 +3848,29 @@ the composed root.
 Also established this round: the official `patch-reference` names `offline-owner-systemos-mount` as the step that
 mounts SystemOS at `/private/preboot` and composes the root, which is why the App bind belongs immediately after it
 rather than in the GPU-addon cryptex view.
+## 14:50: where the cryptex trees actually are on this port
+
+The binder diagnostics after the SystemOS mount report:
+
+    offline cryptex: src(/private/preboot/Cryptexes/App)=2 dst(/System/Cryptexes/App)=2   (2 = ENOENT)
+    offline cryptex probe /private/preboot            =0   (exists)
+    offline cryptex probe /private/preboot/Cryptexes  =2   (missing)
+    offline cryptex probe /private/preboot/System     =2
+    offline cryptex probe /System/Cryptexes           =0   (exists)
+    offline cryptex probe /System/Cryptexes/OS        =2   (missing)
+    offline cryptex /private/preboot/.                (only . and ..)
+
+and a listing of `/` shows `usr` and `System` at the top level.
+
+So this port composes the root from the OS volume with the SystemOS content at `/System` and `/usr`: the App cryptex
+subtree is **not exposed anywhere**, `/private/preboot` is an empty directory and `/System/Cryptexes` holds neither OS
+nor App.  That is precisely why launchd reports 'Missing executable' for every job whose binary lives under
+`/System/Cryptexes/App`, SpringBoard included.
+
+### What has to happen next
+
+1. Find where the SystemOS volume is mounted on this port (the root scan with the readdir walk needs to be finished; it
+   stopped after four entries because the walker's buffer accounting is wrong),
+2. expose its cryptex subtrees: `/System` and `/usr` already come from it, so the same mount's `Cryptexes/OS` and
+   `Cryptexes/App` have to be bound at `/System/Cryptexes/{OS,App}`,
+3. then SpringBoard's binary becomes reachable and launchd can start it.
