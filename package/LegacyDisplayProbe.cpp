@@ -8,6 +8,7 @@
 #include <IOKit/IOUserClient.h>
 #include <IOKit/IODeviceMemory.h>
 #include <IOKit/IODeviceTreeSupport.h>
+#include <IOKit/IOPlatformExpert.h>
 #include <libkern/c++/OSArray.h>
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSDictionary.h>
@@ -18,6 +19,7 @@
 #include <kern/task.h>
 #include <kern/thread.h>
 #include <pexpert/pexpert.h>
+#include <pexpert/boot.h>
 #include <pexpert/arm/protos.h>
 #include <machine/machine_routines.h>
 
@@ -29,12 +31,107 @@ extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
+/* The published display, kept for the swap-completion call. */
+static IOService *gDisplay;
 /* The handle OSMetaClass::preModLoad returns is the fake kext the late registration belongs to; holding it
  * here keeps that kext (and with it our class's metaclass) alive for the life of the kernel. */
 static void *gMetaHandle;
 static IOService *gSurfaceRoot;
 static void publish_display(void);
+static void clear_panel(PE_Video *video);
 static void publish_thread(void *, wait_result_t);
+
+/* The family completes a swap by calling completeCurrentSwap (vtable slot 312) once the
+ * frame is out. Doing it inline races the client's SwapWait, which arms its own wait
+ * afterwards; a short delay lets the wait arm first. */
+static void
+complete_thread(void *arg, wait_result_t)
+{
+	IOSleep(30);
+	IOService *display = gDisplay;
+	if (display) {
+		typedef void (*complete_fn)(void *);
+		complete_fn complete = ((complete_fn *)(*(void ***)display))[312];
+		printf("DISPLAY: delayed completion via slot 312 (%p)\n", (void *)complete);
+		complete(display);
+	}
+	(void)arg;
+}
+
+static void
+complete_swap_later(void)
+{
+	unsigned enabled = 0;
+	PE_parse_boot_argn("offline-legacy-complete", &enabled, sizeof(enabled));
+	if (enabled != 1 || !gDisplay) {
+		return;
+	}
+	thread_t thread = nullptr;
+	if (kernel_thread_start(complete_thread, nullptr, &thread) == KERN_SUCCESS) {
+		thread_deallocate(thread);
+	}
+}
+
+/* The component's static initialiser is globalised in the object (see globalize_symbol.py), so the symbol the
+ * reference implementation calls is the real one; nothing is defined here. */
+
+
+/* PROBE-ROWS: mirror the diagnostic page's process and ui-trace rows to the serial console. The page
+ * renderer is not reached on this port, so the probe starts its own printer. */
+extern "C" char boot_process_rows[10][120];
+extern "C" char boot_ui_trace_rows[14][120];
+
+static void
+probe_rows_thread(void *, wait_result_t)
+{
+	static char lastp[10][120], lastu[14][120];
+	for (;;) {
+		delay(4000000);
+		for (unsigned i = 0; i < 10; i++) {
+			const char *row = boot_process_rows[i];
+			if (!row[0] || row[0] == ' ') continue;
+			if (__builtin_memcmp(row, lastp[i], sizeof(lastp[i])) == 0) continue;
+			__builtin_memcpy(lastp[i], row, sizeof(lastp[i]));
+			printf("PROC[%u] %s\n", i, row);
+		}
+		for (unsigned i = 0; i < 14; i++) {
+			const char *row = boot_ui_trace_rows[i];
+			if (!row[0] || row[0] == ' ') continue;
+			if (__builtin_memcmp(row, lastu[i], sizeof(lastu[i])) == 0) continue;
+			__builtin_memcpy(lastu[i], row, sizeof(lastu[i]));
+			printf("UIT[%u] %s\n", i, row);
+		}
+	}
+}
+
+static void
+probe_rows_start(void)
+{
+	unsigned enabled = 0;
+	thread_t thread;
+	if (!PE_parse_boot_argn("boot-ui-trace", &enabled, sizeof(enabled)) || enabled != 1) return;
+	if (kernel_thread_start(probe_rows_thread, nullptr, &thread) == KERN_SUCCESS) thread_deallocate(thread);
+}
+
+
+/* The component-load probe (patches/xnu/offline-component-load-probes.patch) records the result of loading the
+ * prelinked IOMobileGraphicsFamily; the display class's superclass comes from that family. */
+extern "C" volatile int native_mobile_graphics_load_status;
+
+/* Waits for the prelinked mobile-graphics family and then registers the display. */
+static void
+deferred_probe_thread(void *, wait_result_t)
+{
+	for (unsigned i = 0; i < 100; i++) {
+		delay(100000);
+		if (native_mobile_graphics_load_status == 0) {
+			printf("DISPLAY: family ready after %u ms; registering\n", (i + 1) * 100);
+			native_legacy_display_probe();
+			return;
+		}
+	}
+	printf("DISPLAY: family never became ready (status=%d)\n", (int)native_mobile_graphics_load_status);
+}
 
 /* --- functional entries ------------------------------------------------- */
 
@@ -43,7 +140,23 @@ native_legacy_display_probe(void)
 {
 	static bool registered;
 
-	printf("DISPLAY: probe entered (registered=%d)\n", registered ? 1 : 0);
+	printf("DISPLAY: probe entered (registered=%d) mobile-graphics-load=%d\n", registered ? 1 : 0,
+	    (int)native_mobile_graphics_load_status);
+	if (native_mobile_graphics_load_status != 0) {
+		/* The display class's superclass lives in the prelinked IOMobileGraphicsFamily. Registering before
+		 * that family is loaded leaves the superclass unresolved and postModLoad faults, so wait for it. */
+		printf("DISPLAY: family not loaded yet (%d); deferring registration\n",
+		    (int)native_mobile_graphics_load_status);
+		static bool retrying;
+		if (!retrying) {
+			retrying = true;
+			thread_t thread = nullptr;
+			if (kernel_thread_start(deferred_probe_thread, nullptr, &thread) == KERN_SUCCESS) {
+				thread_deallocate(thread);
+			}
+		}
+		return;
+	}
 	if (registered) {
 		return;
 	}
@@ -56,6 +169,11 @@ native_legacy_display_probe(void)
 		printf("DISPLAY: preModLoad failed\n");
 		return;
 	}
+	{
+		extern void boot_process_start(void);
+		boot_process_start();
+	}
+	probe_rows_start();
 	native_legacy_display_static_init();
 	kern_return_t status = OSMetaClass::postModLoad(handle);
 	if (status) {
@@ -65,7 +183,23 @@ native_legacy_display_probe(void)
 	registered = true;
 
 	PE_Video video = {};
-	if (PE_current_console(&video) || !video.v_baseAddr || !video.v_width || !video.v_height ||
+	int console_rc = PE_current_console(&video);
+	if (PE_state.bootArgs) {
+		boot_args *ba = (boot_args *)PE_state.bootArgs;
+		printf("DISPLAY: bootargs video base=0x%llx w=%lu h=%lu rb=%lu depth=%u display=%u\n",
+		    (unsigned long long)ba->Video.v_baseAddr, (unsigned long)ba->Video.v_width,
+		    (unsigned long)ba->Video.v_height, (unsigned long)ba->Video.v_rowBytes,
+		    (unsigned)ba->Video.v_depth, (unsigned)ba->Video.v_display);
+		{
+			const uint64_t *raw = (const uint64_t *)ba;
+			printf("DISPLAY: bootargs raw %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+			    (unsigned long long)raw[0], (unsigned long long)raw[1], (unsigned long long)raw[2],
+			    (unsigned long long)raw[3], (unsigned long long)raw[4], (unsigned long long)raw[5],
+			    (unsigned long long)raw[6], (unsigned long long)raw[7], (unsigned long long)raw[8],
+			    (unsigned long long)raw[9]);
+		}
+	}
+	if (console_rc || !video.v_baseAddr || !video.v_width || !video.v_height ||
 	    video.v_depth != 32 || video.v_rotate || video.v_rowBytes < video.v_width * 4) {
 		printf("DISPLAY: no usable GOP console (base=0x%llx %lux%lu depth=%lu rot=%lu stride=%llu)\n",
 		    (unsigned long long)video.v_baseAddr, (unsigned long)video.v_width, (unsigned long)video.v_height,
@@ -238,6 +372,41 @@ create_surface(uint32_t width, uint32_t height, uint32_t stride)
 }
 
 /* Bring-up: an abstract slot the owned backend does not implement yet.  */
+/* Clear the whole panel, not just the 480-row window the kernel is handed: the loader draws on the same
+ * memory at panel height, so the tail rows keep its old image otherwise. */
+static void __attribute__((unused))
+clear_panel(PE_Video *video)
+{
+	if (!video || !video->v_baseAddr || !video->v_rowBytes) {
+		return;
+	}
+	uint64_t base = (uint64_t)video->v_baseAddr & ~0xFFFULL;
+	IOByteCount bytes = (IOByteCount)((uint64_t)video->v_rowBytes * 2400);
+	IOMemoryDescriptor *descriptor = IOMemoryDescriptor::withPhysicalAddress((IOPhysicalAddress)base,
+	    bytes, kIODirectionOutIn);
+	IOMemoryMap *map = descriptor ? descriptor->map(kIOMapDefaultCache | kIOMapAnywhere) : nullptr;
+	if (!map) {
+		printf("DISPLAY: panel clear mapping failed (%llu bytes at 0x%llx)\n",
+		    (unsigned long long)bytes, (unsigned long long)base);
+		if (descriptor) {
+			descriptor->release();
+		}
+		return;
+	}
+	/* bzero uses dc zva, which is illegal on the device mapping this framebuffer gets; write the zeros
+	 * with explicit volatile stores instead. */
+	{
+		volatile uint64_t *pixels = (volatile uint64_t *)map->getVirtualAddress();
+		for (IOByteCount i = 0; i < bytes / 8; i++) {
+			pixels[i] = 0;
+		}
+	}
+	printf("DISPLAY: cleared panel %llu bytes at 0x%llx\n", (unsigned long long)bytes,
+	    (unsigned long long)base);
+	map->release();
+	descriptor->release();
+}
+
 static void
 publish_display(void)
 {
@@ -246,6 +415,7 @@ publish_display(void)
 		printf("DISPLAY: nothing pending to publish\n");
 		return;
 	}
+	gDisplay = display;
 	pendingDisplay = nullptr;
 	OSReturn rc = OSKextLoadKextWithIdentifier("com.apple.iokit.IOSurface");
 	printf("DISPLAY: IOSurface kext rc=0x%x\n", (unsigned)rc);
@@ -289,7 +459,10 @@ publish_display(void)
 	if (!nub) {
 		nub = new IOService;
 	}
-	IODeviceMemory *memory = IODeviceMemory::withRange(video.v_baseAddr, video.v_rowBytes * video.v_height);
+	/* Slack past the last row: the component's bounds checks compare allocation, descriptor length and
+	 * stride*height, and the panel's real allocation is the row stride rounded to 4352. */
+	IOByteCount nubBytes = (IOByteCount)((uint64_t)video.v_rowBytes * video.v_height + 0x10000);
+	IODeviceMemory *memory = IODeviceMemory::withRange(video.v_baseAddr, nubBytes);
 	OSArray *ranges = OSArray::withCapacity(1);
 	if (nub && memory && ranges && parent && nub->init()) {
 		ranges->setObject(memory);
@@ -299,7 +472,7 @@ publish_display(void)
 		bool started = attached ? nub->start(parent) : false;
 		printf("DISPLAY: nub %p attach=%d start=%d mem=0x%llx+0x%llx\n", nub, attached, started,
 		    (unsigned long long)video.v_baseAddr,
-		    (unsigned long long)(video.v_rowBytes * video.v_height));
+		    (unsigned long long)nubBytes);
 		IORegistryEntry *dtParent = IORegistryEntry::fromPath("/arm-io", gIODTPlane);
 		const char type[] = "display-subsystem";
 		OSData *data = OSData::withBytes(type, sizeof(type));
@@ -383,7 +556,15 @@ native_legacy_display_late_probe(void)
 
 /* --- diagnostics the component asks for ---------------------------------- */
 
-extern "C" bool native_legacy_prepare_scanout(void) { return false; }
+extern "C" bool native_legacy_prepare_scanout(void) { return true; }
+
+/* The component's surface accessors are bound to the original IOSurface functions; call the same
+ * symbols here so the log shows what the copy will see. */
+extern "C" uint32_t native_legacy_surface_width(void *);
+extern "C" uint32_t native_legacy_surface_allocation(void *);
+extern "C" uint32_t native_legacy_surface_height(void *);
+extern "C" void *native_legacy_surface_descriptor(void *);
+extern "C" uint64_t native_legacy_surface_stride(void *, uint32_t);
 static bool
 publish_word(IORegistryEntry *entry, const char *name, uint32_t value)
 {
@@ -435,7 +616,10 @@ native_legacy_gop_mapping_observed(IOService *object, IOMemoryMap *mapping, uint
 	chosen->release();
 	return ok;
 }
-extern "C" bool native_legacy_gpu_offer(void *, IOMemoryDescriptor *, uint64_t, uint32_t, uint32_t, uint32_t) { return false; }
+/* Report the frame as taken by the presentation path: the component then retires the swap early,
+ * inside the family's work loop, which is the only place completeCurrentSwap() wakes the waiter.
+ * The probe copies the frame itself in the swap-validation hook. */
+extern "C" bool native_legacy_gpu_offer(void *, IOMemoryDescriptor *, uint64_t, uint32_t, uint32_t, uint32_t) { return true; }
 extern "C" void native_legacy_gpu_fallback_observed(int) {}
 extern "C" void native_legacy_pm_observed(unsigned, IOReturn, unsigned long) {}
 extern "C" void native_legacy_registration_observed(IOService *) {}
@@ -554,7 +738,24 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 		printf("DISPLAY: surface geom %ux%u stride=%u fmt=%08x alloc=%llu desc=%p region=%p\n",
 		    sw, sh, sstride, sfmt, (unsigned long long)salloc, sdesc, sregion);
 		if (accepted && surface) {
+			{
+				void *desc = native_legacy_surface_descriptor((void *)surface);
+				uint64_t descLen = desc ? ((IOMemoryDescriptor *)desc)->getLength() : 0;
+				uint64_t mapLen = 0;
+				if (desc) {
+					IOMemoryMap *m = ((IOMemoryDescriptor *)desc)->map(kIOMapAnywhere | kIOMapReadOnly);
+					if (m) { mapLen = m->getLength(); m->release(); }
+				}
+				printf("DISPLAY: accessor width=%u height=%u alloc=%u descLen=%llu mapLen=%llu\n",
+				    (unsigned)native_legacy_surface_width((void *)surface),
+				    (unsigned)native_legacy_surface_height((void *)surface),
+				    (unsigned)native_legacy_surface_allocation((void *)surface),
+				    (unsigned long long)descLen, (unsigned long long)mapLen);
+			}
 			present_surface((void *)surface);
+			/* The family completes a swap by calling its own completeCurrentSwap (vtable slot 312)
+			 * once the frame is out; do the same now that this probe has copied the frame. */
+			complete_swap_later();
 		}
 	}
 }

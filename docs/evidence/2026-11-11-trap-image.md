@@ -3694,3 +3694,31 @@ are initialised.  This port runs it at `offline-legacy-start`, which is early en
 
 Move the display registration to the first point where the prelinked mobile-graphics family is registered (or call its
 initialiser explicitly before `preModLoad`), keeping the qualified archive exactly as it is now.
+## 14:45: kextlog shows the registration order; postModLoad still faults with the family loaded
+
+With `kextlog=0xfff` the kernel log now names every registration:
+
+    Kext __kernel__ registered class NativeLegacyDisplay.
+    Kext com.apple.iokit.IOMobileGraphicsFamily registered class IOMobileFramebufferUserClient.
+    Kext com.apple.iokit.IOMobileGraphicsFamily registered class IOMobileFramebuffer.
+    Kext com.apple.iokit.IOMobileGraphicsFamily registered class IOMobileFramebufferLegacy.
+    DISPLAY: probe entered (registered=0) mobile-graphics-load=0
+    QCOM PANIC END
+
+So the display class is registered under `__kernel__` and the family (whose metaclasses include its superclass)
+registers afterwards; the probe then runs with `mobile-graphics-load=0` and the same instruction faults
+(`OSMetaClass::postModLoad + 0x448`).
+
+Clearing `__DATA,__mod_init_func` in the qualified object did not move that registration: it still happens before the
+family, which means the call that registers the class is our own `preModLoad`/static-init pair inside the probe, and the
+fault is inside `postModLoad` itself rather than in a dangling superclass.
+
+### Where this leaves the port
+
+* the display component is built and **qualified by the build** (audit PASS, 358 slots, vtable check, archive hashes);
+* the kernel links it, the prelink completes and the boot reaches the probe;
+* the one remaining defect is the module-registration call: `preModLoad(g_kernel_kmod_info.name)` + `postModLoad(handle)`
+  for a class that is statically linked rather than loaded as a kext.
+
+Next: instrument `postModLoad`'s expectations (the kextlog already shows every class the walk visits), or bypass the
+module protocol entirely for a static class and verify with `OSMetaClass::allocClassWithName("NativeLegacyDisplay")`.
