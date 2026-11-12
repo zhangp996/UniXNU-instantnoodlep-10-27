@@ -4108,3 +4108,31 @@ container tree now exist on the Data volume at first boot, which is the precondi
 1. watch lsd's wait point after the containers exist (it was `filt_wlwait_continue`, a vnode wait);
 2. if it still waits on a vnode, identify that vnode - the store directory is no longer the obvious candidate;
 3. `LaunchServices` seeding is also where the docs' sm-t970 record stopped, with the cause unobserved.
+## 18:55: what the display checklist asks for after the first frames
+
+`docs/porting/display.md` numbers the verification steps.  Step 3 is 'confirm that a known frame reaches the
+display' (three frames), and **step 4 is 'check swap completion and IOSurface lifetime before enabling GPU
+presentation'**, followed by step 5, the timing/refresh policy (`sheng-vsync=120` here).
+
+The same page's reference paragraph names the other half:
+
+> Home-screen startup remains unverified; capture the display-server and SpringBoard wait chains before
+> treating a stationary logo as a framebuffer transfer failure.
+
+and the sm-t970 device record adds 'SB still waits for BackBoard screen info, swap0'.
+
+### What the probes showed about step 4
+
+- `com.apple.iokit.IOSurface` loads and registers its classes (118 pages, load tag 22), so the factory is present;
+- the family's `create_default_fb_surface` nevertheless asks IOSurfaceRoot for a global surface named
+  **`PurpleGfxMem`**, which this board never creates - the probe's own comment records this - so the family falls
+  back to building a temporary surface from the region cache the probe seeds at +0x17c0;
+- adopting that temporary surface as the default lets three frames through, and enabling the delayed slot-312
+  completion then dies in `OSMetaClass::allocClassWithName` inside `surface_complete`.
+
+### Next work item
+
+Implement what the page describes for the reference adapter: supply the default surface **through the original
+IOSurfaceRoot factory** (create the surface, validate its backing memory and geometry) and then transfer ownership
+to the display family, instead of adopting the family's temporary surface.  That removes both the
+`PurpleGfxMem` miss and the `surface_complete` free of the adopted surface.
