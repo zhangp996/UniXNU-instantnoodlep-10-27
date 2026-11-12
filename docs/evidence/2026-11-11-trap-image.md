@@ -4088,3 +4088,23 @@ macOS, right after the volatile Data mount:
 Eight directories created - `/private/var/containers` and its `Bundle`, `Data`, `Data/System`, `Shared`,
 `Shared/SystemGroup`, `Temp` children, plus `/private/var/db/launchservices` - and the three preference
 plists written, all from the kernel with no Mac and no CI in the loop.
+
+## 18:45: the kernel-side Setup skip boots cleanly; presentation is still three frames
+
+The boot with the kernel-made container skeleton shows both halves of the documented step working:
+
+    DISPLAY: setup-skip containers made=8 present=0 failed=0 prefs=0/0/0
+
+and the boot then proceeds normally through launchd's boot tasks and the daemon cycle
+(`liveactivitiesd`, `watchdogd`, `fairplayd.A2`, `bluetoothd` all start and exit with their usual codes),
+with no panic and no SpringBoard/backboardd/lsd exit records - the three are running.
+
+Presentation is unchanged at three client frames, so creating the container skeleton did not by itself unblock
+the display-server chain.  What it does change is the state lsd starts from: its store directory and the
+container tree now exist on the Data volume at first boot, which is the precondition the macOS tool creates.
+
+### Where the next session starts
+
+1. watch lsd's wait point after the containers exist (it was `filt_wlwait_continue`, a vnode wait);
+2. if it still waits on a vnode, identify that vnode - the store directory is no longer the obvious candidate;
+3. `LaunchServices` seeding is also where the docs' sm-t970 record stopped, with the cause unobserved.
