@@ -3554,3 +3554,29 @@ replace - and exactly where every panic this afternoon landed (`OSMetaClass::pos
 Add `component:GopFramebuffer` to `[kernel] archives` (done) **and** let it produce the late archive the kernel link
 consumes (`build/gop-framebuffer/libGopFramebuffer.late.a`), then retire the hand-built archive and the probe's
 `preModLoad`/`postModLoad` sequence, which exists only because the class was never embedded.
+## 12:30: the qualification inputs exist; only the qualifier itself is missing
+
+The document's step-2 requirement is satisfied on the input side:
+
+      build/xnu-prelink/native-owner-mobile-graphics-candidate.macho   (124 MB, this board's prelinked
+                                                                       mobile-graphics candidate)
+      build/xnu-prelink/native-owner-mobile-graphics-candidate.json
+      build/display-analysis/mobile-graphics-legacy-abi.json           (the ABI audit)
+
+What is missing is `scripts/build-gop-legacy-display.py`, the qualifier that consumes them and produces the late
+archive.  The reference copy is written for macOS: it calls `xcrun --sdk iphoneos --show-sdk-path`, `xcrun clang`,
+`brew --prefix llvm` (for the Mach-O `llvm-objcopy --globalize-symbol`) and `xcrun ar`, and it links the device's
+companion objects (HID, keystore, process, trace, log, reset) that this repository does not carry.
+
+### Two ways forward, both mechanical
+
+1. **Port the qualifier to this toolchain**: substitute this tree's clang and SDK flags for `xcrun`, this port's
+   Mach-O symbol globaliser (the nlist patch already written) for `brew`'s `llvm-objcopy`, and drop the companion
+   objects the board has no component for.  The qualification checks themselves (358-entry vtable, leaf slots,
+   candidate addresses) stay.
+2. **Keep the hand-built archive and record the deviation**: the archive is already at the path the framework
+   expects (`build/native-legacy-display/libNativeLegacyDisplay.late.a`) and the kernel force-loads it, but the
+   ABI qualification the document requires never runs, and that is the state every panic this afternoon belongs to.
+
+Option 1 is the document's own path and removes exactly the class-registration risk that produced
+`OSMetaClass::postModLoad` and `allocClassWithName` faults.
