@@ -3600,3 +3600,20 @@ header (slot 345 declared, `LEAF(345)` removed); the framework header the qualif
 
 So the two headers have to be reconciled before the qualifier can finish, and that reconciliation is exactly what the
 document means by keeping ABI inputs and the component in step.
+
+## 13:05: the qualifier is ported except for the probe compile
+
+Progress on the Linux port of `build-gop-legacy-display.py` (the document's qualification step):
+
+| step | state |
+| --- | --- |
+| ABI audit against this board's candidate | **PASS** - 358 slots, nine abstract leaves |
+| component compile (`build-arm-driver.py NativeLegacyDisplay`) | **passes** - `-Werror` build and object audit |
+| generated header for slot 345 | added `isTimingEnabled` to the generator, removed it from the LEAVES list |
+| `llvm-objcopy --globalize-symbol` | replaced with `scripts/globalize-static-init.py` (Mach-O nlist patch) |
+| probe compile | **stops**: the recorded command carries `-Werror` and trips
+  `-Wmissing-designated-field-initializers` inside `vm_kern.h`/`IOLib.h`; the flag insertion needs to land on the
+  command actually used for the probe, not only on the derived one |
+| archive assembly | not reached |
+
+Nothing here is device work; it is all offline build plumbing, and the remaining piece is one flag on one command.
