@@ -76,11 +76,6 @@ complete_swap_later(void)
 /* PROBE-ROWS: mirror the diagnostic page's process and ui-trace rows to the serial console. The page
  * renderer is not reached on this port, so the probe starts its own printer. */
 extern "C" char boot_process_rows[10][120];
-/* The rows are only refreshed by this call, which the diagnostic page makes; the page is not rendered on
- * this port, so the printer performs the snapshot itself. */
-extern "C" void boot_process_snapshot(void);
-/* The ui-trace rows are written by this snapshot call, which the diagnostic page makes. */
-extern "C" void boot_ui_trace_snapshot(unsigned seconds);
 extern "C" char boot_ui_trace_rows[14][120];
 
 static void
@@ -89,11 +84,6 @@ probe_rows_thread(void *, wait_result_t)
 	static char lastp[10][120], lastu[14][120];
 	for (;;) {
 		delay(4000000);
-		boot_process_snapshot();
-		{
-			static unsigned tick;
-			boot_ui_trace_snapshot(tick += 4);
-		}
 		for (unsigned i = 0; i < 10; i++) {
 			const char *row = boot_process_rows[i];
 			if (!row[0] || row[0] == ' ') continue;
@@ -744,7 +734,7 @@ extern "C" void native_legacy_swap_validation_observed(bool accepted, unsigned r
 			memcpy(&sdesc, (unsigned char *)surface + 0x30, 8);
 			memcpy(&sregion, (unsigned char *)surface + 0x28, 8);
 		}
-printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
+		printf("DISPLAY: swap accepted=%d reason=%u request=%p surface=%p req_surfaces=%llx,%llx,%llx,%llx\n",
 		    accepted ? 1 : 0, reason, request, surface,
 		    (unsigned long long)surfaces[0], (unsigned long long)surfaces[1],
 		    (unsigned long long)surfaces[2], (unsigned long long)surfaces[3]);
@@ -814,70 +804,3 @@ extern "C" int native_gpu_trace_enabled(void) { return 0; }
 extern "C" void native_gpu_trace_record(uint32_t, uint32_t, const uint64_t *, uint32_t) {}
 extern "C" bool native_adreno_fences(uint32_t *, uint32_t *) { return false; }
 extern "C" bool native_adreno_fences_detail(uint32_t *, uint32_t *, uint32_t *) { return false; }
-
-/* The Setup-skip preferences from docs/zh/guide/skip-setup.md. A fresh Data seed otherwise boots into Setup,
- * the state in which launchd never starts SpringBoard; the documented tool needs macOS to write them, so they
- * are written here at the same point the watchdog override runs. */
-#include <sys/fcntl.h>
-#include <sys/uio.h>
-#include <sys/vnode.h>
-#include <sys/vnode_if.h>
-#include <sys/mount.h>
-
-static int
-native_write_preference(const char *path, const char *body, size_t length)
-{
-	vfs_context_t ctx = vfs_context_current();
-	vnode_t vp = NULLVP;
-	int error = vnode_open(path, FWRITE | O_CREAT | O_TRUNC, 0644, 0, &vp, ctx);
-	if (error) {
-		return error;
-	}
-	error = vn_rdwr(UIO_WRITE, vp, (caddr_t)(uintptr_t)body, (int)length, 0, UIO_SYSSPACE, IO_NODELOCKED,
-	    vfs_context_ucred(ctx), NULL, current_proc());
-	if (!error) {
-		(void)VNOP_FSYNC(vp, MNT_WAIT, ctx);
-	}
-	(void)vnode_close(vp, FWRITE, ctx);
-	return error;
-}
-
-extern "C" int
-native_owner_setup_skip(void)
-{
-	static const char purple[] =
-	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-	    "<plist version=\"1.0\"><dict>"
-	    "<key>SetupDone</key><true/><key>SetupFinishedAllSteps</key><true/>"
-	    "<key>SetupVersion</key><integer>11</integer><key>daemonizeNeedsToRun</key><false/>"
-	    "</dict></plist>\n";
-	static const char springboard[] =
-	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-	    "<plist version=\"1.0\"><dict>"
-	    "<key>BKNoWatchdogs</key><true/><key>MCForceShowCloudConfigurationUI</key><false/>"
-	    "<key>SBDisableAutoDim</key><true/><key>SBDontDimOrLockOnAC</key><true/><key>SBDisableIdleSleep</key><true/>"
-	    "<key>FBLaunchWatchdogExceptions</key><dict><key>com.apple.purplebuddy</key><integer>100</integer></dict>"
-	    "</dict></plist>\n";
-	static const char migration[] =
-	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
-	    "<plist version=\"1.0\"><dict><key>LastSystemVersion</key><string>21H461</string></dict></plist>\n";
-	const char *const dir = "/private/var/mobile/Library/Preferences";
-	vfs_context_t ctx = vfs_context_current();
-	vnode_t dvp = NULLVP;
-	int dir_error = vnode_lookup(dir, 0, &dvp, ctx);
-	if (!dir_error) {
-		vnode_put(dvp);
-	}
-	int purple_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.purplebuddy.plist",
-	    purple, sizeof(purple) - 1);
-	int spring_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.springboard.plist",
-	    springboard, sizeof(springboard) - 1);
-	int migration_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.migration.plist",
-	    migration, sizeof(migration) - 1);
-	printf("DISPLAY: setup-skip dir=%d purplebuddy=%d springboard=%d migration=%d\n",
-	    dir_error, purple_error, spring_error, migration_error);
-	return (purple_error || spring_error || migration_error) ? 1 : 0;
-}
