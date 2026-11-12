@@ -3769,3 +3769,29 @@ All of the afternoon's `OSMetaClass::postModLoad` / `allocClassWithName` panics 
 
 Next: separate the two remaining issues - the trace workers are disabled in the next image, so a `start=0` with no
 printf fault isolates the display's own start precondition.
+## 15:40: the display starts - attach=1 start=1, and the boot reaches launchd
+
+Two changes made the display start on this board:
+
+1. the embedded class registers itself (`__DATA,__mod_init_func` kept, probe's `preModLoad`/`postModLoad` removed), so
+   the class is found and allocated (`size=0x1ae0 legacy=1 mobilefb=1`);
+2. the nub's device memory is exactly `v_rowBytes * v_height` - `startHardware()` accepts the mapping only when
+   `getLength()` equals that product, and the earlier `+0x10000` slack made it return false.
+
+Boot log:
+
+    DISPLAY: nub 0xfffffff56f108e40 attach=1 start=1 mem=0x9c000001+0x9c9f00
+    DISPLAY: display attach=1 start=1
+    DISPLAY: surfaces default=0 temp=0xfffffff50a07ffa8
+    ...
+    apfs_vfsop_mount:2714: disk3s1 failed to find named root snapshot: Need authenticator (81)
+    Failed to open swap file 30
+    vm_swap_create_file failed @ 94 secs
+    load_init_program: attempting to load /usr/appleinternal/sbin/launchd.development
+    Kernel data abort. at pc 0xfffffff00b89e110  (___doprnt)
+
+So the display path no longer blocks the boot: the run reaches the userland entry.  What remains is elsewhere:
+
+* the OS volume `disk3s1` mounts but its root snapshot needs an authenticator (the verified-root / owner-root path);
+* the VM swap file cannot be created (94 s), and
+* a data abort inside `___doprnt` follows, i.e. a printf whose argument is not what its format expects.

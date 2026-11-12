@@ -460,9 +460,9 @@ publish_display(void)
 	if (!nub) {
 		nub = new IOService;
 	}
-	/* Slack past the last row: the component's bounds checks compare allocation, descriptor length and
-	 * stride*height, and the panel's real allocation is the row stride rounded to 4352. */
-	IOByteCount nubBytes = (IOByteCount)((uint64_t)video.v_rowBytes * video.v_height + 0x10000);
+	/* Exactly stride*height: the component's startHardware() accepts the device memory only when the
+	 * mapping length equals v_rowBytes * v_height, so any slack makes start() fail. */
+	IOByteCount nubBytes = (IOByteCount)((uint64_t)video.v_rowBytes * video.v_height);
 	IODeviceMemory *memory = IODeviceMemory::withRange(video.v_baseAddr, nubBytes);
 	OSArray *ranges = OSArray::withCapacity(1);
 	if (nub && memory && ranges && parent && nub->init()) {
@@ -515,7 +515,9 @@ publish_display(void)
 			memcpy(&temp, (unsigned char *)display + 0x1620, sizeof(temp));
 			memcpy(&def, (unsigned char *)display + 0x1618, sizeof(def));
 			printf("DISPLAY: surfaces default=%p temp=%p\n", def, temp);
-			if (!def && temp) {
+			unsigned adopt = 0;
+			PE_parse_boot_argn("offline-legacy-adopt", &adopt, sizeof(adopt));
+			if (adopt == 1 && !def && temp) {
 				void *surface_region = nullptr, *surface_descriptor = nullptr;
 				uint32_t sid = 0;
 				memcpy(&sid, (unsigned char *)temp + 0x10, sizeof(sid));
