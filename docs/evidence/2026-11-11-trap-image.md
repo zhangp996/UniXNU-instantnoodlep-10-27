@@ -4075,3 +4075,16 @@ Layout probes on this board now say:
 so the launchd side is present but **the container skeleton is not**: the directories `docs/zh/guide/skip-setup.md`
 has its tool create (`/private/var/containers/{Bundle,Data/System,Shared/SystemGroup,Temp}`) were never made, and
 lsd's own store directory is absent.  That is the concrete gap behind 'lsd waits in filt_wlwait_continue'.
+
+## 18:30: the kernel creates the container skeleton itself (VNOP_MKDIR)
+
+`VNOP_MKDIR` with a hand-built componentname is the XNU-internal way to make a directory; `vnode_create`
+cannot be used for this because it only makes an unlinked vnode, and `VNONAME` is not exported to the
+archive's headers anyway.  The probe now does exactly what `scripts/seed-data-skip-setup.py` does on
+macOS, right after the volatile Data mount:
+
+    DISPLAY: setup-skip containers made=8 present=0 failed=0 prefs=0/0/0
+
+Eight directories created - `/private/var/containers` and its `Bundle`, `Data`, `Data/System`, `Shared`,
+`Shared/SystemGroup`, `Temp` children, plus `/private/var/db/launchservices` - and the three preference
+plists written, all from the kernel with no Mac and no CI in the loop.

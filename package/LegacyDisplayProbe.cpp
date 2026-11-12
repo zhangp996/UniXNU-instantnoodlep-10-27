@@ -804,3 +804,119 @@ extern "C" int native_gpu_trace_enabled(void) { return 0; }
 extern "C" void native_gpu_trace_record(uint32_t, uint32_t, const uint64_t *, uint32_t) {}
 extern "C" bool native_adreno_fences(uint32_t *, uint32_t *) { return false; }
 extern "C" bool native_adreno_fences_detail(uint32_t *, uint32_t *, uint32_t *) { return false; }
+/* docs/zh/guide/skip-setup.md: a fresh Data seed boots into Setup, and Setup is the state in which
+ * launchd never starts SpringBoard.  The documented tool does two things on macOS: it writes these
+ * preferences and it creates the /private/var/containers skeleton lsd needs before its database can
+ * be seeded.  The port needs both without a Mac, so both are done here after the Data mount. */
+#include <sys/attr.h>
+#include <sys/fcntl.h>
+#include <sys/mount.h>
+#include <sys/namei.h>
+#include <sys/uio.h>
+#include <sys/vnode.h>
+#include <sys/vnode_if.h>
+
+static int
+native_write_preference(const char *path, const char *body, size_t length)
+{
+	vfs_context_t ctx = vfs_context_current();
+	vnode_t vp = NULLVP;
+	int error = vnode_open(path, FWRITE | O_CREAT | O_TRUNC, 0644, 0, &vp, ctx);
+	if (error) {
+		return error;
+	}
+	error = vn_rdwr(UIO_WRITE, vp, (caddr_t)(uintptr_t)body, (int)length, 0, UIO_SYSSPACE, IO_NODELOCKED,
+	    vfs_context_ucred(ctx), NULL, current_proc());
+	if (!error) {
+		(void)VNOP_FSYNC(vp, MNT_WAIT, ctx);
+	}
+	(void)vnode_close(vp, FWRITE, ctx);
+	return error;
+}
+
+/* The pattern XNU itself uses for a kernel-made directory (bsd/vfs/vfs_xattr.c): a componentname
+ * naming the entry and a vnode_attr whose type is VDIR, handed to the parent vnode's VNOP_MKDIR. */
+static int
+native_make_dir(const char *parent_path, const char *leaf, vfs_context_t ctx)
+{
+	struct componentname cn;
+	struct vnode_attr va;
+	vnode_t dvp = NULLVP, sdvp = NULLVP;
+	int error = vnode_lookup(parent_path, 0, &dvp, ctx);
+	if (error) {
+		return error;
+	}
+	bzero(&cn, sizeof(cn));
+	cn.cn_nameiop = LOOKUP;
+	cn.cn_flags = ISLASTCN;
+	cn.cn_pnbuf = (char *)(uintptr_t)leaf;
+	cn.cn_pnlen = (int)strlen(leaf);
+	cn.cn_nameptr = cn.cn_pnbuf;
+	cn.cn_namelen = (int)strlen(leaf);
+	VATTR_INIT(&va);
+	VATTR_SET(&va, va_uid, 0);
+	VATTR_SET(&va, va_gid, 0);
+	VATTR_SET(&va, va_mode, 0755);
+	VATTR_SET(&va, va_type, VDIR);
+	error = VNOP_MKDIR(dvp, &sdvp, &cn, &va, ctx);
+	if (error == 0) {
+		vnode_put(sdvp);
+	}
+	vnode_put(dvp);
+	return error;
+}
+
+extern "C" int
+native_owner_setup_skip(void)
+{
+	static const char purple[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>SetupDone</key><true/><key>SetupFinishedAllSteps</key><true/>"
+	    "<key>SetupVersion</key><integer>11</integer><key>daemonizeNeedsToRun</key><false/>"
+	    "</dict></plist>\n";
+	static const char springboard[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>BKNoWatchdogs</key><true/><key>MCForceShowCloudConfigurationUI</key><false/>"
+	    "<key>SBDisableAutoDim</key><true/><key>SBDontDimOrLockOnAC</key><true/><key>SBDisableIdleSleep</key><true/>"
+	    "<key>FBLaunchWatchdogExceptions</key><dict><key>com.apple.purplebuddy</key><integer>100</integer></dict>"
+	    "</dict></plist>\n";
+	static const char migration[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict><key>LastSystemVersion</key><string>21H461</string></dict></plist>\n";
+	static const struct { const char *parent, *leaf; } dirs[] = {
+	    { "/private/var", "containers" },
+	    { "/private/var/containers", "Bundle" },
+	    { "/private/var/containers", "Data" },
+	    { "/private/var/containers/Data", "System" },
+	    { "/private/var/containers", "Shared" },
+	    { "/private/var/containers/Shared", "SystemGroup" },
+	    { "/private/var/containers", "Temp" },
+	    { "/private/var/db", "launchservices" },
+	};
+	vfs_context_t ctx = vfs_context_current();
+	unsigned made = 0, present = 0, failed = 0;
+	for (unsigned i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+		int e = native_make_dir(dirs[i].parent, dirs[i].leaf, ctx);
+		if (e == 0) {
+			made++;
+		} else if (e == EEXIST) {
+			present++;
+		} else {
+			failed++;
+		}
+	}
+	int purple_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.purplebuddy.plist",
+	    purple, sizeof(purple) - 1);
+	int spring_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.springboard.plist",
+	    springboard, sizeof(springboard) - 1);
+	int migration_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.migration.plist",
+	    migration, sizeof(migration) - 1);
+	printf("DISPLAY: setup-skip containers made=%u present=%u failed=%u prefs=%d/%d/%d\n",
+	    made, present, failed, purple_error, spring_error, migration_error);
+	return (failed || purple_error || spring_error || migration_error) ? 1 : 0;
+}
