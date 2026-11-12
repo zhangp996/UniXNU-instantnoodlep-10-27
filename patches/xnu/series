@@ -9,7 +9,6 @@ zzz-qcom-usb-report.patch
 zzz-owner-report.patch
 zzz-owner-watchdog-override.patch
 zzz-exit-service-release-path.patch
-zzz-exit-reason-text.patch
 zzz-trap-pc.patch
 zzz-trap-image.patch
 zzz-os-crash-observe.patch
