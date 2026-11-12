@@ -73,7 +73,7 @@ dram_size = "0x200000000"
 # adopts the controller the firmware left running and publishes the userdata windows as an IOMedia.
 kernel_args = ["-v", "serial=3", "debug=0x14e", "kextlog=0xfff", "-no_slto_panic", "amfi_get_out_of_my_way=1",
                "native-ufs-root=1", "native-ufs-allow-unverified=1", "root-unverified=1", "native-ufs-diagnostics=1",
-               "qcom-usb-debug=1", "lite=1", "kt_fixed_zones=120", "vm_compressor=2", "ml-timeout-lock-panic-scale=40", "disable-watchdogd=1", "disable-jobs=com.apple.identityservicesd,com.apple.locationd,com.apple.CommCenter,com.apple.bluetoothd,com.apple.PerfPowerServices,com.apple.iomfb_fdr_loader", "sheng-crashlog=1", "sheng-log=1", "boot-ui-trace=1", "lw_corpses=0",
+               "qcom-usb-debug=1", "lite=1", "kt_fixed_zones=120", "vm_compressor=2", "ml-timeout-lock-panic-scale=40", "disable-watchdogd=1", "disable-jobs=com.apple.identityservicesd,com.apple.locationd,com.apple.CommCenter,com.apple.bluetoothd,com.apple.PerfPowerServices,com.apple.iomfb_fdr_loader", "sheng-crashlog=0", "sheng-log=0", "boot-ui-trace=0", "lw_corpses=0",
              "offline-legacy-register=1", "offline-legacy-gop=1", "offline-legacy-unit-scale=2", "offline-legacy-pm=1", "offline-legacy-validate=1", "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "sheng-vsync=120", "sheng-vsync-fixed=1",
              "offline-mobile-graphics-load=1",
              "offline-mobile-graphics-client=1",

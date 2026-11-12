@@ -3749,3 +3749,23 @@ takes a bad address.
 
 Next: print around each step after the GOP console line (allocate, set properties, attach, start, registerService) so the
 last completed step before the panic names the exact call.
+## 15:15: the embedded registration works - class allocates, display attaches, start() fails
+
+With `__DATA,__mod_init_func` kept and the probe's `preModLoad`/`postModLoad` removed entirely (the class registers
+itself the way every `build_stage = "embedded"` driver does), the boot log reads:
+
+    DISPLAY: probe entered (registered=0) mobile-graphics-load=0
+    DISPLAY: embedded class NativeLegacyDisplay meta=0xfffffff00c1103b8 size=0x1ae0
+    DISPLAY: allocated NativeLegacyDisplay size=0x1ae0 legacy=1 mobilefb=1
+    DISPLAY: display attach=1 start=0
+
+* the class is registered by the kernel and found by name;
+* the component's own factory allocates a real instance whose casts report `IOMobileFramebufferLegacy=1` and
+  `IOMobileFramebuffer=1`;
+* `attach()` succeeds and **`start()` returns false** - the display does not start;
+* a later fault lands in `___doprnt` (kernel printf), i.e. a formatting bug in a trace worker, not the display.
+
+All of the afternoon's `OSMetaClass::postModLoad` / `allocClassWithName` panics are gone.
+
+Next: separate the two remaining issues - the trace workers are disabled in the next image, so a `start=0` with no
+printf fault isolates the display's own start precondition.

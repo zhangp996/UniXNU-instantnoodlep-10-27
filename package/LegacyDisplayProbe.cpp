@@ -33,9 +33,6 @@ extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
 static IOService *pendingDisplay;
 /* The published display, kept for the swap-completion call. */
 static IOService *gDisplay;
-/* The handle OSMetaClass::preModLoad returns is the fake kext the late registration belongs to; holding it
- * here keeps that kext (and with it our class's metaclass) alive for the life of the kernel. */
-static void *gMetaHandle;
 static IOService *gSurfaceRoot;
 static void publish_display(void);
 static void clear_panel(PE_Video *video);
@@ -160,21 +157,25 @@ native_legacy_display_probe(void)
 	if (registered) {
 		return;
 	}
-	void *handle = OSMetaClass::preModLoad(g_kernel_kmod_info.name);
-	printf("DISPLAY: preModLoad(%s)=%p\n", g_kernel_kmod_info.name, handle);
-	if (handle && !gMetaHandle) {
-		gMetaHandle = handle;
-	}
-	if (!handle) {
-		printf("DISPLAY: preModLoad failed\n");
-		return;
+	/* An embedded class registers itself: the kernel runs the object's __mod_init_func entry at startup and
+	 * finalises it in its own module, exactly like the framework's other build_stage = "embedded" drivers.
+	 * So there is nothing to preModLoad here - only a check that the class is present. */
+	{
+		const OSSymbol *className = OSSymbol::withCString("NativeLegacyDisplay");
+		const OSMetaClass *meta = className ? OSMetaClass::getMetaClassWithName(className) : nullptr;
+		printf("DISPLAY: embedded class NativeLegacyDisplay meta=%p size=0x%x\n", (void *)meta,
+		    meta ? (unsigned)meta->getClassSize() : 0);
+		if (className) className->release();
+		if (!meta) {
+			printf("DISPLAY: the embedded class is not registered\n");
+			return;
+		}
 	}
 	{
 		extern void boot_process_start(void);
 		boot_process_start();
 	}
 	probe_rows_start();
-	native_legacy_display_static_init();
 	/* postModLoad() is the kext-load finaliser and faults for a class that is statically linked into the
 	 * kernel (OSMetaClass::postModLoad + 0x448).  The metaclass is already registered by the static
 	 * initialiser above, so check that the class can be allocated instead of finalising a fake module. */
