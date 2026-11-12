@@ -3874,3 +3874,29 @@ nor App.  That is precisely why launchd reports 'Missing executable' for every j
 2. expose its cryptex subtrees: `/System` and `/usr` already come from it, so the same mount's `Cryptexes/OS` and
    `Cryptexes/App` have to be bound at `/System/Cryptexes/{OS,App}`,
 3. then SpringBoard's binary becomes reachable and launchd can start it.
+## 15:20: SpringBoard's binary is reachable; launchd simply never launches it
+
+The layout probes settle two questions at once:
+
+    offline layout /System/Library/CoreServices/SpringBoard.app/SpringBoard = 0   (present)
+    offline layout /System/Applications                                   = 0   (present)
+    offline layout /System/Cryptexes/App/System/Applications              = 2   (missing)
+
+so the App cryptex is **not** what blocks SpringBoard: its binary lives on the OS volume and is reachable.  The
+'Missing executable' line belongs to `webbookmarksd`, one of the App-cryptex daemons, and does not name SpringBoard.
+
+A ten-minute capture of the same boot shows launchd progressing normally:
+
+    launchd <Notice>: Early boot complete. Continuing system boot.
+    ... user/501/... jobs ...
+    XNU-EXIT: com.apple.datami pid=304, bluetoothd pid=315, fairplayd.A2, ...
+
+but neither `backboardd` nor `SpringBoard` appears even after several minutes, so their jobs are never started rather
+than started and crashed.
+
+### Next questions
+
+1. Why launchd does not start `backboardd`/`SpringBoard` - the job conditions (setup state, user session, or a
+   preference the port has not written) rather than the display or the cryptex;
+2. whether the display service this port publishes is visible to a userland matcher (a `IOServiceMatching` for
+   `IOMobileFramebuffer`) - the class is registered and `start=1`, so the next check is the registry entry itself.
