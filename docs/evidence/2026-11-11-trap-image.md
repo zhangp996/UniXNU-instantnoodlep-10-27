@@ -3617,3 +3617,31 @@ Progress on the Linux port of `build-gop-legacy-display.py` (the document's qual
 | archive assembly | not reached |
 
 Nothing here is device work; it is all offline build plumbing, and the remaining piece is one flag on one command.
+
+## 13:20: the qualifier passes, but the archive must be produced *inside* the kernel build
+
+The qualifier now runs end to end on this board:
+
+    audit: 358 slots, 9 abstract leaves, candidate 4f0dea314c912e79...
+    NativeLegacyDisplay: -Werror build and arm64-apple-ios17.0 object audit passed
+    vtable check: 2880 bytes fits in __const
+    globalised __GLOBAL__sub_I_NativeLegacyDisplay.cpp: 1 site(s)
+    PASS: legacy display qualified
+
+The candidate hash is this board's own prelinked candidate, not the reference board's, so the qualification really is
+against this kernelcache.
+
+The kernel build then stops with:
+
+    build-xnu-4k-baseline.sh: line 692: test -f "$LEGACY_DISPLAY_ARCHIVE" failed
+
+because each kernel build recreates `tree/build`, so an archive assembled before the build is gone by the time the
+link looks for it.  That is exactly why the framework runs `build-gop-legacy-display.py` as an entry of
+`[kernel] archives`: the archive has to be produced by the build itself, in order, before the link.
+
+### Remaining work (one step, mechanical)
+
+Extend the qualifier to also assemble the archive it is responsible for - the qualified component object plus the
+board probe (and the bindings object that the builder emits) - and register `qualify-gop-legacy-display.py` in
+`[kernel] archives`.  Then the build produces the qualified `libNativeLegacyDisplay.late.a` itself and the
+`test -f` passes.
