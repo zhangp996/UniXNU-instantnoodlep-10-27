@@ -3474,3 +3474,25 @@ same binary, and the start failure appeared when the framework one replaced the 
 
 Next isolation: boot with the display probe disabled entirely (`offline-mobile-graphics-load=0`) and see whether the
 disk-time panic survives; if it disappears, the component is being called from a path this session added.
+## 12:00: the panics are symbolised - all three are in OSMetaClass / printf
+
+| pc | symbol | when |
+| --- | --- | --- |
+| `0xfffffff00be850bc` | `OSMetaClass::postModLoad` +0x448 | probe registration, first panic |
+| `0xfffffff00be85910` | `OSMetaClass::allocClassWithName` +0x20 | later, during disk setup |
+| `0xfffffff00b89e110` | `___doprnt` +0xc10 | this boot, right after *attempting to load launchd.development* |
+
+So the two earlier panics are both inside the **component registration path this port fakes**: the probe calls
+`OSMetaClass::preModLoad(g_kernel_kmod_info.name)` and `postModLoad(handle)` for a class that was never built as a
+kext, and the kernel later finds that half-registered class through `allocClassWithName` and faults.  The display's
+`start()` failing (`attach=1 start=0`) is consistent with the same inconsistency.
+
+The third panic is different: it is inside `___doprnt` (kernel printf) while printing during the launchd load, i.e. a
+printf with a bad argument or format, not a registration problem.
+
+### What this means for the plan
+
+The original-family approach is not failing on display protocol details; it is failing because the class is being
+registered through a fake module.  A class defined **inside the kernel** (the way HakiOS's Mini stand-in and the
+framework's own `NativeMobileDisplay` are built) has proper metaclass metadata and does not need preModLoad/postModLoad
+at all.
