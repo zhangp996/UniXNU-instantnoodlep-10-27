@@ -3523,3 +3523,34 @@ dangling superclass and faults.
    `OSKextLoadKextWithIdentifier`; it must run and succeed first),
 2. then preModLoad -> static init -> postModLoad,
 3. and only then attach/start the display.
+## 12:25: what the official reference pages actually prescribe for this board
+
+From `reference/components.md`, `xnu/source-and-patches` and `xnu/patch-reference`:
+
+* a display is a **catalog component**, selected in `[components] include` and placed in `[kernel] archives` as
+  `component:<ID>`; the resolver then builds dependencies first and the component's own build command runs;
+* the catalog entry for this board's OS is:
+
+      id = "GopFramebuffer"        build_stage = "embedded"
+      os_abi = ["ipados-17.7.11-21H461", "ipados-27.0.1-24A446"]
+      source_files = ["NativeMobileDisplay.cpp", "NativeLegacyDisplay.cpp"]
+      outputs = ["build/gop-framebuffer/libGopFramebuffer.a", ".../libGopFramebuffer.late.a"]
+      legacy_name = "NativeMobileDisplay"
+      legacy_outputs = {"build/native-mobile-display/libNativeMobileDisplay.late.a" = "build/gop-framebuffer/libGopFramebuffer.late.a"}
+
+* `patch-reference` lists only three graphics patches - `offline-native-gpu-broker`, `zzy-native-gpu-addon-mount`,
+  `zzw-native-adreno-sandbox-grant` - and each needs a GPU component.  Nothing there addresses a board without one.
+
+### What this board does instead
+
+`[components] include` already names `GopFramebuffer`, but `[kernel] archives` never referenced it, so the framework
+built `build/gop-framebuffer/libGopFramebuffer.a` (NativeMobileDisplay only, 270 KB) and never embedded it: the kernel
+contains no `NativeMobileDisplay` string.  The display that *is* in the kernel is this session's hand-assembled
+`libNativeLegacyDisplay.late.a` plus the board probe, which is exactly the integration the component system exists to
+replace - and exactly where every panic this afternoon landed (`OSMetaClass::postModLoad`, `allocClassWithName`).
+
+### The document-order fix
+
+Add `component:GopFramebuffer` to `[kernel] archives` (done) **and** let it produce the late archive the kernel link
+consumes (`build/gop-framebuffer/libGopFramebuffer.late.a`), then retire the hand-built archive and the probe's
+`preModLoad`/`postModLoad` sequence, which exists only because the class was never embedded.
