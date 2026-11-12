@@ -3900,3 +3900,33 @@ than started and crashed.
    preference the port has not written) rather than the display or the cryptex;
 2. whether the display service this port publishes is visible to a userland matcher (a `IOServiceMatching` for
    `IOMobileFramebuffer`) - the class is registered and `start=1`, so the next check is the registry entry itself.
+## 15:40: the official docs answer it - the device is still in Setup
+
+`docs/zh/guide/skip-setup.md` states it directly:
+
+> 全新的 Data 种子首次启动会进入 Setup。负载可以在写镜像前把 Setup 标记为完成，让设备直接进入 SpringBoard。
+
+and lists exactly what `./unixnu build payload --skip-setup` writes into
+`/private/var/mobile/Library/Preferences`:
+
+| file | values |
+| --- | --- |
+| `com.apple.purplebuddy` | `SetupDone`, `SetupFinishedAllSteps`, `SetupVersion 11`, `daemonizeNeedsToRun false` |
+| `com.apple.purplebuddy.notbackedup` | every mini-buddy flag false |
+| `com.apple.managedconfiguration.notbackedup` | `LockdownActivationIndicatesCloudConfigurationAvailable false` |
+| `com.apple.springboard` | `BKNoWatchdogs`, `FBLaunchWatchdogExceptions{com.apple.purplebuddy:100}`, `MCForceShowCloudConfigurationUI false` |
+| `com.apple.migration` | `LastSystemVersion 21H461`, `DMUserDataDisposition` |
+
+This port **never ran that step**: `board.toml` has no `[payload] skip_setup_tool`, and the payload command in
+`build_payload.sh` passes only `--data-ramdisk`.  A fresh seed therefore boots into Setup, and Setup is exactly the state
+in which SpringBoard is not started - which is what the last ten minutes of logs show: launchd is healthy, the jobs even
+have their plists (`com.apple.SpringBoard.plist`, `com.apple.backboardd.plist` both present), and neither is run.
+
+### Why it did not happen
+
+`scripts/seed-data-skip-setup.py` attaches the APFS container read-write, which needs macOS.  On this Linux host the two
+options are:
+
+1. run the documented step on a Mac (`./unixnu build payload --skip-setup ...`), or
+2. write the same three preference plists from the kernel right after the volatile Data mount - the port already does
+   this for `disabled.plist`, so the writer exists and only needs the Setup-skip payloads.
