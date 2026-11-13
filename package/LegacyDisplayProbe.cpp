@@ -949,6 +949,28 @@ native_owner_setup_skip(void)
 			failed++;
 		}
 	}
+	/* The job the system ships starts on demand and never does.  A second copy of the same label
+	 * on the writable Data volume, with RunAtLoad, is the least invasive way to force it. */
+	{
+		native_make_dir("/", "Library", ctx);
+		native_make_dir("/Library", "LaunchDaemons", ctx);
+		static const char chronod_job[] =
+		    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+		    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+		    "<plist version=\"1.0\"><dict>"
+		    "<key>Label</key><string>com.apple.chronod</string>"
+		    "<key>ProgramArguments</key><array><string>/System/Library/PrivateFrameworks/ChronoCore.framework/Support/chronod</string></array>"
+		    "<key>MachServices</key><dict><key>com.apple.chronoservices</key><true/>"
+		    "<key>com.apple.chrono.widgetcenterconnection</key><true/></dict>"
+		    "<key>UserName</key><string>mobile</string>"
+		    "<key>RunAtLoad</key><true/>"
+		    "<key>KeepAlive</key><dict><key>Crashed</key><true/></dict>"
+		    "<key>POSIXSpawnType</key><string>Interactive</string>"
+		    "</dict></plist>\n";
+		int job_error = native_write_preference(
+		    "/Library/LaunchDaemons/com.apple.chronod.plist", chronod_job, sizeof(chronod_job) - 1);
+		printf("DISPLAY: chronod job on the Data volume: %d\n", job_error);
+	}
 	/* SpringBoard blocks in a synchronous XPC to com.apple.chronoservices and the on-demand job
 	 * com.apple.chronod (MachServices = com.apple.chronoservices, RunAtLoad = false) never starts.
 	 * Force it on at boot through launchd's overrides database. */

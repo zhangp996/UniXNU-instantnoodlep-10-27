@@ -4317,3 +4317,22 @@ capacity change rather than a correctness one.
 Adding that patch re-prepared the tree, which discarded the hand edits in `kern_exec.c` (the LaunchServices store
 drop added earlier today).  The probe's late-drop call was removed with it; that path had already proved inert
 (containers found, no LaunchServices files in them), so nothing was lost.
+## 13:00: the port has no persistent Data store - and that changes the picture
+
+`docs/zh/concepts/userdata`: the userdata partition carries the Darwin root through a SHNGROOT manifest, and the
+writable Data volume can live in a window at its end, opened with `sheng-data-persist=2` (1 = validate only) and
+kept clear of `sheng-log-reserve` (default 1 GiB).  The implementation is this port's own UFS driver
+(`out/feeds/ShengUfs/NativeUfs.cpp`):
+
+    sheng-data-persist=1|2        mode, 0 = off
+    sheng-log-reserve=<MiB>       reserve at the end of userdata
+
+and it refuses to open with `no root layout` unless `StoreGeometry` was parsed from a flashed root manifest.
+
+This port boots with `fastboot boot` only, its log never mentions SHNGROOT or userdata, and it never sets
+`sheng-data-persist` - so **the Data volume is rebuilt from the seed on every boot**.  Everything written at boot
+(the container tree, the Setup preferences, any LaunchServices state) is gone after a reboot, and the system starts
+every time in the state the packer left the seed in.
+
+That is consistent with the ChronoServices deadlock: widget-extension registration is state that a real device
+keeps across boots, and here it is thrown away before whatever registers it can finish.
