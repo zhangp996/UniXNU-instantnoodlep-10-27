@@ -4357,3 +4357,19 @@ second job definition.  The launch-constraint switch was never exercised: chrono
 Overlay a modified `/System/Library/LaunchDaemons/com.apple.chronod.plist` through the port's existing read-only
 union mount (`native_gpu_addon_mount`) so the job itself carries `RunAtLoad`, or teach the kernel to send the
 bootstrap lookup itself.  Neither is guaranteed: without knowing why launchd stays silent, both are probes.
+## 13:30: chronod runs when booted as process 1, and exits inside BackBoardServices
+
+The `init-override` experiment answers the question the launchd side could not:
+
+    load_init_program: override /System/Library/PrivateFrameworks/ChronoCore.framework/Support/chronod
+    shared_region: [1(chronod)] check_np(...) vm_shared_region_start_address() failed
+    XNU-DYLD-IMAGE: chronod pc=0x1c2d94f4 .../BackBoardServices.framework/BackBoardServices+0xd6f94 load=0x1c200000
+    XNU-EXIT: chronod pid=1 code=3 ns=2 sub=0x5
+    panic: Assertion failed: ... "init(1) exited ---- exit reason namespace 2 subcode 0x5"
+
+so chronod is not blocked by launchd at all: it **starts and dies by itself**, with its last frame inside
+BackBoardServices - the same framework SpringBoard blocks in when it calls
+`-[CHSChronoServicesConnection _subscribeToExtensions]` synchronously.  Both sides of the ChronoServices
+connection fail in BoardServices, which points at runningboardd rather than at chronod or at launchd.
+
+The image is now built to run runningboardd as process 1 (`init-override=2`) for the same test.
