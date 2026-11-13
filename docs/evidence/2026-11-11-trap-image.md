@@ -5882,3 +5882,26 @@ remains the only environment where that question can be answered.
 Framework-side changes made for this (in `UniXNU/scripts`, not the device repo): `_host_tool()` in
 `probe-darwinboot-xnu.py` and `audit-xnu-kernel.py`, filtered global inspection, and the two display globals now
 conditional.
+## 00:45: the QEMU harness needs a CPU model this host's QEMU does not have
+
+Working through the probe's inspection step surfaced the real blocker, in order:
+
+1. `gdb-stop.py: error: UEFI code FD not found` - fixed by linking the installed AAVMF image to the name it
+   expects (`/usr/share/qemu/edk2-aarch64-code.fd` -> `/usr/share/AAVMF/AAVMF_CODE.fd`);
+2. `ConnectionRefusedError` on the QEMU gdbstub - because QEMU itself exited, recorded in the fixture's
+   `gdb-stderr.log` as:
+
+       qemu-system-aarch64: unable to find CPU model 'cortex-a710'
+
+`gdb-stop.py` hardcodes `-cpu cortex-a710` for TCG (and reads a matching `cortex-a710.json` state fixture).  That is
+an ARMv9 core model added in QEMU 7.0; this host runs **QEMU 6.2.0** from Ubuntu 22.04, whose newest ARM cores stop
+before it.
+
+So the QEMU route is blocked on toolchain age, not on this port: it needs QEMU >= 7.0 (or a patched harness with a
+supported core and a regenerated state fixture).
+
+### Where that leaves it
+
+Everything up to QEMU itself now works on Linux - host tools, firmware inputs, DT synthesis, GDB driver, FD image -
+and the single remaining gate is the CPU model.  Worth noting again that even a working fixture could not reproduce
+the ChronoServices stall, which needs the dyld cache and libdispatch the fixture excludes.
