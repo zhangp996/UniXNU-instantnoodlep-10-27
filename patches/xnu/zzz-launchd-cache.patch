@@ -1,0 +1,73 @@
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 3e7bde9..8a7eeb0 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7744,6 +7744,68 @@ native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
+ 	/* A job of our own on top of the system daemons: the union below shadows any name it carries, so a
+ 	 * copy of com.apple.chronod.plist with RunAtLoad makes launchd start the service whose absence keeps
+ 	 * SpringBoard blocked in its synchronous ChronoServices subscription. */
++	/* launchd loads its jobs from the precompiled cache /System/Library/xpc/launchd.plist, not from the
++	 * LaunchDaemons directory.  The cache is a binary plist; in this build com.apple.chronod's RunAtLoad
++	 * value slot is at file offset 0xfc6e0 and references the shared false object 2464 (0x09a0).  Writing
++	 * 0x021a there - the index of an existing true object - turns RunAtLoad on for that job alone. */
++	{
++		static const char cache_path[] = "/System/Library/xpc/launchd.plist";
++		static const char overlay_path[] = "/private/var/ngpu/xpc/launchd.plist";
++		static const uint64_t slot = 0xfc6e0;
++		static const size_t cache_bytes = 1640626;
++		vfs_context_t cctx = vfs_context_current();
++		native_gpu_addon_mkdir("/private/var", "ngpu", cctx);
++		native_gpu_addon_mkdir("/private/var/ngpu", "xpc", cctx);
++		char *buffer = (char *)kalloc_data(cache_bytes, Z_WAITOK);
++		if (!buffer) {
++			printf("launchd cache: allocation failed\n");
++		} else {
++			vnode_t cvp = NULLVP;
++			int open_error = vnode_open(cache_path, FREAD, 0, 0, &cvp, cctx);
++			int read_error = EIO;
++			if (!open_error) {
++				uio_t r = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
++				if (r) {
++					uio_addiov(r, CAST_USER_ADDR_T(buffer), cache_bytes);
++					read_error = VNOP_READ(cvp, r, 0, cctx);
++					uio_free(r);
++				}
++				(void)vnode_close(cvp, FREAD, cctx);
++			}
++			printf("launchd cache: open=%d read=%d magic=%.8s\n", open_error, read_error,
++			    read_error ? "" : buffer);
++			if (!open_error && !read_error && buffer[0] == 'b') {
++				if ((unsigned char)buffer[slot] == 0x09 && (unsigned char)buffer[slot + 1] == 0xa0) {
++					buffer[slot] = 0x02;
++					buffer[slot + 1] = 0x1a;
++					vnode_t ovp = NULLVP;
++					if (vnode_open(overlay_path, FWRITE | O_CREAT | O_TRUNC, 0644, 0, &ovp, cctx)) {
++						printf("launchd cache: overlay open failed\n");
++					} else {
++						uio_t w = uio_create(1, 0, UIO_SYSSPACE, UIO_WRITE);
++						int write_error = EIO;
++						if (w) {
++							uio_addiov(w, CAST_USER_ADDR_T(buffer), cache_bytes);
++							write_error = VNOP_WRITE(ovp, w, IO_SYNC, cctx);
++							uio_free(w);
++						}
++						(void)vnode_close(ovp, FWRITE, cctx);
++						printf("launchd cache: patched copy written (%d)\n", write_error);
++					}
++				} else {
++					printf("launchd cache: slot holds %02x %02x\n",
++					    (unsigned char)buffer[slot], (unsigned char)buffer[slot + 1]);
++				}
++			}
++			kfree_data(buffer, cache_bytes);
++		}
++		static const char xpc_source[] = "/private/var/ngpu/xpc", xpc_point[] = "/System/Library/xpc";
++		static volatile int xpc_stage, xpc_status;
++		native_gpu_addon_mount(p, scratch, 0x600, xpc_source, sizeof(xpc_source), xpc_point, sizeof(xpc_point),
++		    "/System/Library/xpc/foreground_user_endpoints.plist", "/System/Library/xpc/launchd.plist",
++		    &xpc_stage, &xpc_status);
++		printf("launchd cache: mount stage=%d status=%d\n", xpc_stage, xpc_status);
++	}
+ 	{
+ 		static const char chronod_job[] =
+ 		    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"

@@ -4393,3 +4393,27 @@ To separate them, launchd has to stay process 1 and be made to start the job, wh
 actually reads: the writable Data volume does not carry `/Library/LaunchDaemons` on this port (the write returned
 EROFS), so the definition has to be overlaid on `/System/Library/LaunchDaemons` through the addon mount the display
 stack already uses.
+## 14:55: launchd reads a precompiled cache, and a modified copy is rejected
+
+The system ships `/System/Library/xpc/launchd.plist`, a binary plist with 561 `LaunchDaemons` entries keyed by
+plist path; `com.apple.chronod` is one of them, so editing `/System/Library/LaunchDaemons` cannot change what
+launchd starts.  Parsing the cache located the job's `RunAtLoad` value slot: file offset `0xfc6e0`, holding the
+reference `0x09a0` to the shared false object (2464, used by 802 entries), while a true object exists at index 538
+(`0x021a`).  Rewriting those two bytes changes RunAtLoad for that job alone.
+
+The kernel now reads the cache, writes the patched copy under `/private/var/ngpu/xpc/launchd.plist` and mounts it
+over `/System/Library/xpc` before launchd starts:
+
+    launchd cache: open=0 read=0 magic=bplist00
+    launchd cache: patched copy written (0)
+    launchd cache: mount stage=5 status=0
+
+and launchd reacts by failing its first boot task:
+
+    launchd_cache_loader exited due to SIGKILL
+    Boot task failed: launchd_cache_loader - exited due to SIGKILL
+    userspace panic: boot task failure: launchd_cache_loader
+
+so the cache is the right lever but the copy is not accepted as it stands - either the write is not byte-exact or
+the loader validates the file (or its tree state) and kills itself when it does not match.  The patch is removed
+from the series until that is understood; the stable image is rebuilt from the overlay-only series.
