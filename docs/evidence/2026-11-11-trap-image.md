@@ -4566,3 +4566,37 @@ threads.  chronod still does not appear and the frame count is unchanged, so the
 the answer: SpringBoard is no longer parked in a receive, and what it does next is the thing to watch.
 
 The image that boots this way is `6209a7ebcc06473575372cceadafbf8b222ab52a6acefd638be0540673a031a9`.
+## 16:30: full comparison against the reference repositories
+
+### Board configuration
+
+| item | this port | j716f |
+| --- | --- | --- |
+| kernel arguments | 42 (995 bytes of 1000) | 54 |
+| components | XnuPrelink, DarwinBoot, ArmDTPlatform, ArmCpu, SoftwareAES, XnuPrelink, ShengUfs, RamBlock, VirtioMmioBlock, VerifiedRoot, QcomXnuUsbDebug, GopFramebuffer, AdrenoPM4, AdrenoFirmware, ArmSmmu4K, AirNir, AppleKeyStoreState | the same set minus QcomXnuUsbDebug, plus ShengHidInput, Adreno650, Ath12kWifi, QcaBluetooth |
+| board-local XNU patches | 6 (init-override, launchd overlay, staged union, max-cpus, app cryptex bind, io map) on top of the framework's 81 | 3 (throttle/console, cryptex view always, appsync+sandbox wildcard) |
+
+### Board services in `package/` - the substantive difference
+
+The reference carries a layer of board services this port never wrote; the ones that matter to SpringBoard are:
+
+| file | what it publishes | why it matters here |
+| --- | --- | --- |
+| `NativeBattery.cpp` + `NativeBatteryBoard.h` | PM8150B gen4 fuel gauge and SMB5 charger as an `IOPMPowerSource` | its own header states that powerd matches that class to build `IOPSGetPowerSourcesInfo`, **which SpringBoard's status bar reads** |
+| `AppleARMBacklight.cpp`, `BacklightProbe.cpp` | backlight as a CoreBrightness brightness control | display brightness; not needed for the first frame |
+| `MdssProbe.cpp` | MDSS observation | diagnostics only |
+| `Buttons.c`, `TouchProbe.cpp`, `TouchState.cpp` | input | not needed for rendering |
+| `GpuProbe.cpp` | GPU diagnostics | not needed for the CPU display path |
+| `HidInputProbe.cpp` | HID input | as above |
+| `ShengPlatformPower.cpp`, `BootFaultProbe.c`, `BootRamoops.c`, `LinkStubs.c`, `FatVolume.c` | platform power, fault/panic records, link stubs, FAT access | some are prerequisites of the battery driver (the SPMI arbiter and PON paths) |
+
+This port's own extras are the opposite kind: boot latency, boot progress, boot UI trace, the offline GPU stubs,
+the audio reach stack and the verified-block bridge - instrumentation and unproven subsystems rather than board
+services.
+
+### So what separates them
+
+`NativeBattery` is the only gap whose own documentation names a SpringBoard dependency.  It is also the most
+expensive to close: it reads the gauge and charger through the PM8150B SPMI arbiter channels that its siblings
+`Buttons.c` and `BootRamoops.c` define, and neither exists here - so the port is a board-service layer (PMIC arbiter,
+fuel gauge, charger), not a file copy.
