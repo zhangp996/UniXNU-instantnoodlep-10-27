@@ -4862,3 +4862,33 @@ fork archived rather than deleting the record of it.
 
 So: **retiring `drivers/KonaUfs` loses no capability**; its unique content is either already in ShengUfs or supplied by
 the SoC feed, and the single behavioural difference is an opt-in switch that every run has left off.
+## 18:30: the persistence entry point exists in RamBlock's expectations, not in any UFS source
+
+`libRamBlock.a` references `native_ufs_store_write_cached` **by address**, so the symbol must be defined by
+whatever UFS driver the kernel links.  No source in the tree defines it - the upstream `ShengUfs` provides
+`native_ufs_store_write` only - and that is the same API the Data overlay uses to make the store window
+persistent.  A definition was added to this port's driver:
+
+    extern "C" int native_ufs_store_write_cached (uint64_t rel, uint32_t blocks, const void *src)
+    { return native_ufs_store_write (rel, blocks, src); }
+
+and the component archive now contains it:
+
+    tree/build/kona-ufs/libKonaUfs.a   contains 'store_write_cached' (3 occurrences)
+
+but the kernel link never places that archive in the link line, so the symbol stays undefined and the build stops
+at `Undefined symbols ... _native_ufs_store_write_cached`.  The archive list entry `component:KonaUfs` is accepted
+and built; what is missing is the kernel side's mapping from that component to a link input, which exists only for
+the name `ShengUfs` (`build/sheng-ufs/libShengUfs.a`).
+
+### What this fixes once linked
+
+The missing symbol is exactly the write path the persistent store needs, so linking it is the last step between this
+port and a Data volume that survives a reboot - and with it the Setup/LaunchServices/staged-apps kernel workarounds
+could be retired.
+
+### GitHub, in one line
+
+No push is required for any of this: device components resolve from the local device repository (the tree links
+`tree/drivers/KonaUfs -> UniXNU-instantnoodlep/drivers/KonaUfs`), and `local.toml` exists as a documented fallback.
+The remaining work is the link mapping, not the remote.

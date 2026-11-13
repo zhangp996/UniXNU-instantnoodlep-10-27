@@ -1336,6 +1336,13 @@ extern "C" int native_ufs_store_write (uint64_t rel, uint32_t blocks, const void
   return 1;
 }
 
+// The Data store overlay (RamBlock) prefers this entry point and takes its address, so the symbol must exist
+// even when the overlay never asks for a cached write: it writes with forced unit access, like the plain path.
+extern "C" int native_ufs_store_write_cached (uint64_t rel, uint32_t blocks, const void *src)
+{
+  return native_ufs_store_write (rel, blocks, src);
+}
+
 extern "C" int native_ufs_store_sync (void)
 {
   return storeMode () == 2 && gStoreRegionBlocks && hostSyncCache () == kIOReturnSuccess;
