@@ -4214,3 +4214,27 @@ boot proceeds), each one's `Library/Caches` exists, and none of them holds a `co
 SpringBoard's main thread is in `ipc_mqueue_receive`, its frames decoded (image 0x1e50e0000, cache+0x15744000).
 Naming those frames needs the dyld shared cache from the IPSW - the same artefact the framework's macOS workflow
 extracts in its 'Locate the dyld shared cache' step.
+## 11:45: the stack is idle; SpringBoard waits for lsd and lsd never answers
+
+A ten-minute observation keeps the same shape:
+
+    SpringBoard p27  C=ipc_mqueue_receive_continue   (waiting for a Mach message from pid 100 = lsd)
+    lsd         p101 C=filt_wlwait_continue / thread_preempted  (alternating: short work bursts, then idle)
+    frames: 3
+
+so lsd is alive and occasionally busy but never delivers the reply SpringBoard waits on, and the compositor stays
+idle because nothing asks it to draw.
+
+### What would name the frames
+
+SpringBoard's PC (`0x1df7d4b58`) and lsd's PC (`0x1df7d48c0`) sit in the same shared-cache region (`cache+0x14054000`),
+so both are inside LaunchServices/XPC code in the dyld shared cache.  Naming those frames needs the cache itself;
+this host has no APFS reader (`apfs-fuse`) and no `lzfse`, and `ipsw extract --dyld` needs the IPSW zip rather than
+the two extracted DMGs.
+
+Options, cheapest first:
+
+1. run the device repository's macOS workflow, whose 'Locate the dyld shared cache in the IPSW' step already
+   extracts the cache, and take the cache from its artifacts;
+2. install `apfs-fuse` and `lzfse` on this host and read the cache out of `044-76034-038.dmg`;
+3. teach the kernel to copy the first megabytes of the cache to the serial (too slow for a full symbol table).
