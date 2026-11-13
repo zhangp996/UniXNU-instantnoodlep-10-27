@@ -4600,3 +4600,32 @@ services.
 expensive to close: it reads the gauge and charger through the PM8150B SPMI arbiter channels that its siblings
 `Buttons.c` and `BootRamoops.c` define, and neither exists here - so the port is a board-service layer (PMIC arbiter,
 fuel gauge, charger), not a file copy.
+## 16:40: repo checked against the troubleshooting reference
+
+Walked the `/zh/reference/troubleshooting` table against this repository:
+
+| row | this port |
+| --- | --- |
+| `unixnu status --json` | ok: schema 2, configured, device and OS profile resolved |
+| `[kernel] archives` and `logs/archive-NN-*.log` | ok now; the two failures met today were exactly this row (archive-13 `build-adreno650` wanting kit paths the tree did not carry) |
+| command line is ... bytes | ok: 988 of 1000 (it refused at 1002 and again at 1009 while these arguments were added) |
+| unsupported kernel argument | ok: every argument matches `payload.py`'s own pattern, which allows `,` and `/` inside a value (`disable-jobs=`) |
+| no display | ok: `DISPLAY: display attach=1 start=1`, three client frames copied |
+| no boot entry / no menu | ok: the loader reaches the kernel every boot |
+| panic gives provider | not hit since the display work |
+| no root device / Data window refused | not applicable: this board seeds its Data volume rather than flashing userdata |
+| userland display assertion | ok: none since the temp-slot fix |
+
+Nothing in the table is failing now.  The one row that keeps recurring in practice is the archive row, and that is
+where today's GPU attempt stopped twice.
+
+### lsd focus run
+
+`boot-ui-focus3=lsd` booted and presented three frames, but the capture ended at 1121 lines before the probe's
+`STACK64` phase, so it carries lsd's process rows and not its user stack:
+
+    PROC[3] lsd p99 n6 r0 w6 ... Wfffffff8f6d3de00 Cfffffff00bd02804 U1d92708c0 +daf0000
+    PROC[3] lsd p99 n7 r1 w6 ... (same kernel PC, same wait event)
+
+lsd alternates running and waiting with a constant kernel PC, exactly the shape seen for it all along, and the frame
+count stays at three.  A longer capture is needed for the stack rows that name where it waits.
