@@ -1,0 +1,3 @@
+== fetch https://github.com/zhangp996/UniXNU-sm8250-common 3481a8bfd60f
++ git -C /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/feeds/UniXNU-sm8250-common-671ba905 fetch -q --depth 1 origin 3481a8bfd60fb9f8cefe5cfdf402b64c8b303b1e
+== configuration instantnoodlep_defconfig -> /Users/runner/work/UniXNU-instantnoodlep-10-27/UniXNU-instantnoodlep-10-27/out/instantnoodlep/ipados-17.7.11-21H461/instantnoodlep/.config
