@@ -85,6 +85,48 @@ extern "C" int native_owner_setup_skip(void);
 extern "C" int native_probe_iosurface_root(void);
 extern "C" int native_create_iosurface(uint32_t, uint32_t, uint32_t, uint32_t);
 
+/* Board bring-up: signal one process by name, for the experiment in which the connection a blocked client
+ * waits on is torn down and has to be made again.  The process ABI here is the one BootProcessProbe.c uses:
+ * opaque proc_t plus accessors, so no BSD private header is pulled into this translation unit. */
+struct proc;
+typedef struct proc *probe_proc_t;
+extern "C" char *proc_best_name(probe_proc_t);
+extern "C" int proc_pid(probe_proc_t);
+extern "C" void proc_iterate(unsigned, int (*)(probe_proc_t, void *), void *,
+    int (*)(probe_proc_t, void *), void *);
+extern "C" void psignal(struct proc *, int);
+#define PROBE_ALLPROCLIST (1U << 0)
+#define PROBE_NOWAITTRANS (1U << 2)
+struct kill_ctx { const char *name; int hits; };
+static int
+kill_one_proc(probe_proc_t p, void *ctx)
+{
+	struct kill_ctx *k = (struct kill_ctx *)ctx;
+	const char *name = p ? proc_best_name(p) : nullptr;
+	if (!k || !name) {
+		return 0;
+	}
+	if (__builtin_strcmp(name, k->name) != 0) {
+		/* Board bring-up: the names proc_best_name reports, so the experiment targets one that exists. */
+		static int shown;
+		if (shown < 12) {
+			shown++;
+			printf("DISPLAY: proc name '%s'\n", name);
+		}
+		return 0;
+	}
+	psignal((struct proc *)p, 9);
+	k->hits++;
+	return 1;
+}
+extern "C" int
+native_kill_named(const char *name)
+{
+	struct kill_ctx k = { name, 0 };
+	proc_iterate(PROBE_ALLPROCLIST | PROBE_NOWAITTRANS, kill_one_proc, &k, nullptr, nullptr);
+	return k.hits;
+}
+
 static void
 probe_rows_thread(void *, wait_result_t)
 {
@@ -107,6 +149,18 @@ probe_rows_thread(void *, wait_result_t)
 				PE_parse_boot_argn("iosurface-create", &create, sizeof(create));
 				if (create == 1) {
 					native_create_iosurface(1080, 2376, 4352, 10342400);
+				}
+			}
+			if (tick % 4 == 0) {
+				/* Board bring-up experiment: end lsd once, so the connection SpringBoard is waiting on is
+				 * torn down and has to be made again.  kill-lsd=<tick> selects the sample (0 = never). */
+				static unsigned kill_tick, killed;
+				if (!kill_tick) {
+					PE_parse_boot_argn("kill-lsd", &kill_tick, sizeof(kill_tick));
+				}
+				if (kill_tick && !killed && tick >= kill_tick) {
+					killed = 1;
+					printf("DISPLAY: killing lsd at tick %u: %d\n", tick, native_kill_named("lsd"));
 				}
 			}
 			if (tick == 20) {

@@ -5034,3 +5034,25 @@ Still open, and now the only open question in this chain: a synchronous Mach mes
 lsd's port (`q=1`) while lsd waits in `_kevent_id` with no waiter and no turnstile registered on that port - the
 request is delivered and never woken.  Neither reference repository touches that path, and both run the same kernel
 patch series as this port.
+## 19:45: what the reference documentation says about the remaining stall - nothing
+
+Checked three pages against the current state:
+
+- `/zh/concepts/boot-chain` describes the four hand-offs and ends with 'XNU matches the root volume by UUID, mounts it
+  and starts launchd in userland'.  Userland's own behaviour - Mach messages, dispatch, ports - is outside its scope;
+  its only failure table entry past that point is 'missing platform or storage driver -> the panic log names the
+  provider', which is exactly the shape of today's UFS panics and not of this stall.
+- `/zh/xnu/patch-reference` lists every framework patch with its purpose.  The ones that touch areas this port relies
+  on are `native-union-getattrlistbulk` and `native-union-statfs-fsid` (union directory reads and statfs),
+  `zzw-native-adreno-sandbox-grant` (render-server sandbox for the GPU stack), `native-work-interval-*` and
+  `offline-native-gpu-broker`.  None of them concerns Mach port wakeups, and none is missing from this port's series.
+- `/zh/concepts/userdata` (checked earlier) is what led to the store window work that succeeded today.
+
+One step the patch reference does imply and this port has not taken: `sheng-platform-power` runs
+`sheng_pmgr_run()` before the calendar initialises, and that symbol exists in no feed here - so the board runs
+without the PMGR integration the reference considers part of a complete port.  That is a power-domain gap, not a
+message-delivery one, but it belongs on the list of documented steps not yet taken.
+
+Conclusion: the stall this port is chasing - a message queued on lsd's port while lsd waits in `_kevent_id` with no
+waiter and no turnstile - is not described anywhere in the reference, which is consistent with both reference boards
+running the same kernel series as this one.
