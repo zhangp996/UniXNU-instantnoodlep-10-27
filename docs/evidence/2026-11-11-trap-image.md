@@ -4502,3 +4502,25 @@ and the boot still ends the same way:
 so the missing built-in apps are not what stops ChronoServices either.  What remains between this port and the
 reference board is the GPU stack (`drivers/Adreno650`, `build-adreno650.py`, the Metal addon and its trust bundle,
 `pipa-gpu=12` / `sheng-fb-gpu=1`, GPU and SMMU device-tree nodes) - a subsystem, not a switch.
+## 16:00: the reference GPU driver builds here, and what remains is the link
+
+The reference board's GPU stack was brought in: `drivers/Adreno650` (63 files), `drivers/AdrenoMetal` (41 files),
+`scripts/build-adreno650.py`, `package/A650Gmu.{c,h}` and `package/SmmuBypass.h`, together with the
+`AdrenoPM4`, `AdrenoFirmware`, `ArmSmmu4K` and `AirNir` components that this framework already carries.
+
+Two API differences had to be bridged:
+
+- the driver's arena was written for a contiguous mapping plus a page count, while this `ArmSmmu4K` builds tables
+  through `allocate`/`find`/`overlaps` callbacks; `NativeAdrenoSmmuMemory.cpp` now supplies those three over the
+  memory's own span, and the kit's `ArmSmmu4KLiveArena` gained the two compatibility fields (`mapping`,
+  `capacity_pages`) that `NativeAdrenoVm.cpp` still reads;
+- `drivers/AdrenoMetal` had to be present as the driver's sibling include (`OriginalAcceleratorABI.h`).
+
+The archive builds:
+
+    PASS: 31 NativeAdreno a650 objects archived into .../build/adreno650/libAdreno650.a (1521904 bytes)
+
+and the kernel build is green, but `kernel.macho` is unchanged because that archive is not yet part of the kernel
+link.  Registering an `Adreno650` component instead makes the framework's `build-arm-driver.py` path crash clang, so
+the script route stands and the link step is what remains - followed by the device tree work, the GPU firmware and
+the Metal addon that the reference builds with `build-j716f-gpu-addon.py`.
