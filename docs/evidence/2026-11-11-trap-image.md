@@ -4654,3 +4654,28 @@ Neither reference repository can settle that: `lsd` is Apple's binary and both p
 board-local patches are a throttle/console fix, 'cryptex view always' and the appsync/sandbox wildcard, none of
 which touch LaunchServices.  What the comparison does say is that the reference does not hit this at all, so the
 difference has to be in this port's launchd/port state rather than in lsd's code.
+## 17:00: the bring-up policy is not the cause
+
+Booted with `lite=1` and `disable-jobs=` removed (40 arguments, 823 bytes) so the board policy could not suppress
+any daemon:
+
+    frames: 3
+    SpringBoard p27 n3 r0 w3   Cfffffff00b854894 (ipc_mqueue_receive_continue)
+    chronod: absent
+
+so the experiment is negative and it takes the policy off the list: neither `lite`'s twenty disabled jobs (including
+`duetexpertd`) nor `disable-jobs` is what keeps chronod from starting.  If anything the boot was quieter than with the
+policy: the more active SpringBoard seen after the keybag work (`n9 r2`, executing inside its own image) did not
+recur.
+
+The argument list is restored to the policy form; the image of this run was
+`dc2ca0a7fe1941c1f366161878d43842fbde21dc113988f39994dfa4d3d20f15`.
+
+### Where this leaves the thread
+
+Excluded so far, each by measurement rather than by reasoning: the display path (three frames, no assertion), AMFI and
+launch constraints, the Setup triggers, LaunchServices' store, the staged-apps union (mounts cleanly), the launchd job
+cache as a place to change behaviour (a modified copy is rejected by `launchd_cache_loader`), the GPU (the reference
+board's desktop predates its own), and now this port's own bring-up policy.  The remaining difference to the reference
+board is its board-service layer - `NativeBattery` above all, whose own header names SpringBoard's status bar as its
+consumer - plus the SPMI arbiter those services sit on.
