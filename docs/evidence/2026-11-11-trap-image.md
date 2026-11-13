@@ -4775,3 +4775,23 @@ cache patch because launchd's own state is rebuilt every boot.
 So the step that went sideways is not the display work or the kernel patches: it is that **the Data volume never
 became persistent**, and the port compensated inside the kernel for what a working store window would have kept on
 disk.  Fixing that one step is what the reference does before any userland debugging begins.
+## 17:45: the manifest works, the store window is the missing half
+
+The boot log shows the manifest half working:
+
+    NativeUfs: published SystemOS / SystemOS volume 8846FE78-... ready
+    NativeUfs: published OS / OS volume 04769D26-... ready
+    Got boot device = ... DawnUpdate21H461.J120J121J207J208OS@1
+
+so the flashed userdata carries a readable `SHNGROOT` manifest and both of its windows are published and mounted.
+What never appears is the second half of the reference design: the persistent store window at the tail of the
+partition.  This port's code for it (`drivers/KonaUfs/NativeUfs.cpp`, `native_ufs_store_open`) refuses before it
+prints anything unless `gStoreGeometry.valid && gHost.ready`, and that geometry is only set where the storage layout
+is parsed (`layout->userdataFirst/Last/imageBytes`).  The windows being published while the store still reports no
+layout means those two paths disagree about the same partition - one succeeding where the other did not.
+
+That is the concrete form of the deviation recorded above: the Data volume keeps being rebuilt from the seed because
+the store window is never opened, and the kernel-side Setup skip and LaunchServices drop were compensating for it.
+The next measurement is small and exact: call `native_ufs_store_open` once at root publication and print its `why`
+string with the geometry, which names the failing condition (`off`, `no root layout`, `size`,
+`overlaps the root image`, `window refused`) instead of leaving it silent.
