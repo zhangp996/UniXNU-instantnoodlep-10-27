@@ -4750,3 +4750,28 @@ the series and the kernel is green again:
 The question that trace would have answered is recorded in the evidence for whoever picks it up: whether lsd ever
 arms a knote for the port SpringBoard sends to, or whether the port stays unarmed because the arming was made
 against a different right.
+## 17:40: checked the porting steps against the userdata reference
+
+The reference (`/zh/concepts/userdata`) states the design plainly: the userdata partition carries the Darwin root
+through a `SHNGROOT` manifest whose windows this port does flash (the boot log mounts
+`disk1s1 DawnUpdate21H461...SystemCryptex`), the writable Data volume comes from the payload's seed, **and the
+persistent store comes from a window at the tail of that partition**, opened by `data-persist=2` with
+`log-reserve=<MiB>` (1024 by default) kept clear.  The same page notes `--skip-setup` as the way to make a seed that
+already has Setup completed, cached by seed hash.
+
+Against that, this port's steps are:
+
+| reference step | this port | verdict |
+| --- | --- | --- |
+| flash userdata with the manifest windows | done (`native-ufs-root=1` publishes the windows; SystemOS mounts) | aligned |
+| Data volume from the payload seed | done | aligned |
+| persistent store at the tail, `data-persist=2` | `sheng-data-persist=2` is passed but the Data volume is rebuilt from the seed **every boot**: containers, preferences and LaunchServices state are made again each time | **not aligned** |
+| `--skip-setup` seed so Setup is already complete | instead the kernel writes the Setup preferences itself at display start (`native_owner_setup_skip`), then again at tick 20 | **not aligned** |
+
+Everything added along the way follows from the third row: `native_ls_store_drop` because the LaunchServices store
+never survives, the staged-apps union because the apps are re-materialised each boot, the launchd job overlays and the
+cache patch because launchd's own state is rebuilt every boot.
+
+So the step that went sideways is not the display work or the kernel patches: it is that **the Data volume never
+became persistent**, and the port compensated inside the kernel for what a working store window would have kept on
+disk.  Fixing that one step is what the reference does before any userland debugging begins.
