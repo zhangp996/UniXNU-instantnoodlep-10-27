@@ -17,8 +17,8 @@ static void bt_main_rows(const struct bt_main *main,unsigned first_role,char row
   if(!m->pid)continue;
   snprintf(rows[row],120,"MAIN %c p%d image=%llx err=%u cache+=%x PC=%llx LR=%llx FPerr=%u",
    bt_role_char(role,m),m->pid,m->image,m->image_error,m->slide,e->pc,e->lr,m->error);
-  snprintf(rows[row+1],120,"trap=%llx opt=%llx remote=%x recv=%x msgid=%x peer=%d e%u (sampled, not atomic)",
-   e->trap,e->regs[1],(unsigned)e->regs[3],(unsigned)(e->regs[5]>>32),(unsigned)(e->regs[4]>>32),e->peer,e->peer_code);
+  snprintf(rows[row+1],120,"trap=%llx opt=%llx remote=%x recv=%x msgid=%x peer=%d q=%u e%u (sampled, not atomic)",
+   e->trap,e->regs[1],(unsigned)e->regs[3],(unsigned)(e->regs[5]>>32),(unsigned)(e->regs[4]>>32),e->peer,e->peer_queue,e->peer_code);
   for(unsigned slice=0;slice<4;++slice) {
    char a[8][9];for(unsigned i=0;i<8;++i)bt_address(a[i],m->frames[slice*8+i]);
    snprintf(rows[row+2+slice],120,"%c FP%02u %s %s %s %s %s %s %s %s",

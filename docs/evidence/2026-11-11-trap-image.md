@@ -4679,3 +4679,34 @@ cache as a place to change behaviour (a modified copy is rejected by `launchd_ca
 board's desktop predates its own), and now this port's own bring-up policy.  The remaining difference to the reference
 board is its board-service layer - `NativeBattery` above all, whose own header names SpringBoard's status bar as its
 consumer - plus the SPMI arbiter those services sit on.
+## 17:05: the message is queued on lsd's port and lsd never wakes
+
+A probe that reads the destination port's message count at the sampling instant settles what the two stacks only
+suggested:
+
+    SpringBoard p27 -> send remote=7003 msgid=0 peer=97 q=1 e5
+    lsd         p97 -> U1e54208c0  (= _kevent_id + 8)
+
+`peer=97` is `lsd` (its own process row names it), so the send right resolves to lsd's port, and `q=1` says exactly
+one message is **waiting in that port's queue**.  lsd is parked in `_kevent_id`, the kqueue wait libdispatch uses for
+its Mach-port sources, and it never takes the message.
+
+So this is no longer 'SpringBoard waits for an answer': the request is delivered and queued, and the receiver is not
+woken.  Delivery works; the wake does not.  In XNU that wake is the Mach-port kevent filter: a message enqueued on a
+port with a registered knote must make `kevent` return, and the filter code (`filt_machport*`, `ip_sync_inheritor_knote`,
+`ith_knote`) is present in this tree, which makes the notification path - not the filter's existence - the place to
+look next.
+
+Two consequences worth stating plainly:
+
+- every daemon that waits for Mach messages through libdispatch (lsd, and the XPC services behind SpringBoard) would
+  be affected the same way, which is consistent with how little of userland ever reacts to anything;
+- nothing in either reference repository covers this: their kernels carry the same patch series as ours, so if the
+  wake path is broken here it was broken there too, and what differs is which services the reference board's extra
+  drivers start first.
+
+### The next measurement
+
+Print, for the same sample, whether the port has a knote attached and whether the owner thread's `ith_knote` matches
+it: that separates 'no knote was ever registered' (a libdispatch side effect of how the port was made) from
+'a knote is registered and was not posted' (a kernel wake defect).

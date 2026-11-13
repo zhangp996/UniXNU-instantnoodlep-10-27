@@ -111,7 +111,8 @@ static void lookup_peer(struct bt_entry *e,ipc_space_t space) {
  e->peer_code=3;if(!space)return;
  ipc_port_t port=IP_NULL;e->peer_code=4;
  if(ipc_port_translate_send(space,(unsigned)e->regs[3],&port)!=KERN_SUCCESS)return;
- e->peer=ipc_port_get_receiver_task_locked(port,NULL);e->peer_code=(e->regs[1]&1)?0:5;ip_mq_unlock(port);
+ e->peer=ipc_port_get_receiver_task_locked(port,NULL);e->peer_code=(e->regs[1]&1)?0:5;
+ e->peer_queue=(unsigned)port->ip_messages.imq_msgcount;ip_mq_unlock(port);
 }
 void boot_ui_trace_task(task_t task,unsigned index,int pid,const char *name,unsigned slide) {
  if(!ml_get_interrupts_enabled()){++draft_busy;return;}

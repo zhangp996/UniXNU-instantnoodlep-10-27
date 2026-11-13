@@ -16,6 +16,7 @@
 struct bt_entry {
  uint64_t pc,lr,fp,frames[BT_FRAMES],regs[8],trap;
  int peer;unsigned peer_code;
+ unsigned peer_queue; /* messages already queued on the destination port when sampled */
  unsigned index,count,error;
  char role;
 };
