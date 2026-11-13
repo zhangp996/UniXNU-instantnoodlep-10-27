@@ -5185,3 +5185,19 @@ command line 856 bytes, image `8adfa6e171bc8e09ca9e7611f8300e41c661345821a252fef
 This is the second place where the fork had drifted from the reference - the driver itself was 665 lines behind, and
 the arguments carried its private spelling.  Both are now aligned with upstream, with the SMMU gate as the board's
 only remaining deviation.
+## 20:20: documented arguments and the upstream driver together boot normally
+
+The image carrying the upstream ShengUfs rebase and the documented argument names:
+
+    NativeUfs: published SystemOS / OS ... ready
+    NativeRamBlock: attachStore gate: mode=2 ... open=1 read=1 write=1 sync=1 gpt=1
+    (no 'holds no Data of this seed' - the store still holds this seed)
+    frames: 3, 4375 log lines, no panic
+    SpringBoard p27 n3-n5 r0 w3, kernel side ipc_mqueue_receive_continue
+
+Three things confirmed at once: the documented `data-persist=2` reaches the driver (`mode=2`), the store opened two
+days of work ago still holds the seed, and the rebased driver runs the board without the SMMU gate misbehaving.
+
+The stall is unchanged - SpringBoard parks in the kernel receive wait and chronod is never started - so both the
+driver's age and the argument dialect are off the list as causes.  What the day establishes is that this board now
+runs upstream code with the documented interface, and only one adaptation remains: the SMMU stream gate.
