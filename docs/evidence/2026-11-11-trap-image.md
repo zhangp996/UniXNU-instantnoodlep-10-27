@@ -5511,3 +5511,22 @@ baseline: `1d525b9eb0635c411f6db67c71d7e13f2209a5d96082e07a739df0838f3e5d47`.
       boot-ui-focus{,...2..4} boot-ui-chrono=1 offline-legacy-{register,gop,unit-scale=2,pm,validate,
       transfer,cpu-present,phase=4,adopt}=1 sheng-vsync=120 sheng-vsync-fixed=1
       offline-mobile-graphics-{load,client}=1
+
+## 22:40: backlight port attempted twice, both blocked by the kext toolchain
+
+First attempt called the header's `startIn2020Backlight()` directly: it has **internal linkage** (it is defined
+inside the header's anonymous namespace), so the kernel could not resolve `_startIn2020Backlight`.
+
+Second attempt added `package/BacklightPort.cpp` - the translation unit that includes the header and exports
+`extern "C" native_board_backlight_start()` - which is the correct shape, and it does not build: the archive step
+compiles it as `-xc++ -fapple-kext -nostdlibinc` and clang-24 aborts inside `RecordLayoutBuilder` after failing to
+find `meta_features.h`, and the outer build reports only the `CalledProcessError`.  Reproducing the command by hand
+loses the SDK include paths and crashes the same way, so this needs the archive script's own `cmd` list (with its
+`-I` entries) rather than a hand-built command line.
+
+Both attempts are reverted; the kernel hash is again exactly the consolidated baseline
+(`1d525b9eb0635c411f6db67c71d7e13f2209a5d96082e07a739df0838f3e5d47`), and the three backlight files stay in
+`package/` for that later step.
+
+Backlight is a brightness feature and has no bearing on the ChronoServices stall, so the useful next steps remain the
+GUI/IPC diagnostics (their r22-r31 ladder) or finishing the knote observation.

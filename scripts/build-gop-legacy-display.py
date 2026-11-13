@@ -241,6 +241,7 @@ run(_pmgr_cmd,cwd=r['directory'])
 _pmgr_dir = ROOT/'build'/'sheng-platform-power'
 _pmgr_dir.mkdir(parents=True, exist_ok=True)
 run(['llvm-ar','rcs',str(_pmgr_dir/'libShengPlatformPower.a'), str(OUT/'PmgrLoad.o')])
+
 print('PASS: PMGR archive published')
 # The keybag kit's own source provides the initializer and the allocation entry point the probe calls.
 _ke_src=str(ROOT/'drivers'/'AppleKeyStoreState'/'NativeKeyStoreEvents.cpp')
