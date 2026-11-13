@@ -5830,3 +5830,32 @@ other two provably do not fire on this board.  Closing it needs one of:
 - a sample of the port **while** the message is queued (not after), with the receiver's thread state in the same
   record;
 - or the QEMU harness, where the same sequence can be stepped through deterministically.
+## 00:25: the QEMU kernel probe now runs on Linux, and stops at a symbol
+
+Ported `probe-darwinboot-xnu.py` and `audit-xnu-kernel.py` off `xcrun`: a small `_host_tool()` helper prefers the
+LLVM tools when they exist (WSL exposes an `xcrun` stub through interop that fails on use, so `which xcrun` is not a
+reliable test), with `UNIXNU_NM` / `UNIXNU_DWARFDUMP` overrides.
+
+Then the probe walked through three missing inputs, each supplied from this machine's own build outputs:
+
+| input | where it was |
+| --- | --- |
+| `UniXNU.efi` | `uefi-instantnoodlep/Build/instantnoodlepPkg/RELEASE_CLANGPDB/AARCH64/UniXNU.efi` |
+| `DarwinBoot.efi` | same tree, `AARCH64/DarwinBoot.efi` |
+| our kernel | `out/instantnoodlep/.../tree/build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/mach.development.bcm2837.unstripped` |
+
+With those, it audits the kernel, builds a **synthetic QEMU device tree (1084 bytes, 62.5 MHz timebase)** and then
+stops with:
+
+    Cannot resolve _native_legacy_properties
+
+The probe insists on two display globals (`_native_legacy_properties`, `_native_legacy_client_class`) that this port's
+`NativeLegacyDisplay` build does not export under those names, so it cannot complete its memory inspection - a port-side
+naming gap, not a QEMU problem.
+
+### Where that leaves the QEMU route
+
+It is now **runnable on this host** - macOS toolchain dependency removed, firmware inputs located, synthetic DT built -
+and one small step from attempting the boot: export (or teach the probe to skip) those two symbols.  Worth noting that
+even when it boots, the fixture cannot reproduce the ChronoServices stall: it carries neither the dyld cache nor
+libdispatch, which is where the stall lives.
