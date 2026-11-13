@@ -5310,3 +5310,19 @@ Does it help?
   0x100000.
 
 Nothing in it touches the Mach wake stall.
+## 20:45: SMP was never on - and turning it on hangs this board
+
+The alioth port documents a fact this port never applied: `ArmCpu.cpp` issues a PSCI `CPU_ON` only when
+`sheng-smp` is non-zero (`if (smp == 0 ... ) return nullptr; // Secondary startup is opt-in (sheng-smp=1)`), so
+this port has been running **uniprocessor** since the port began - `zzz-max-cpus-8.patch` raises `MAX_CPUS` but does
+not start a core.
+
+Added the reference board's arguments (`sheng-smp=1`, `armcpu-spi-ipi=1`, `armcpu-diagnostics=1`) and booted: the
+board produced **no console output at all** - the capture holds 61 bytes, its own header - so the boot stops before the
+USB console exists.  alioth's notes describe exactly this class of failure ('two independent runs froze at the same
+point ... SMP is the remaining variable') and record that they later turned SMP off again.
+
+So the situation is now precise: this port has never had a second CPU running, and enabling it on the current bring-up
+hangs before any log.  That is a bring-up defect in its own right, and it also means every timing observation made so
+far (lsd idle in `_kevent_id`, SpringBoard waiting in `mach_msg2`, 146 processes on one core) was taken on a
+uniprocessor system.

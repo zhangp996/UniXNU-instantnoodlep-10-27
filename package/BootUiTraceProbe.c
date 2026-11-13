@@ -112,6 +112,7 @@ static void lookup_peer(struct bt_entry *e,ipc_space_t space) {
  ipc_port_t port=IP_NULL;e->peer_code=4;
  if(ipc_port_translate_send(space,(unsigned)e->regs[3],&port)!=KERN_SUCCESS)return;
  e->peer=ipc_port_get_receiver_task_locked(port,NULL);e->peer_code=(e->regs[1]&1)?0:5;
+ e->peer_port=(unsigned long)(uintptr_t)port;
  e->peer_queue=(unsigned)port->ip_messages.imq_msgcount;
  e->peer_waiters=!circle_queue_empty(&port->ip_waitq.waitq_links);
  e->peer_turnstile=port->ip_waitq.waitq_ts!=0;ip_mq_unlock(port);
