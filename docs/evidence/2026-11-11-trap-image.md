@@ -4994,3 +4994,19 @@ staged-apps union.  They were compensating for state that now survives on disk.
 chronod is still absent and SpringBoard still waits on its ChronoServices reply - but the ground has changed: the
 userland now keeps whatever it wrote at the previous boot, which is the state the reference board has and this port
 did not.
+## 19:25: the persistent boot's userland state
+
+The boot that verified persistence runs with the same userland outcome as before:
+
+    frames: 3
+    lsd p95 n7 r1 w6  U1ea6f08c0 (= _kevent_id)
+    chronod: absent
+
+so persistence is a prerequisite that is now met, not a cure: the ChronoServices stall is unchanged on the first
+persistent boot.  What has changed is that a second, third and fourth boot now start from the state the previous one
+left - containers (7 of 8 already present), preferences and the LaunchServices store - which is the condition the
+reference board has and this port has never had.
+
+The cheap next test is therefore repetition, not code: boot the same image several times and watch whether chronod
+appears and SpringBoard's reply arrives once the userland has state to work from.  Each cycle needs the device back in
+fastboot, so the test is paced by reboots rather than by builds.
