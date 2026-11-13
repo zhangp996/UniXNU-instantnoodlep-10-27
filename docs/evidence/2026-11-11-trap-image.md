@@ -4795,3 +4795,29 @@ the store window is never opened, and the kernel-side Setup skip and LaunchServi
 The next measurement is small and exact: call `native_ufs_store_open` once at root publication and print its `why`
 string with the geometry, which names the failing condition (`off`, `no root layout`, `size`,
 `overlaps the root image`, `window refused`) instead of leaving it silent.
+## 17:55: two steps that went sideways, both outside the kernel
+
+Checked the repository against the reference pages and against what the device actually runs.
+
+### 1. The Data volume never became persistent
+
+`/zh/concepts/userdata` separates two things this port treated as one: the userdata partition carries the root
+through `SHNGROOT` windows (working here: `NativeUfs: published OS` / `published SystemOS`), and the writable Data
+volume's persistence comes from a **store window at the tail of that partition**, opened by `data-persist=2` with
+`log-reserve` kept clear.  This port passes `sheng-data-persist=2` but the store is never opened, so Data is rebuilt
+from the seed every boot, and every kernel-side workaround added since - the Setup skip written at display start,
+`native_ls_store_drop`, the staged-apps union, the launchd job overlays and the cache patch - compensates for state
+that would otherwise have stayed on disk.  The reference page also names `--skip-setup` as the build-time way to get
+a seed whose Setup is already complete, which is where that behaviour belongs.
+
+### 2. The storage driver edited here is not the one that runs
+
+`board.toml` selects `ShengUfs` and never mentions `KonaUfs`; the framework catalog has no `KonaUfs` entry either.
+The linked archive is `build/sheng-ufs/libShengUfs.a` (758 KB) beside `build/native-ufs/libNativeUfs.a` (114 bytes)
+and nothing from `drivers/KonaUfs`.  So the store-window diagnostics written earlier today went into a driver the
+board does not build, which is also why the kernel hash did not move when that file changed: the running storage
+path is the feed's `ShengUfs`.
+
+Both are configuration-level, not display- or kernel-level, and both are cheap to correct: register and select the
+driver that is actually maintained here (or move the diagnostics into `ShengUfs`), and make the store window open
+before adding any further userland workaround.

@@ -1927,6 +1927,11 @@ extern "C" int native_ufs_store_open (uint64_t blocks, uint64_t *firstLba, const
     }
   }
   if (why) *why = reason;
+  // Board bring-up: name the condition that keeps the persistent store closed, since the caller only reports the
+  // refusal to the diagnostic page.
+  IOLog ("NativeUfs: store open mode=%u blocks=%llu valid=%d host=%d reserve=%llu reason=%s ok=%d first=%llu\n",
+         storeMode (), (unsigned long long)blocks, (int)gStoreGeometry.valid, (int)gHost.ready,
+         (unsigned long long)reserveBlocks (), reason, ok, (unsigned long long)gStoreRegionFirst);
   return ok;
 }
 
