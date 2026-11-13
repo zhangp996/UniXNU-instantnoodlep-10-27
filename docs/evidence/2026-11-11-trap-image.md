@@ -5396,3 +5396,37 @@ system completes: the log grows sixfold and SpringBoard carries nine threads ins
 - a working `sheng-smp-max=<n>` selector for staged bring-up;
 - persistence that survives these boots once `sheng-data-reset` is off the command line;
 - and the same open question: a message on lsd's port with no waiter and no turnstile.
+## 21:50: ye3912's method, and how far this port already matches it
+
+### The three repositories that matter
+
+| repository | what it is |
+| --- | --- |
+| `unixnu-oneplus-8-pro` (branch `codex/metal-r1-baseline-20261113`) | the device port: 87 patches, 8 components, six boot arguments, desktop + Metal reached |
+| `UniXNU-instantnoodle` (branch `codex/in2020-gpu-r3-20261113`) | a framework snapshot with the IN2020 BGRA framebuffer policy and CI |
+| `apfs` | a workflow that rebuilds the **Data seed from the IPSW's own `/private/var`**, with launchd pinned, fsck'd, packed as DBRDISK1 |
+
+### Their method, point by point, against this port
+
+| their step | this port |
+| --- | --- |
+| Data seed copied from the OS mount's `/private/var` (`make-data-seed.py` does exactly the same in this framework) | **same tool, same source** - not a difference after all |
+| minimal command line (six arguments) | 42 arguments, most of them bring-up workarounds |
+| `sheng-pmgr=2` loads `ApplePMGR` and publishes its nub | **missing** - the glue exists in `UniXNU-sheng/package/ShengPlatformPower.cpp` but needs `OriginalPMGRABI.h`, which none of the public repositories carries |
+| staged SMP: CPU nub gate + `sheng-smp-core`, then three, four, ... eight cores | **now working** here for one and three cores (`zzz-smp-core-gate.patch`, `zzz-arm64-mpidr-aff1.patch`) |
+| `c2-lsd-ipc` / `c2-core-xpc` traces of lsd's ChronoServices requests | this port's own queue probe reaches the same fact more directly (`q=1 w=0 t=0` on lsd's port) |
+| BGRA framebuffer policy patched into the cached presenter image | not adopted; this port presents three frames already, so it is a quality item, not a blocker |
+| owner-data 3 GiB with store window | **working** here, verified across reboots |
+
+### What is left that is genuinely theirs and not ours
+
+1. **PMGR** (`sheng-pmgr=2`): the one documented step this port has never taken, blocked by a missing ABI header;
+2. **their 87-patch ladder**: each milestone (h3*, p2-p4, c2, r22-r74) is a separate, recorded step; this port has
+   six board patches of its own plus the framework series;
+3. **the Metal/GPU stack** (r59-r74) - out of scope while the CPU path is still being debugged.
+
+### The honest position
+
+With SMP, persistence, the upstream UFS driver, the documented argument names and the same Data-seed tool, this port's
+foundation now matches theirs.  What it does not have is PMGR, and the ChronoServices stall is unchanged by
+everything else.
