@@ -5634,3 +5634,29 @@ correcting one kernel defect.  What the survey does add is one concrete expectat
 
 Trying `boot-ui-focus3=chronod` is a one-argument experiment that changes what the display query waits for, and it is
 the only community-documented knob aimed at this stage.
+## 23:55: the focus knob changes SpringBoard's activity, not chronod's absence
+
+Set `boot-ui-focus3=chronod` (the reference port's value; this port had `lsd`).  Boot: 3748 log lines, three frames,
+and the probe now tracks chronod directly:
+
+    PROC[3] chronod: absent from this process pass
+    PROC[2] SpringBoard p27 n16 r4 w12 ... Cfffffff00b8549f8 (_ipc_mqueue_receive_continue)
+
+Against the previous boot's `n3..n9 r0 w3..w9`, SpringBoard now carries **16 threads with 4 running** - the focus change
+really does make it query that client - but it still parks in `ipc_mqueue_receive_continue`, and **chronod still never
+starts**.
+
+So chronod's absence is upstream of the focus knob: launchd never runs it, and the display query then waits for a
+client that cannot answer.  The port's own probe writes a chronod job onto the Data volume each boot
+(`DISPLAY: chronod job on the Data volume: 30`, `chronod override written: 0`), which is the next thing to verify:
+whether that override reaches launchd's job database, and whether the job is disabled there.
+
+Image: `ba08ddaabb437c3c0e5cfe17a2c01d187f28c01e6cd0cc3a519586fb77490f7e`.
+
+### State of the investigation after today
+
+- foundation complete: staged SMP (3 cores), persistent Data, upstream UFS driver, documented argument names, PMGR
+  loading, display wiring at parity with the reference port;
+- the stall is characterised precisely: armed port, queued message, no waiter, receiver in `_kevent_id`;
+- and the newest fact is that **chronod is never launched**, which the reference port's own logs say should happen on
+  this OS line.
