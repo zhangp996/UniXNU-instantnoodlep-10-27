@@ -4909,3 +4909,23 @@ Chain of measurements that got there:
 Result: SystemOS and OS published, boot device found, launchd started, three frames, no panic - so the driver this
 repository maintains is now the driver the device runs.  native_ufs_store_open is still not called, so the store
 window remains closed: that decision is inside RamBlock's overlay, and its inputs are the next thing to print.
+## 19:05: the driver question is settled; the store gate is now in RamBlock
+
+Result of this stretch: the board runs the UFS source this repository maintains, and it boots.
+
+| step | evidence |
+| --- | --- |
+| shared ShengUfs linked as-is | panicked: `UFS ROOT FAILURE: SMMU stream mapping readback` |
+| kona `smmuBypassStream` gate ported in | boot moved past the SMMU check |
+| mapping hoisted above the gate | boot stopped dying in `hostBringUp + 0x2ec` (`far=0`) |
+| `native_ufs_store_write_cached` added and archive published as `libShengUfs.a` | link succeeds |
+| component revision moved to the commit that carries these changes | `NativeUfs: published OS/SystemOS`, boot device found, launchd starts, three frames, no panic |
+
+All six store entry points RamBlock probes (`open`, `read`, `write`, `sync`, `gpt_check`, `mode`) are defined, and
+`native_ufs_store_write_cached` makes the seventh.  `native_ufs_store_open` is still never called, so the store
+window stays closed: the decision has moved out of the driver and into `RamBlock`'s `attachStore()`, whose gate is
+
+    mode && (sparse.pages || isBig) && &store_open && &store_read && &store_write && &store_sync && &store_gpt_check
+
+with `mode` from `sheng-data-persist=2`.  Printing those five inputs from `attachStore` is the next measurement, and
+it is a change to the RamBlock submodule rather than to this repository.
