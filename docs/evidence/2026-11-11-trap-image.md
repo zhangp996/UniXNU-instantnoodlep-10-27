@@ -5559,3 +5559,25 @@ libdispatch/workloop path rather than a Mach-port registration defect.
 Instrument the wake side instead of the receive side: in `filt_machportattach`'s filter event (`filt_portevent`) and in
 `knote_post` for the machport knote, print when a message is queued on an armed port and whether the knote was posted.
 That separates 'knote never posted' from 'knote posted, workloop never ran'.
+## 23:05: wake-side trace installed, and it shows the filter is not the notification path
+
+Added `MPORT event port=... kn=... filter=...` to `filt_port_filter_result()` (osfmk/ipc/ipc_pset.c) - the one place where the
+mach-port filter evaluates "is there a message on an armed port" - capped at 200 lines.
+
+Boot with it: 3676 log lines, three frames, and **0 `MPORT event` lines**.  Two readings were possible:
+
+1. no message ever reached an armed port (contradicted by the probe, which reports `q=1` on armed ports), or
+2. this XNU does not notify mach-port knotes through the filter at all.
+
+Reading 2 is the correct one: in this kernel the mach-port knote is a **turnstile push** into the kqueue's workloop
+turnstile (`filt_machport_turnstile_prepare`, `ipc_port_send_update_inheritor`, `turnstile_workloop_pusher_info`), and
+`filt_port_filter_result()` only runs on attach and on kqueue scans.  So the trace as placed cannot observe the wake.
+
+### What is established, and what it leaves
+
+Established: the port is **armed** (knote attached), the message **is queued**, there is **no waiter and no turnstile**,
+and the receiver sits in `_kevent_id`.  The wake in this design would have to travel through the turnstile push into the
+workloop's turnstile; observing that means instrumenting `turnstile_workloop_pusher_info`/`ipc_port_send_update_inheritor`,
+which is a deeper change than a counter in the filter.
+
+Image: `ca93eb9a6ba72fcf3543cbcdb5d829f00e3b7aedb7edf47a2b2c58c0fbfdedb7`.
