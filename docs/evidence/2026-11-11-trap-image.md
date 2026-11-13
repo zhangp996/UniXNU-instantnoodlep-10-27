@@ -5224,3 +5224,29 @@ GPU (the reference desktop predates it), the driver's age and the argument diale
 
 Open: a synchronous Mach message queued on lsd's port (`q=1`) with no waiter and no turnstile (`w=0 t=0`) while lsd
 waits in `_kevent_id`; chronod never starts; SpringBoard waits for a reply that never comes.
+## 20:35: AppleKeyStoreState and the framework repository
+
+**AppleKeyStoreState** is the component this port already selects.  Its README states what it does and what it needs:
+key wrapping is software, the device key is derived from the identity the board returns through
+`native_aks_device_id` (which this kernel provides), a board must return one, and reference key operations and device
+lock stay unsupported.  Its documented switch is `aks=1`, while the gate this port actually exercises is its own
+`sheng-aks=1` in `package/KeyStoreProbe.cpp` - the board glue that answers the state queries.  Nothing there is a
+gap: keybagd runs and exits cleanly on this board.
+
+**UniXNU (the framework)** is where a real divergence appeared: this fork is pinned at `3683a2e` (2026-11-10) while
+upstream is at `7d85ede` (2026-11-13).  The patch *set* is identical (59 files, same names), and only three patches
+changed in those three days - and every change is a **rename of a boot argument**:
+
+| upstream now reads | this port still passes |
+| --- | --- |
+| `gpu-addon` | `sheng-gpu-addon` |
+| `staged-apps` | `sheng-staged-apps` |
+| `no-lc` | `sheng-no-lc` |
+
+which is the same dialect drift found in the UFS driver an hour ago (`data-persist` vs `sheng-data-persist`,
+`log` vs `sheng-log`).  The official convention has dropped the `sheng-` prefix everywhere; this port's snapshot
+predates that, so today the old names still work here - but they will stop the moment the framework is updated.
+
+Neither repository addresses the Mach wake stall.  What they do say is that this port is one framework snapshot and a
+handful of argument renames away from being exactly upstream, which is worth doing in one step rather than discovering
+each rename one boot at a time.
