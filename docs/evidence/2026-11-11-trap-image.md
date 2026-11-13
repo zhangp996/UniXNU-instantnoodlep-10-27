@@ -5081,3 +5081,27 @@ either unavailable (PMGR symbol) or unrelated (GPU stack, board services).  The 
 probe established: a message sits on lsd's port with no waiter and no turnstile while lsd waits in `_kevent_id`.  The
 next instrument that can move this is a kernel-side view of that port's knote, which is a smaller change than anything
 tried today and the only one that distinguishes 'never armed' from 'armed and not posted'.
+## 20:05: XnuPrelink checked - it is the tool this port already uses
+
+The repository is the kernelcache prelink and ABI tooling (`emit_prelink.py`, the fileset emitters, the segmented
+fixups and the corecrypto HMAC recomputation), and its README states it is used by the kernel build and the payload
+step - which is exactly how this port uses it through `kits/XnuPrelink`.
+
+Its output for this board was inspected for the kexts a userland stall could implicate:
+
+| kext | in this prelink |
+| --- | --- |
+| `com.apple.security.sandbox` | present |
+| `com.apple.driver.AppleMobileFileIntegrity` | present |
+| `com.apple.driver.ApplePMGR` | present |
+| `com.apple.filesystems.apfs` | present |
+| corecrypto | present |
+| pthread | absent by design - `source-pthread-bootstrap` registers the source-built one early, which is the
+  documented arrangement |
+
+so the prelink carries the kexts this problem could plausibly depend on, and there is no gap there to close.  The
+tooling would matter if a kext were missing from the fileset; it is not, and the remaining stall is a Mach message
+that is queued and never woken, which prelinking does not touch.
+
+The knote-attach trace was being rebuilt when this arrived; it stays the instrument that can still separate
+'port never armed for kqueue' from 'armed and not posted'.
