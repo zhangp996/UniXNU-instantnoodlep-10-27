@@ -5990,3 +5990,35 @@ parked receiver it did not have**, and the probe's queued-and-unwaited samples a
 by sampling the same port on both sides of a post (before and after) instead of on a timer.
 
 Image: `6e32f578796f63ac24d82f352afd5a8f02ca3be503a15422a6f03478bd60ea3e` (this boot did not reach the display).
+## 00:45 (Nov 14): the probe's `q=1` may be a send reservation, not a queued message
+
+The waiter field was wrong and is now fixed: `peer_waiters` read `waitq_links` (the linkage for waitq sets) instead of
+`waitq_queue` (the circle queue the waiters are on), which is why every sample looked unwaited.  After the fix, the
+sample still reads `q=1 w=0 t=0` on a port owned by **launchd**: so the port genuinely has no waiter.
+
+But in the same boot, all four notification instruments still read **zero**:
+
+    NOFAIL 0   MPOST 0   PREPOST 0   INHERIT 0
+
+and their format strings are in the shipped kernel.  A message that reaches a port with no waiter **must** take the
+`receiver == THREAD_NULL` branch, so `NOFAIL` would have printed.  It did not.
+
+### The reading that fits
+
+`imq_msgcount` is not only 'messages in the queue'.  In this kernel it is the port's **reservation count**, raised when
+a send reserves space (`ipc_mqueue_send_prepare`) and lowered when the message is consumed.  A send that reserved and
+then **blocked before enqueueing** leaves exactly this signature:
+
+    q=1      one outstanding reservation (a send in flight)
+    w=0      nobody parked in msg_receive
+    t=0      no turnstile push
+    sender   blocked inside the send call - SpringBoard sits in `mach_msg2`
+
+Under that reading nothing is ever enqueued, which is precisely why every notification instrument stays silent: the
+stall is **before** the enqueue, in the send path, not in the wake path.
+
+### Next measurement
+
+The probe must distinguish the two: read `ipc_kmsg_queue_first(&port->ip_messages.imq_messages)` alongside
+`imq_msgcount`.  A message present means 'queued and unwaited'; a NULL head with a non-zero count means 'send reserved
+and blocked' - and that is a completely different defect to chase.
