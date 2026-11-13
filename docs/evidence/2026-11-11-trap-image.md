@@ -5581,3 +5581,29 @@ workloop's turnstile; observing that means instrumenting `turnstile_workloop_pus
 which is a deeper change than a counter in the filter.
 
 Image: `ca93eb9a6ba72fcf3543cbcdb5d829f00e3b7aedb7edf47a2b2c58c0fbfdedb7`.
+## 23:35: the knote-post trace lands on an unexpected answer
+
+`ipc_mqueue_post` is the only place that posts a mach-port knote for an arriving message, and it does so only when
+`receiver == THREAD_NULL` and `ipc_port_has_klist(port)` (which is `!ip_specialreply && ip_sync_link_state ==
+PORT_SYNC_LINK_ANY`).  Guarded traces were added on both sides of that branch - `MPOST posted` when `KNOTE()` runs,
+`MPOST skipped` when a knote is attached but one of the guards fails.
+
+Boot with them: 3683 log lines, three frames, **0 `posted` and 0 `skipped`**.  So for the whole boot, the
+`receiver == THREAD_NULL` + enqueue path never met a port that `ipc_port_has_klist()` accepts - messages are being
+handed to a waiting thread instead of queued-and-notified, or they arrive on reply ports that the guard excludes by
+design.
+
+That is in tension with the probe's own reading (`q=1 w=0`): a queued message with no waiter should have taken exactly
+the branch that never fired.  Either the probe is sampling a different port from the one the trace sees (its peer is
+the port the sender trapped on, which may not be the receive-side port), or the queue is filled by a path that does not
+go through `ipc_mqueue_post`.
+
+### What this thread established, and where it stops
+
+Established with three independent logs: the port lsd waits on **is armed** (knote attached) and holds a message with
+no waiter and no turnstile.  The kernel-side notification site that would explain the wake never fires for any armed
+port during a boot, which means the next step is not another counter in `ipc_mqueue.c` but a decision about **which
+port the probe is actually sampling** - i.e. resolve the peer port's identity (owner, right type) rather than its
+pointer, and re-run the cross-reference.
+
+Image: `1311849d70bd4d2847e1e7ffe7d6d5b2e2d45992299c8bf6144095f4180ebb2e`.
