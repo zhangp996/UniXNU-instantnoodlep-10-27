@@ -5374,3 +5374,25 @@ was initialised, and it **wipes the persistent Data store on every boot** - so e
 fresh seed.  With it gone (and `kill-lsd`, `unixnu-overlays=0` removed too) the command line is 818 bytes.
 
 Image: `02c3378a9a53b0126c1b1baef0dd91e4fcdaac4e12a9a55d9a3ebd1278123660`.
+## 21:40: SMP is real - one secondary, then three cores, both boot
+
+| configuration | result |
+| --- | --- |
+| `sheng-smp=1 sheng-smp-core=1` (one secondary) | 6655 log lines, 3 frames, `containers made=1 present=7` (persistence intact), SpringBoard `n9 r0 w9` |
+| `sheng-smp=1 sheng-smp-max=2` (three cores) | 3697 log lines, 3 frames, SpringBoard `n5 r0 w5`, userspace `SIGTRAP` entries in three daemons |
+| uniprocessor (before) | ~1000 log lines, SpringBoard `n3 r0 w3` |
+
+Both SMP runs are stable (no kernel panic); the three-core run shows userspace `BRK` traps (`esr=0xf2000001`) in three
+processes, which is the normal shape of a daemon aborting, not a kernel fault.
+
+SpringBoard is still parked in `ipc_mqueue_receive_continue` in both runs, and chronod is still absent, so more cores
+alone do not move the ChronoServices stall.  What did change with the second core is the amount of userland work the
+system completes: the log grows sixfold and SpringBoard carries nine threads instead of three.
+
+### What this leaves the port with
+
+- a **fixable** SMP: `zzz-arm64-mpidr-aff1.patch` (MPIDR must keep Affinity1) and `zzz-smp-core-gate.patch` (publish
+  only the selected cores, and never detach the nub);
+- a working `sheng-smp-max=<n>` selector for staged bring-up;
+- persistence that survives these boots once `sheng-data-reset` is off the command line;
+- and the same open question: a message on lsd's port with no waiter and no turnstile.

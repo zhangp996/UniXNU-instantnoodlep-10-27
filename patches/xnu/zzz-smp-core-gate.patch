@@ -2,7 +2,7 @@ diff --git a/iokit/Kernel/IOPlatformExpert.cpp b/iokit/Kernel/IOPlatformExpert.c
 index d0149a6..a5fdff6 100644
 --- a/iokit/Kernel/IOPlatformExpert.cpp
 +++ b/iokit/Kernel/IOPlatformExpert.cpp
-@@ -1641,6 +1641,29 @@ IODTPlatformExpert::createNub( IORegistryEntry * from )
+@@ -1641,6 +1641,33 @@ IODTPlatformExpert::createNub( IORegistryEntry * from )
  	return nub;
  }
  
@@ -19,8 +19,12 @@ index d0149a6..a5fdff6 100644
 +	PE_parse_boot_argn("sheng-smp", &smp, sizeof(smp));
 +	bool have_core = PE_parse_boot_argn("sheng-smp-core", &core, sizeof(core)) != 0;
 +	int boot = ml_get_boot_cpu_number();
++	unsigned maxcore = 0;
++	bool have_max = PE_parse_boot_argn("sheng-smp-max", &maxcore, sizeof(maxcore)) != 0;
 +	bool selected = logical >= 0 &&
-+	    (logical == boot || (smp != 0 && have_core && logical == static_cast<int>(core)));
++	    (logical == boot ||
++	     (smp != 0 && have_max && logical <= static_cast<int>(maxcore)) ||
++	     (smp != 0 && have_core && logical == static_cast<int>(core)));
 +	if (selected) {
 +		__atomic_add_fetch(&native_smp_eligible, 1U, __ATOMIC_RELAXED);
 +	} else {
