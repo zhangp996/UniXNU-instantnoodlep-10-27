@@ -5679,3 +5679,35 @@ Image: `66d79f594a1951f68238d611856d65511b413ccbc176fa3b5aac5cb5fed08409`.
 So the foundation the sibling port advertises - eight-core startup, persistent Data, native UFS, PMGR, CPU GOP
 presentation - is now all present here as well.  The ChronoServices stall and chronod's absence are unchanged by the
 extra cores.
+## 00:10 (Nov 14): the overlay approach targets a directory launchd does not read
+
+Three hypotheses were open about why chronod never starts despite a written job.  Two are now settled from local
+evidence, without the device:
+
+1. **The system plist exists.**  `native_launchd_overlay()` reads
+   `/System/Library/LaunchDaemons/com.apple.chronod.plist` back through the mount to see whether the union took
+   effect, and the boot log shows `launchd overlay check: <?xml version="1.0" ...` - the open succeeded.  (The check
+   cannot distinguish whose copy it read: both start with the same XML declaration.)
+
+2. **launchd does not read that directory at all.**  Every boot on this OS line shows
+   `Code: /System/Library/xpc/launchd.plist Sig: /System/Library/xpc/launchd.plist.sig` followed by
+   `Sending validated cache to launchd` / `Cache sent to launchd successfully`.  On iOS 17 launchd boots from a
+   **signed job cache** through `launchd_cache_loader`; a plist written into `/System/Library/LaunchDaemons` (or any
+   union over it) is not part of that cache and therefore never becomes a job.
+
+So the overlay was aimed at the wrong mechanism.  That also explains the earlier attempt recorded in
+`zzz-launchd-cache.patch`: editing the cache directly was rejected (`launchd_cache_loader ... SIGKILL`), because the
+cache is validated against a signature.
+
+### What follows
+
+Starting chronod has to happen by one of:
+
+- a **cache patch that survives validation** (the signature is the obstacle, not the patch site);
+- a **kernel-side start** of the service from the board probe (fork/exec of the ChronoCore binary, bypassing launchd
+  job registration);
+- or a check of whether the cache already contains a `com.apple.chronod` job whose launch condition our environment
+  never satisfies (in which case the fix is that condition, not the job).
+
+The third is testable locally by reading the cache's job list, which is worth doing before writing any more overlay
+code.
