@@ -4238,3 +4238,28 @@ Options, cheapest first:
    extracts the cache, and take the cache from its artifacts;
 2. install `apfs-fuse` and `lzfse` on this host and read the cache out of `044-76034-038.dmg`;
 3. teach the kernel to copy the first megabytes of the cache to the serial (too slow for a full symbol table).
+## 11:50: the shared cache is extracted and SpringBoard's stack is symbolized
+
+`apfs-fuse` reads the extracted volumes directly (`/tmp/sysos.img` is APFS, not a DMG), so the dyld shared cache
+needed nothing else:
+
+    /mnt/sysos/root/System/Library/Caches/com.apple.dyld/dyld_shared_cache_arm64   (3354 images, slide 0x14054000)
+
+With `ipsw dyld a2s` on the unslid addresses (frame - slide), SpringBoard's main thread resolves to:
+
+    mach_msg_overwrite
+    mach_msg
+    _dispatch_mach_send_and_wait_for_reply                    libdispatch
+    _dispatch_mach_send_with_result_and_wait_for_reply
+    _xpc_connection_send_message_with_reply_sync              libxpc
+    -[BSXPCServiceConnectionMessage _sendSynchronously:]      BoardServices
+    +[BSXPCServiceConnectionProxy createImplementationOfProtocol:forClass:withName:]_block_invoke
+    -[CHSChronoServicesConnection _subscribeToExtensions]     ChronoServices
+    -[CHSServerSubscription _lock_createServerSubscriptionIfNecessary:]
+
+so SpringBoard is not waiting on the display: it is inside a **synchronous XPC call** made while subscribing to
+ChronoServices extensions, and the reply never arrives.  The daemon list of the same boot shows no `chronod` at all
+- it is neither in the exit records nor in the runnable set - so the service SpringBoard asks for has no server.
+
+BoardServices is runningboardd's framework, so the next capture traces runningboardd (`boot-ui-focus4`) to see
+whether it is the process that fails to answer.
