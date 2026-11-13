@@ -4301,3 +4301,19 @@ database, or the lookup never reaches launchd at all.
 The port already mounts read-only **union overlays** (`native_gpu_addon_mount`, source `/private/var/ngpu`).  The
 same mechanism can serve a modified `com.apple.chronod.plist` with `RunAtLoad = true` over
 `/System/Library/LaunchDaemons`, which changes the job itself rather than hoping the override database is honoured.
+## 12:30: patch audit and MAX_CPUS
+
+The framework carries 59 patch files; this target applies 81 (framework + SoC + OS profile + device).  Only two
+framework patches stay unapplied:
+
+- `sheng-platform-power` - sheng's SM8550 PMGR integration, not this SoC;
+- `native-smp-secondary` - raises `MAX_CPUS` from 4 to 8 for an eight-core board.
+
+The second one applies here: SM8250 is also eight-core and the target builds the same BCM2837 board config.  The
+device series now carries `zzz-max-cpus-8.patch` (MAX_CPUS 4 -> 8) and the kernel builds and boots with it: three
+frames, SpringBoard waiting on lsd, lsd idling in its workloop - the same picture as before, as expected for a
+capacity change rather than a correctness one.
+
+Adding that patch re-prepared the tree, which discarded the hand edits in `kern_exec.c` (the LaunchServices store
+drop added earlier today).  The probe's late-drop call was removed with it; that path had already proved inert
+(containers found, no LaunchServices files in them), so nothing was lost.

@@ -16,3 +16,4 @@ zzz-exit-observe.patch
 zzz-shared-region-probe.patch
 zzz-boot-io-map-and-corpse-cap.patch
 zzz-app-cryptex-bind.patch
+zzz-max-cpus-8.patch

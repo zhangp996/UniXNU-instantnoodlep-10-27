@@ -81,7 +81,6 @@ extern "C" char boot_ui_trace_rows[14][120];
  * not rendered here, so the printer performs them itself. */
 extern "C" void boot_process_snapshot(void);
 extern "C" void boot_ui_trace_snapshot(unsigned seconds);
-extern "C" int native_ls_store_drop_late(void);
 extern "C" int native_owner_setup_skip(void);
 extern "C" int native_probe_iosurface_root(void);
 extern "C" int native_create_iosurface(uint32_t, uint32_t, uint32_t, uint32_t);
@@ -110,15 +109,11 @@ probe_rows_thread(void *, wait_result_t)
 					native_create_iosurface(1080, 2376, 4352, 10342400);
 				}
 			}
-			/* Retry the drop every 40 s: the containers only appear once containermanagerd has made
-			 * them, which is well after the Data volume is mounted. */
-			if (tick >= 20 && (tick % 40) == 0) {
+			if (tick == 20) {
 				/* Re-run the Setup skip here: the early call runs before the Data volume covers
 				 * /private/var, so the container tree it creates is hidden by the mount. */
 				printf("DISPLAY: re-run the Setup skip on the mounted Data volume: %d\n",
 				    native_owner_setup_skip());
-				int st = native_ls_store_drop_late();
-				printf("DISPLAY: late ls-store drop status=%d (containers=%d)\n", st, st / 1000 >= 0 ? st % 1000 : -1);
 			}
 		}
 		for (unsigned i = 0; i < 10; i++) {
@@ -954,6 +949,21 @@ native_owner_setup_skip(void)
 			failed++;
 		}
 	}
+	/* SpringBoard blocks in a synchronous XPC to com.apple.chronoservices and the on-demand job
+	 * com.apple.chronod (MachServices = com.apple.chronoservices, RunAtLoad = false) never starts.
+	 * Force it on at boot through launchd's overrides database. */
+	static const char overrides[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>com.apple.chronod</key><dict>"
+	    "<key>Disabled</key><false/>"
+	    "<key>OnDemand</key><false/>"
+	    "</dict>"
+	    "</dict></plist>\n";
+	int overrides_error = native_write_preference(
+	    "/private/var/db/com.apple.xpc.launchd/overrides.plist", overrides, sizeof(overrides) - 1);
+	printf("DISPLAY: chronod override written: %d\n", overrides_error);
 	int purple_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.purplebuddy.plist",
 	    purple, sizeof(purple) - 1);
 	int spring_error = native_write_preference("/private/var/mobile/Library/Preferences/com.apple.springboard.plist",
