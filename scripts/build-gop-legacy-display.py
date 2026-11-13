@@ -219,12 +219,31 @@ cmd+=['-Wall','-Wextra','-Wno-unused-parameter','-Wno-unnecessary-virtual-specif
       # IOUserClient2022 (the interface IOSurfaceRootUserClient answers on) is declared inside this guard.
       '-DKERNEL_PRIVATE=1']
 run(cmd,cwd=r['directory'])
+# The keybag side of the board: libAppleKeyStoreState.a calls native_aks_state_enabled and
+# native_aks_lock_state, so this object has to be in the archive or the archive is never linked.
+_ks_cmd=list(cmd)
+for _i,_v in enumerate(_ks_cmd):
+    if str(_v).endswith('LegacyDisplayProbe.cpp'):
+        _ks_cmd[_i]=str(ROOT/'package'/'KeyStoreProbe.cpp')
+    elif str(_v).endswith('LegacyDisplayProbe.o'):
+        _ks_cmd[_i]=str(OUT/'KeyStoreProbe.o')
+run(_ks_cmd,cwd=r['directory'])
+# The keybag kit's own source provides the initializer and the allocation entry point the probe calls.
+_ke_src=str(ROOT/'drivers'/'AppleKeyStoreState'/'NativeKeyStoreEvents.cpp')
+_ke_cmd=[a for a in _ks_cmd]
+for _i,_v in enumerate(_ke_cmd):
+    if str(_v).endswith('KeyStoreProbe.cpp'):
+        _ke_cmd[_i]=_ke_src
+    elif str(_v).endswith('KeyStoreProbe.o'):
+        _ke_cmd[_i]=str(OUT/'NativeKeyStoreEvents.o')
+run(_ke_cmd,cwd=r['directory'])
+run(['python3', str(ROOT/'scripts/globalize-static-init.py'), str(OUT/'NativeKeyStoreEvents.o'), '__GLOBAL__sub_I_NativeKeyStoreEvents.cpp'])
 # skipped for this board: hid_source=ROOT/'kits/sheng/HidInputProbe.cpp'
 hid_obj=OUT/'HidInputProbe.o'
 cmd=[a for a in cmd if a!='-Werror']+['-Wno-missing-designated-field-initializers', '-Wno-error']
 # companion components (HID, keystore, process, trace, log, reset) are not part of this board
 archive = OUT/'libNativeLegacyDisplay.late.a'
-run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o'])
+run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o',OUT/'KeyStoreProbe.o',OUT/'NativeKeyStoreEvents.o'])
 print('PASS: qualified late display archive produced: ' + str(archive))
 import hashlib as _hl, json as _json
 _sources = {

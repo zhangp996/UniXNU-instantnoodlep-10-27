@@ -4546,3 +4546,23 @@ the build is green again with the keybag probe left out rather than wired in hal
 The next step on this thread is therefore narrow: compile `KeyStoreProbe.cpp` with the probe's flags including its
 forced includes, add it to `libNativeLegacyDisplay.a`, and pass `sheng-aks=1` - the argument is already on the
 command line.
+## 16:25: the keybag boot task completes, and SpringBoard becomes busy
+
+Wiring the keybag probe in gave the first change in SpringBoard's state since the display work:
+
+    (keybag) <Notice>: Doing boot task
+    XNU-EXIT: keybagd pid=11 code=0 ns=0 sub=0x0
+
+and the boot-UI rows moved from a stalled SpringBoard to a working one:
+
+| | before | after |
+| --- | --- | --- |
+| SpringBoard threads | `n3 r0 w3` | `n9 r2 w7`, `n9 r1 w8` |
+| main-thread PC | `ipc_mqueue_receive_continue` | `1d1854b58` in SpringBoard itself (`UIT[7] MAIN S/U`) |
+| frames | 3 | 3 |
+
+`UIT[7]` now reports both the `S` and `U` rows with `err=0`, and `lsd` went from a workloop idle to `r1` with seven
+threads.  chronod still does not appear and the frame count is unchanged, so the keybag was a real step rather than
+the answer: SpringBoard is no longer parked in a receive, and what it does next is the thing to watch.
+
+The image that boots this way is `6209a7ebcc06473575372cceadafbf8b222ab52a6acefd638be0540673a031a9`.
