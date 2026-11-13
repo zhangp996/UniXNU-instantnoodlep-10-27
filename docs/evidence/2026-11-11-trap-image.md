@@ -4438,3 +4438,25 @@ Two of those name things this port already implements but never enables:
 
 The board record therefore keeps the ChronoServices thread open rather than closing it: the same OS on the same SoC
 does reach the desktop, so the difference is configuration, not capability.
+## 15:30: argument comparison with the board that reaches the desktop
+
+`j716f` passes 54 kernel arguments, this port 42.  What it has that this port does not, grouped by what it can
+explain:
+
+| j716f argument | this port | could explain |
+| --- | --- | --- |
+| `sheng-fb-gpu=1`, `pipa-gpu=12`, `pipa-gpu-dcvs=1` | none (no GPU driver) | its desktop is drawn through the GPU path; this port has only CPU presentation |
+| `sheng-backlight=1` | none | panel backlight control |
+| `sheng-aks=1`, `sheng-aks-sls=3` | none | AppleKeyStore/keybag availability for daemons that need it |
+| `-apfs_shared_datavolume` | none | how the Data volume is mounted; this port mounts Data itself with `CONFIG_XNU_OWNER_DATA_MOUNT` |
+| `owner-staged-apps=1` | `sheng-staged-apps=1` (same patch, different name) | staged system apps and their widget extensions |
+| `appsync=1` | none | the iOS 27 AppSync patch does not exist for this OS profile |
+| `offline-hid-*`, `sheng-touch-hid`, `pipa-buttons` | none | input; not needed for the first frame |
+| `sheng-pmgr=2` | none | board PMGR mode; `sheng_pmgr_run` does not exist in this port's feeds |
+
+and what this port has that j716f does not: `amfi_get_out_of_my_way=1`, `native-ufs-allow-unverified=1`,
+`root-unverified=1`, the `offline-legacy-*` display set, the `boot-ui-*` tracing set, `disable-jobs=` and the
+`sheng-*-log` instrumentation.
+
+So the record does not contradict this port's state - it reaches the desktop with a GPU path this board does not have
+yet - but it does not explain the ChronoServices stall either, because that stall happens before any drawing.
