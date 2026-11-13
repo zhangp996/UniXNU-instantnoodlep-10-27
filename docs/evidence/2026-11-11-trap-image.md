@@ -5105,3 +5105,37 @@ that is queued and never woken, which prelinking does not touch.
 
 The knote-attach trace was being rebuilt when this arrived; it stays the instrument that can still separate
 'port never armed for kqueue' from 'armed and not posted'.
+## 20:00: UniXNU-sheng compared file by file
+
+### Shape
+
+| | sheng (official) | this port |
+| --- | --- | --- |
+| `patches/xnu` | 3 board patches: `zzyd-sheng-audio-addon-mount`, `zzye-sheng-cpu-idle`, `zzyf-sheng-amp` | 7 board patches (6 + knote trace) |
+| `drivers/` | 8: Ath12kWifi, QcaBluetooth, QcomDwc3, QcomIris, ShengHidInput, ShengNovatekTouch, ShengPreflight, ShengUfs | 4: Adreno650, AdrenoMetal, KonaUfs, ShengUfs |
+| `package/` | 168 files | 59 files |
+| other | `hal/`, `firmware/`, `configs/`, `dts/`, `assets/` | `docs/`, `seeds/`, `scripts/` |
+
+### `package/`: 49 shared, 119 sheng-only, 10 this-port-only, 10 shared but different
+
+The ten shared files that differ are the ones this port adapted: `LegacyDisplayProbe.cpp`, `BootUiTraceProbe.c`,
+`BootUiTraceCore.h`, `BootUiTraceDetails.h`, `BootProcessProbe.c`, `KeyStoreProbe.cpp`, `GeniI2c.h`, `ShengAdsp.h`,
+`ShengBattmgr.h`, `SmmuBypass.h`.  `BootProcessProbe.c` in particular is **identical in its process ABI**
+(`proc_iterate(unsigned, proc_t callbacks...)`, `PROC_ALLPROCLIST` 1, `PROC_NOWAITTRANS` 4, `proc_best_name`), so the
+`kill-lsd` experiment that returned zero hits did not fail for an ABI reason - it needs a different explanation.
+
+The 119 sheng-only files are hardware services and probes: GPU (`OfflineMetal*`, `OriginalMetal*`, `OfflineGOP*`,
+`ShengGmu*`, `GpuMemoryPool`), audio (`ShengAudioReach`, `ShengAudioService`, `ShengCs35l43`), thermal, USB/MHI,
+Wi-Fi/Bluetooth, display diagnostics, and a root layer: **`SourceRootBinding.cpp`, `SourceRootPolicies.cpp`,
+`SourceStorage.cpp`**, plus `ShengPlatformPower.cpp`, `ShengBattery.cpp`, `BootLog.c`, `BootReset.c`,
+`BootDiagExport.c`.
+
+### What this comparison establishes
+
+No file in the official sheng repository touches Mach message delivery, kevent, libdispatch or launchd's port state.
+Its three board patches are audio, CPU idle and AMP.  The only overlap with this port's remaining problem is
+indirect: sheng's root layer (`SourceRoot*`) is how that board binds the source root, and this port mounts the same
+volumes through the framework's `offline-owner-*` patches instead.
+
+So the official repository cannot explain the stall either - consistent with the reference boards running the same
+framework series this port runs.
