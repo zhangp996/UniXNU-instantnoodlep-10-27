@@ -224,22 +224,7 @@ hid_obj=OUT/'HidInputProbe.o'
 cmd=[a for a in cmd if a!='-Werror']+['-Wno-missing-designated-field-initializers', '-Wno-error']
 # companion components (HID, keystore, process, trace, log, reset) are not part of this board
 archive = OUT/'libNativeLegacyDisplay.late.a'
-# The keybag side of the board: libAppleKeyStoreState.a calls these two entry points, so the probe has to
-# provide them or the archive is never pulled into the kernel.
-_ks_cmd=[]; _ks_done=False
-for _i,_v in enumerate(cmd):
-    if _v=='-o' and not _ks_done:
-        _ks_cmd+=['-o',str(OUT/'KeyStoreProbe.o')]; _ks_done=True
-    elif _i>0 and cmd[_i-1]=='-o':
-        continue
-    else:
-        _ks_cmd.append(_v)
-_ks_cmd=[c for c in _ks_cmd if not c.endswith('LegacyDisplayProbe.o')]
-_ks_src=str(ROOT/'package/KeyStoreProbe.cpp')
-_ks_cmd=[c if not c.endswith('LegacyDisplayProbe.cpp') else _ks_src for c in _ks_cmd]
-if _ks_src not in _ks_cmd: _ks_cmd.append(_ks_src)
-run(_ks_cmd)
-run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o',OUT/'KeyStoreProbe.o'])
+run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o'])
 print('PASS: qualified late display archive produced: ' + str(archive))
 import hashlib as _hl, json as _json
 _sources = {

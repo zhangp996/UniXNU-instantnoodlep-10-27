@@ -4524,3 +4524,25 @@ and the kernel build is green, but `kernel.macho` is unchanged because that arch
 link.  Registering an `Adreno650` component instead makes the framework's `build-arm-driver.py` path crash clang, so
 the script route stands and the link step is what remains - followed by the device tree work, the GPU firmware and
 the Metal addon that the reference builds with `build-j716f-gpu-addon.py`.
+## 16:15: the reference reached the desktop without a GPU, and what that changes
+
+`porting.toml` dates the reference board's desktop to **2026-11-04**, 'verified 2560x1600 @ 2x Retina desktop
+rendering and vsync pacing via GopFramebuffer', two days before the GPU scanout blitter and four before the
+backlight.  The desktop path is therefore the same CPU copy this port already presents three frames with, and the
+reference SpringBoard does not stall in ChronoServices - so the difference is configuration or userland state,
+not the GPU.
+
+Inspecting the component lists side by side found one subsystem the reference includes and this board never did:
+`AppleKeyStoreState` (the keybag state).  It is now selected here and its archive builds,
+
+    AppleKeyStoreState: -Werror build and arm64-apple-ios17.0 object audit passed
+
+but the archive is not pulled into the kernel: it calls `native_aks_state_enabled` and `native_aks_lock_state`,
+which the reference supplies in `package/KeyStoreProbe.cpp`, and that file was not part of this port.  It has been
+brought in, but the probe's archive step compiles against the framework's `package/` (the tree links that
+directory, not the device one) and the forced include `meta_features.h` is not resolved for the extra object, so
+the build is green again with the keybag probe left out rather than wired in half-way.
+
+The next step on this thread is therefore narrow: compile `KeyStoreProbe.cpp` with the probe's flags including its
+forced includes, add it to `libNativeLegacyDisplay.a`, and pass `sheng-aks=1` - the argument is already on the
+command line.
