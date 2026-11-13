@@ -5530,3 +5530,32 @@ Both attempts are reverted; the kernel hash is again exactly the consolidated ba
 
 Backlight is a brightness feature and has no bearing on the ChronoServices stall, so the useful next steps remain the
 GUI/IPC diagnostics (their r22-r31 ladder) or finishing the knote observation.
+## 22:50: the knote observation is answered - the port IS armed
+
+Cross-referencing the probe's queued-port samples against the `filt_machportattach` trace, in three separate boots:
+
+| log | armed ports logged | port holding a message (`q=1`) | armed? |
+| --- | --- | --- | --- |
+| cont131 | 3276 | `0xfffffff7833411a0` | **yes** |
+| cont133 | 4288 | `0xfffffff75d94a420` | **yes** |
+| cont134 | 3789 | `0xfffffff4b06ea520` | **yes** |
+
+So the question this port has carried since the queue probe is answered: the port that holds lsd's synchronous message
+**was armed** - a knote exists for it - and the message was queued with **no waiter and no turnstile** (`q=1 w=0 t=0`).
+It is therefore **armed but not woken**, not 'never armed'.
+
+### What that rules out and what it points at
+
+Ruled out: a missing `filt_machportattach` (the registration happens), and a port-name mix-up in the probe.
+
+Pointed at: the **receiver side**.  With a knote attached and a message queued, the wake has to travel
+`ipc_mqueue` -> kqueue knote -> workloop, and the absence of any waiter (`w=0`) means the receiving thread is not parked
+in `msg_receive` at all - it is in `_kevent_id`, which is libdispatch's own wait.  So the message arrives, the port is
+armed, and the dispatch workloop either never gets the kevent event or never re-enters the wait, which is a
+libdispatch/workloop path rather than a Mach-port registration defect.
+
+### Next probe this makes possible
+
+Instrument the wake side instead of the receive side: in `filt_machportattach`'s filter event (`filt_portevent`) and in
+`knote_post` for the machport knote, print when a message is queued on an armed port and whether the knote was posted.
+That separates 'knote never posted' from 'knote posted, workloop never ran'.
