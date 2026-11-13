@@ -5287,3 +5287,26 @@ uses.
 The single most useful thing to find is a **libdispatch built or patched for ipados-17.7.11-21H461**, because every
 daemon that waits for Mach messages through dispatch - lsd first among them - goes through it, and this port has never
 touched it.
+## 20:55: SM8550 SoC repository compared with the SM8250 one this port uses
+
+| | `UniXNU-sm8550-common` | `UniXNU-sm8250-common` (ours) |
+| --- | --- | --- |
+| `kits/` | **`Sm8550Platform`**: `ShengGmu`, `ShengGpuSmmu`, `Sm8550AppsSmmu`, `Sm8550Gcc`, `Sm8550GeniUart` and more - a full platform kit | a single `include/ufs-soc-table.h` |
+| `patches/xnu/` | `native-smp-secondary.patch`, `sheng-platform-power.patch` | `series` only |
+| `dts/`, `configs/`, `soc.toml` | present | present |
+
+So the SM8550 layer is a **complete SoC kit** while this port's SM8250 layer is a single header plus the UFS table -
+which is why so much board logic ended up in this repository's drivers and patches instead (the SMMU bypass, the clock
+and PHY setup, the store geometry).
+
+Does it help?
+
+- **As a reference structure, yes**: it shows what a complete SM8250 kit would contain, and moving this port's kona
+  SMMU bypass and clock setup into an `Sm8250Platform` kit would match the reference layering.
+- **As code, no**: GCC, AppsSMMU, GMU and UART registers are SM8550-specific; none of it transfers to kona.
+- **`sheng_pmgr_run` is not there either**: `sheng-platform-power.patch` only *calls* it, and the symbol is defined in
+  neither SoC repository, so the one documented step this port has not taken (PMGR integration before the calendar
+  initialises) cannot be completed from these repositories - it would have to be written for kona's own PMGR at
+  0x100000.
+
+Nothing in it touches the Mach wake stall.
