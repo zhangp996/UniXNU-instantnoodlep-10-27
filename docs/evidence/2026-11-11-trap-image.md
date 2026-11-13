@@ -5607,3 +5607,30 @@ port the probe is actually sampling** - i.e. resolve the peer port's identity (o
 pointer, and re-run the cross-reference.
 
 Image: `1311849d70bd4d2847e1e7ffe7d6d5b2e2d45992299c8bf6144095f4180ebb2e`.
+## 23:45: community survey for the same symptom
+
+Searched the documentation site and the community device repositories for this exact failure (SpringBoard waiting on
+lsd's ChronoServices port, chronod never starting).
+
+### What exists
+
+| source | finding |
+| --- | --- |
+| `unixnu.com/zh/reference/troubleshooting` | covers build, IPSW, firmware, boot and log sources; the only userland row is 'userland display assertion -> check the display provider and the **focus** parameters'. No row for a stalled launch-services or ChronoServices wait. |
+| `FFT-infra/UniXNU-alioth` (reached a lock screen) | treats `chronod`/`lsd`/`SpringBoard` as **diagnostic targets**; its port record notes that on the iPadOS 17 line 'align1 unified logs contain `com.apple.chronod.timeline-host` entries for Maps, Stocks, Calendar, Batteries, ScreenTime, News, Notes and Tips widgets' - i.e. a healthy 17-line boot **does have chronod running**. |
+| `ye3912/unixnu-oneplus-8-pro` (reached the desktop) | 87-patch ladder in which `chronod`, `SpringBoard`, `backboardd`, `powerd`, `liveactivitiesd` and `pkd` all appear only as **trace targets** (`gui-chrono-r27`, `gui-liveactivity-r28`, `pkd-exit-r32`, `plugin-ipc-r30`, `desktop-ipc-r31`, `c2-core-xpc`). No single patch is presented as the fix. |
+| `UniXNU-sheng` | its port record documents `boot-ui-focus3=chronod` as the knob that 'adds the display-query client to backboardd and SpringBoard' - the same 'focus parameter' the official troubleshooting row names. |
+
+### Conclusion of the survey
+
+No community repository documents a fix for this stall.  Both ports that got further did it by **iterating with
+diagnostics** and by integrating services (owner-root, SystemOS framework exposure, plugin/desktop IPC), not by
+correcting one kernel defect.  What the survey does add is one concrete expectation and one knob:
+
+1. on the iPadOS 17 line a healthy boot runs `chronod` (their widget-host log entries prove it), so its absence here is
+   a real divergence, not normal for the profile;
+2. `boot-ui-focus3=` selects **which display-query client** backboardd and SpringBoard attach to - this port currently
+   points it at `lsd`, while the reference points it at `chronod`.
+
+Trying `boot-ui-focus3=chronod` is a one-argument experiment that changes what the display query waits for, and it is
+the only community-documented knob aimed at this stage.
