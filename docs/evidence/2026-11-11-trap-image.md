@@ -4155,3 +4155,23 @@ page records and the same place its own note leaves home-screen startup unverifi
 The surface lifetime half of checklist step 4 is now clean.  What remains is the client's side of step 4 / the wait
 chain: SpringBoard blocks in `mach_msg_trap` on lsd, and lsd blocks in `filt_wlwait_continue` - so the third swap
 is where the compositor stops because its next event never arrives, not because the display refused a frame.
+## 10:25: file-by-file comparison with UniXNU/UniXNU-sheng
+
+sheng has 488 files, this port 248; 62 are shared and 17 of those differ.  The differences that touch the current
+blockers:
+
+| sheng | ours |
+| --- | --- |
+| `package/LegacyDisplayProbe.cpp` (740 lines) | 950 lines, different structure |
+| creates a `NativeGOPPresenter` for `offline-legacy-phase=3`, and an optional GPU handoff presenter under
+  `IOService::getResourceService()` for `fb-gpu=1` | never creates a presenter - correct for phase 4 without GPU |
+| `native_legacy_prepare_scanout()` cooperates with the boot-progress banner (`boot_progress_prepare_scanout`,
+  100 attempts, 1 ms apart) | returns true; this port does not render the banner |
+| phase 4 does **not** seed a surface region and does **not** adopt a temporary surface | both are done here, because
+  this board's family cannot build its default surface |
+| `package/OfflineLegacySwap.mm` validates the swap path from userland through `IOMobileFramebufferSwapBegin/
+  SetLayer/End` and Metal | not applicable yet: it needs a working Metal frontend |
+
+The comparison therefore confirms what the display page already states: the remaining work is the **default surface
+from the original IOSurfaceRoot factory**.  Nothing else in sheng is missing from this port's swap path - the
+presenter layer they add is the GPU handoff, which this board does not have yet.
