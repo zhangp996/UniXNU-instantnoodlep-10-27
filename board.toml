@@ -73,7 +73,7 @@ dram_size = "0x200000000"
 # adopts the controller the firmware left running and publishes the userdata windows as an IOMedia.
 kernel_args = ["-v", "serial=3", "debug=0x14e", "-no_slto_panic", "sheng-no-lc=1", "sheng-aks=1", "amfi_get_out_of_my_way=1",
                "native-ufs-root=1", "native-ufs-allow-unverified=1", "root-unverified=1",
-               "qcom-usb-debug=1", "kt_fixed_zones=120", "vm_compressor=2", "ml-timeout-lock-panic-scale=40", "disable-watchdogd=1", "sheng-crashlog=1", "sheng-log=1", "sheng-data-persist=2", "sheng-data-reset=1", "sheng-gpu-addon=1", "sheng-staged-apps=1", "boot-ui-trace=1", "boot-ui-focus=launchd", "boot-ui-focus2=SpringBoard", "boot-ui-focus3=lsd", "boot-ui-focus4=runningboardd", "boot-ui-chrono=1",
+               "qcom-usb-debug=1", "kt_fixed_zones=120", "vm_compressor=2", "ml-timeout-lock-panic-scale=40", "disable-watchdogd=1", "sheng-crashlog=1", "sheng-log=1", "sheng-data-persist=2", "kill-lsd=60", "unixnu-overlays=0", "sheng-data-reset=1", "sheng-gpu-addon=1", "sheng-staged-apps=1", "boot-ui-trace=1", "boot-ui-focus=launchd", "boot-ui-focus2=SpringBoard", "boot-ui-focus3=lsd", "boot-ui-focus4=runningboardd", "boot-ui-chrono=1",
              "offline-legacy-register=1", "offline-legacy-gop=1", "offline-legacy-unit-scale=2", "offline-legacy-pm=1", "offline-legacy-validate=1", "offline-legacy-transfer=1", "offline-legacy-cpu-present=1", "offline-legacy-phase=4", "offline-legacy-adopt=1", "sheng-vsync=120", "sheng-vsync-fixed=1",
              "offline-mobile-graphics-load=1",
              "offline-mobile-graphics-client=1",

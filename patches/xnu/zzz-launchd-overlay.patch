@@ -88,7 +88,7 @@ index 8b9cab9..e06ac4e 100644
  static void
  native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
  {
-@@ -7662,6 +7723,40 @@ native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
+@@ -7662,6 +7723,43 @@ native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
  	    sizeof(extensions_point), "/System/Library/Extensions/AGXMetalA10.bundle",
  	    "/System/Library/Extensions/NativeAdrenoMetal.bundle/Info.plist", &native_gpu_addon_stage,
  	    &native_gpu_addon_status);
@@ -96,6 +96,8 @@ index 8b9cab9..e06ac4e 100644
 +	 * copy of com.apple.chronod.plist with RunAtLoad makes launchd start the service whose absence keeps
 +	 * SpringBoard blocked in its synchronous ChronoServices subscription. */
 +	{
++		uint32_t overlays = 1; PE_parse_boot_argn("unixnu-overlays", &overlays, sizeof(overlays));
++		if (overlays) {
 +		static const char chronod_job[] =
 +		    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
 +		    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
@@ -125,6 +127,7 @@ index 8b9cab9..e06ac4e 100644
 +		    "<key>POSIXSpawnType</key><string>Interactive</string>"
 +		    "</dict></plist>\n";
 +		native_launchd_overlay("com.unixnu.chronodboot", boot_job, sizeof(boot_job) - 1);
++		}
 +	}
  	native_gpu_addon_mount(p, scratch, 0x600, daemons_source, sizeof(daemons_source), daemons_point, sizeof(daemons_point),
  	    "/System/Library/LaunchDaemons/com.apple.backboardd.plist",

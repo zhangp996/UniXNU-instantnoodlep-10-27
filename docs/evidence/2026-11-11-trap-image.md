@@ -5056,3 +5056,28 @@ message-delivery one, but it belongs on the list of documented steps not yet tak
 Conclusion: the stall this port is chasing - a message queued on lsd's port while lsd waits in `_kevent_id` with no
 waiter and no turnstile - is not described anywhere in the reference, which is consistent with both reference boards
 running the same kernel series as this one.
+## 19:55: the overlays are not the cause
+
+Booted with `unixnu-overlays=0`, which disables both of this port's own unions - the launchd job overlay and the
+staged-apps union over `/Applications` - leaving the system as the reference leaves it:
+
+    staged-apps union: disabled by unixnu-overlays=0
+    (no launchd overlay lines)
+    containers made=8 present=0  (the early call, before the Data volume covers /private/var)
+    frames: 3
+    chronod: absent
+
+so the stall is unchanged without them.  That was the last structural difference between this port's boot and the
+reference board's, and it is now excluded: SpringBoard parks in the same wait and chronod is still never started.
+
+The `kill-lsd` experiment did not iterate either (`killing lsd at tick 60: 0`, and not one process name printed),
+so `proc_iterate` is not visiting processes through the ABI this probe declares; that experiment is parked rather
+than trusted.
+
+### What is left
+
+Everything this port adds over the reference is now measured and excluded, and every reference feature it lacks is
+either unavailable (PMGR symbol) or unrelated (GPU stack, board services).  The remaining fact is the one the queue
+probe established: a message sits on lsd's port with no waiter and no turnstile while lsd waits in `_kevent_id`.  The
+next instrument that can move this is a kernel-side view of that port's knote, which is a smaller change than anything
+tried today and the only one that distinguishes 'never armed' from 'armed and not posted'.
