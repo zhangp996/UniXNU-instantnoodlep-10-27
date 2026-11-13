@@ -4263,3 +4263,26 @@ ChronoServices extensions, and the reply never arrives.  The daemon list of the 
 
 BoardServices is runningboardd's framework, so the next capture traces runningboardd (`boot-ui-focus4`) to see
 whether it is the process that fails to answer.
+## 12:00: the peer is a service launchd never starts
+
+The job definition is on the OS volume and complete:
+
+    com.apple.chronod
+      ProgramArguments = /System/Library/PrivateFrameworks/ChronoCore.framework/Support/chronod
+      MachServices     = { com.apple.chronoservices, com.apple.chrono.widgetcenterconnection, ... }
+      UserName         = mobile
+      RunAtLoad        = False,  KeepAlive = { Crashed: true }   (starts on demand)
+
+and the binary is present and executable (74432 bytes).  Yet the boot log of the same session never mentions
+`chronoservices` at all, and `chronod` never appears in the process or exit records - so launchd was never asked
+for the service, or answered without spawning it.
+
+That is the shape of the hang: SpringBoard's synchronous XPC to `com.apple.chronoservices` blocks in `mach_msg`,
+runningboardd idles in its CFRunLoop (unrelated), and the on-demand job that should answer never starts.
+
+### Next experiment
+
+Force the job to start: write a launchd override for `com.apple.chronod` (RunAtLoad) into
+`/private/var/db/com.apple.xpc.launchd/overrides.plist` from the kernel, next to the disabled database the port
+already writes.  If SpringBoard then leaves `mach_msg` and the frame count grows, the missing on-demand start is
+the whole of the blocker.
