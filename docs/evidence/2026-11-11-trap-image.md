@@ -5350,3 +5350,27 @@ ChronoServices stall sits on.
 
 Next instrument: the panic callers above are kernel addresses in this build and can be symbolised against
 `kernel.macho`, which names the path that panics first instead of guessing between GIC, IPI and PSCI.
+## 21:25: one secondary CPU runs, and it changes where SpringBoard waits
+
+Three changes made it work, each measured:
+
+1. **`zzz-smp-core-gate.patch`** - `native_smufs_cpu_nub_selected()` publishes a CPU nub only for the boot CPU or for
+   the one named by `sheng-smp-core` (the reference board's staged bring-up), instead of starting every core at once;
+2. **`zzz-arm64-mpidr-aff1.patch`** - `start.s` masks MPIDR with `0xFFFF` instead of `0xFF`; masking Affinity0 alone
+   aliases CPU1 to CPU0, and that alias is what panicked the first attempt (nested panic, `pe_init.c:725`);
+3. the gate must **not** detach the unselected nub - `nub->detach(parent)` inside `createNubs` panicked later in
+   `IOPlatformDevice::compareName`, so the gate now only withholds registration.
+
+With `sheng-smp=1 sheng-smp-core=1`:
+
+    log: 5543 lines (versus ~1000 in the uniprocessor boots), three frames, no panic
+    SpringBoard kernel PC: 0xfffffff00bd6509c -> _ulock_wait_continue + 0 (was ipc_mqueue_receive_continue)
+
+so the second core is real, and SpringBoard's wait changed from a Mach receive to a userspace lock wait.  chronod is
+still not started.
+
+One stale experiment was also removed from the command line: `sheng-data-reset=1` had stayed there since the store
+was initialised, and it **wipes the persistent Data store on every boot** - so every boot after that test began from a
+fresh seed.  With it gone (and `kill-lsd`, `unixnu-overlays=0` removed too) the command line is 818 bytes.
+
+Image: `02c3378a9a53b0126c1b1baef0dd91e4fcdaac4e12a9a55d9a3ebd1278123660`.

@@ -20,3 +20,6 @@ zzz-max-cpus-8.patch
 zzz-init-override.patch
 zzz-launchd-overlay.patch
 zzz-staged-apps-union.patch
+zzz-knote-trace.patch
+zzz-smp-core-gate.patch
+zzz-arm64-mpidr-aff1.patch
