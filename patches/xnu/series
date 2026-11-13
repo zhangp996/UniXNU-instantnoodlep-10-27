@@ -26,3 +26,4 @@ zzz-arm64-mpidr-aff1.patch
 zzz-pmgr-run.patch
 zzz-machport-event-trace.patch
 zzz-knote-post-trace.patch
+zzz-inheritor-trace.patch

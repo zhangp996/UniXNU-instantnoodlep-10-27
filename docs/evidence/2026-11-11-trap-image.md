@@ -5799,3 +5799,34 @@ kernel side of the pair.
 Port `probe-darwinboot-xnu.py` to the Linux toolchain (replace `xcrun nm` with the bundled `llvm-nm`, as
 `build-xnu-4k-baseline.sh` already does), then boot this port's `mach.development.bcm2837.unstripped` in QEMU virt.
 Until that runs, the fixture harness cannot touch the kernel this port builds.
+## 00:15 (Nov 14): neither wake handle fires
+
+Two instruments now bracket the whole kernel wake path for a mach-port knote:
+
+| instrument | site | fires during a boot |
+| --- | --- | --- |
+| `MPOST posted/skipped` | `ipc_mqueue_post`'s `KNOTE()` branch | **0** (and it is by design: a workloop-attached port has `ip_sync_link_state == PORT_SYNC_LINK_WORKLOOP_KNOTE`, which `ipc_port_has_klist()` rejects) |
+| `INHERIT` | `ipc_port_send_update_inheritor()` - the only place a message can redirect a workloop's turnstile | **0** |
+
+Boot with both: 4682 log lines, three frames, no panic, and neither counter moved.
+
+### What that means
+
+In this kernel a **workloop-armed** mach-port knote is woken neither by the `KNOTE()` path (excluded by design) nor by a
+turnstile inheritor update (never called).  The remaining mechanism is the one the design assumes: the receiving thread
+parks in `mach_msg` on the port, so `ipc_mqueue_post` hands it the message directly through
+`waitq_wakeup64_identify_locked()` (`w >= 1`).
+
+The probe's `w=0` samples are therefore the contradiction to resolve - either those ports are not the ones the
+messages are delivered through, or the receiver left `msg_receive` for `kevent_id` and the kernel has no notification
+left to give it, which is exactly the stall.
+
+### Honest position
+
+After this many instruments the picture is consistent but not closed: the kernel offers exactly three ways to wake a
+mach-port knote (direct receive hand-off, `KNOTE()`, turnstile redirect), the first requires a parked receiver, and the
+other two provably do not fire on this board.  Closing it needs one of:
+
+- a sample of the port **while** the message is queued (not after), with the receiver's thread state in the same
+  record;
+- or the QEMU harness, where the same sequence can be stepped through deterministically.
