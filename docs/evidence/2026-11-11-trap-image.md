@@ -5711,3 +5711,31 @@ Starting chronod has to happen by one of:
 
 The third is testable locally by reading the cache's job list, which is worth doing before writing any more overlay
 code.
+## 00:20 (Nov 14): why the job exists in the cache and still never starts
+
+`zzz-launchd-cache.patch` already contains the decisive fact: in this build's cache,
+`com.apple.chronod`'s **RunAtLoad slot sits at file offset `0xfc6e0` and holds the shared false object (2464)** - the
+job is in the cache, and it is **on demand, not run at load**.  Its `MachServices` entry is
+`com.apple.chronoservices`, so launchd is supposed to start chronod **when a client looks that name up**.
+
+SpringBoard does look it up - that is the synchronous send this port has been chasing all along.  And the send does
+not fail: it **queues on a port that is armed and has no waiter**.  A send to a name nobody holds would return
+`MACH_SEND_INVALID_DEST` instead of queuing, so **something holds the receive right for `com.apple.chronoservices`**.
+That is the shape of a launchd **placeholder port**: launchd registers the name, the first message is supposed to
+trigger it to spawn the job, and the message is then forwarded.
+
+So the leading explanation is now:
+
+> the message reaches launchd's placeholder for `com.apple.chronoservices`, the placeholder never triggers the spawn,
+> and SpringBoard's synchronous send waits forever on a port that will never be serviced.
+
+That also fits every measurement: armed (the placeholder has a knote because a kqueue client - lsd - is watching it),
+queued (`q=1`), no waiter (`w=0`), and `chronod` never in the process list.
+
+### What to verify next, and how
+
+The probe can already read a port's waitq; it needs to name the **owner of the receive right**.  If that owner is
+`launchd`, the placeholder explanation is confirmed and the defect is in launchd's spawn trigger (a userland path this
+port has never instrumented).  If the owner is some other process, that process is the one to look at instead.
+
+That is one more field in the existing queue probe, and it decides between the two remaining explanations.
