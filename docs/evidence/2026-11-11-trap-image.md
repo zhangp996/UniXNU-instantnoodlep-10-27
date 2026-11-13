@@ -4842,3 +4842,23 @@ Two ways forward, and they are not equivalent:
 1. make `drivers/KonaUfs/NativeUfs.cpp` parse under the component flag set (bisect the flags, or split the file);
 2. retire `drivers/KonaUfs` and carry the store-window diagnostics in the `ShengUfs` feed this board already runs,
    which is what the reference board does with its own drivers.
+## 18:20: verification - what the kona fork carries that ShengUfs does not
+
+The archived fork (`docs/archive/NativeUfs.kona-fork-2026-11-10.cpp`) was checked line by line against
+`drivers/ShengUfs/NativeUfs.cpp`, which is the source the board now selects.
+
+| item | kona fork | ShengUfs | conclusion |
+| --- | --- | --- | --- |
+| SMMU takeover for the UFS stream | `smmuBypassStream` gated by `native-ufs-smmu=1`; its own comment says *the shared ShengUfs takes the stream over anyway* | `smmuBypassStream` present, with the same reasoning about ID 0x60 and the bypass context bank (lines 283-287, 909) | nothing lost |
+| unverified root publication | `#else` of `NATIVE_VERIFIED_BLOCK`, text 'root windows published unverified (bring-up)' | same `#if defined(NATIVE_VERIFIED_BLOCK)` structure at four sites | nothing lost |
+| controller/PHY facts | inline `UfsPhyTables.h` plus kona comments | taken from the SoC repository: `UniXNU-sm8250-common/include/ufs-soc-table.h`, which is exactly why the component needs `soc_headers = true` | nothing lost - the board facts come from the SoC feed, which is the documented arrangement |
+| board-side arguments | same eleven `PE_parse_boot_argn` names | identical list | nothing lost |
+
+One difference is worth recording rather than dismissing: the fork's SMMU takeover is **opt-in** (`native-ufs-smmu=1`,
+off in every run so far), while ShengUfs takes the stream over unconditionally.  The fork existed partly to leave that
+out, and its comment says so.  On this board the difference is inert - the ufshc node has no `iommus` property and the
+hardware read found no stream-match entry - but it is the one behavioural divergence, and it argues for keeping the
+fork archived rather than deleting the record of it.
+
+So: **retiring `drivers/KonaUfs` loses no capability**; its unique content is either already in ShengUfs or supplied by
+the SoC feed, and the single behavioural difference is an opt-in switch that every run has left off.
