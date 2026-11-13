@@ -4737,3 +4737,16 @@ such a port has nothing to notify, so it stays queued:
 Either libdispatch could not arm the port (a userland consequence of how the port or its right was made here), or the
 arming was dropped in this kernel build.  That is the question left, and it is narrower than every one before it:
 not 'why is chronod missing' but 'why does a Mach port armed for kqueue never see its message'.
+## 17:30: the knote-attach trace is out of the series for now
+
+An attempt to print, from `filt_machportattach`, which process arms which port for kqueue, did not compile in
+`osfmk/ipc/ipc_pset.c` and the diagnostic that mattered was already in hand before it: the destination port holds
+`q=1` while `w=0` and `t=0`, i.e. no thread and no turnstile are registered on it, and every other port in the sample
+looks the same.  Rather than leave the kernel refusing to build while a diagnostic is unfinished, the patch is out of
+the series and the kernel is green again:
+
+    kernel.macho sha256 09a582104bdab23e69f64450f3cfa51b77bf81038b6062ebf350efe182ccb1a4
+
+The question that trace would have answered is recorded in the evidence for whoever picks it up: whether lsd ever
+arms a knote for the port SpringBoard sends to, or whether the port stays unarmed because the arming was made
+against a different right.
