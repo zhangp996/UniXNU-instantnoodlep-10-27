@@ -5010,3 +5010,27 @@ reference board has and this port has never had.
 The cheap next test is therefore repetition, not code: boot the same image several times and watch whether chronod
 appears and SpringBoard's reply arrives once the userland has state to work from.  Each cycle needs the device back in
 fastboot, so the test is paced by reboots rather than by builds.
+## 19:30: repetition settles it - persistence is a prerequisite, not the cure
+
+Second and third boots of the persistent image:
+
+| boot | store | containers | frames | SpringBoard | chronod |
+| --- | --- | --- | --- | --- | --- |
+| 1st (reset) | initialised | - | 3 | receive | absent |
+| 2nd | silent (holds seed) | made=1 present=7 | 3 | receive | absent |
+| 3rd | silent | made=1 present=7 | 3 | `n3 r0 w3`, `ipc_mqueue_receive_continue` | absent |
+
+So the Data volume really is persistent (the store keeps the seed, seven containers survive), and the userland
+outcome is identical boot after boot: SpringBoard parks in the kernel receive wait and chronod is never started.
+Persistence was the missing foundation, but the ChronoServices stall does not depend on it.
+
+### Where the thread stands after today
+
+Established by measurement: the display publishes and presents (`attach=1`, three frames); the board runs this
+repository's UFS driver (`NativeUfs` publishes OS and SystemOS from the flashed manifest); the persistent store window
+opens and keeps the seed across reboots; userland state now survives, which it never did before.
+
+Still open, and now the only open question in this chain: a synchronous Mach message from SpringBoard is queued on
+lsd's port (`q=1`) while lsd waits in `_kevent_id` with no waiter and no turnstile registered on that port - the
+request is delivered and never woken.  Neither reference repository touches that path, and both run the same kernel
+patch series as this port.
