@@ -4373,3 +4373,23 @@ BackBoardServices - the same framework SpringBoard blocks in when it calls
 connection fail in BoardServices, which points at runningboardd rather than at chronod or at launchd.
 
 The image is now built to run runningboardd as process 1 (`init-override=2`) for the same test.
+## 13:35: runningboardd as process 1 aborts too - and why that is not yet a conclusion
+
+    load_init_program: override /usr/libexec/runningboardd
+    XNU-TRAP: pc=0x1e4eefb00 lr=0x1e4eefb00 esr=0xf2000001
+    XNU-DYLD-IMAGE: runningboardd ... WatchdogClient.framework/WatchdogClient+0x1bd0
+    XNU-EXIT: runningboardd pid=1 code=5 ns=2 sub=0x5
+    panic: initproc failed to start -- exit reason namespace 2 subcode 0x5
+
+`esr = 0xf2000001` decodes to EC 0x3C, a BRK: the daemon hit an assertion inside WatchdogClient.  chronod did the
+same in BackBoardServices.
+
+Both experiments share a flaw that has to be stated plainly: replacing launchd with a daemon removes the
+bootstrap server, so the first XPC call any of them makes fails and the daemon aborts.  The test therefore shows
+that the binaries execute, and **not** that they are broken - it cannot separate 'the daemon fails' from
+'the daemon needs launchd'.
+
+To separate them, launchd has to stay process 1 and be made to start the job, which means a job definition it
+actually reads: the writable Data volume does not carry `/Library/LaunchDaemons` on this port (the write returned
+EROFS), so the definition has to be overlaid on `/System/Library/LaunchDaemons` through the addon mount the display
+stack already uses.
