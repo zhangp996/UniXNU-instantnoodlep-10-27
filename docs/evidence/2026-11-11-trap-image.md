@@ -5201,3 +5201,26 @@ days of work ago still holds the seed, and the rebased driver runs the board wit
 The stall is unchanged - SpringBoard parks in the kernel receive wait and chronod is never started - so both the
 driver's age and the argument dialect are off the list as causes.  What the day establishes is that this board now
 runs upstream code with the documented interface, and only one adaptation remains: the SMMU stream gate.
+## 20:25: knote data in hand, and the one gap in it
+
+`filt_machportattach` logged 2808 distinct ports armed for kqueue in the `unixnu-overlays=0` run and 2736 in the
+documented-arguments run - so ports *are* armed in this system, and many of them.  What those runs do not contain is
+a single send sample whose destination port resolved (`pt=0x...`), because the sampler caught threads in the not-Mach2
+and no-remote states (`e1`, `e2`) rather than in the synchronous send that earlier boots showed as `peer=99 q=1 w=0`.
+
+So the comparison that would settle 'armed and not posted' versus 'never armed' needs one more boot captured while
+SpringBoard sits in that send - the same conditions under which the queue probe read `q=1`, plus the `pt` field this
+kernel now prints.  The instrument is in place; the sample is what is missing.
+
+### Day summary
+
+Solid: the display publishes and presents; the board runs upstream ShengUfs (rebased, one adaptation: the SMMU gate)
+with the documented argument names; the persistent store window opens, keeps this seed across reboots and survives
+the driver change; the userland state that used to be rebuilt at every boot now persists.
+
+Excluded by measurement: AMFI and launch constraints, the Setup triggers, the LaunchServices store, this port's two
+unions, the lite policy and `disable-jobs`, the launchd job cache as a lever (its loader rejects a modified copy), the
+GPU (the reference desktop predates it), the driver's age and the argument dialect.
+
+Open: a synchronous Mach message queued on lsd's port (`q=1`) with no waiter and no turnstile (`w=0 t=0`) while lsd
+waits in `_kevent_id`; chronod never starts; SpringBoard waits for a reply that never comes.
