@@ -5326,3 +5326,27 @@ So the situation is now precise: this port has never had a second CPU running, a
 hangs before any log.  That is a bring-up defect in its own right, and it also means every timing observation made so
 far (lsd idle in `_kevent_id`, SpringBoard waiting in `mach_msg2`, 146 processes on one core) was taken on a
 uniprocessor system.
+## 20:50: SMP does not merely hang - it panics in a nest
+
+`sheng-smp=1` with `cpus=6` and without `armcpu-spi-ipi=1` produced no console output during the boot, and the panel
+then shows the machine in a **nested panic**:
+
+    Nested panic detected - entry count: 2 panic_caller: 0xfffffff008bdb6ac
+    Nested panic detected - entry count: 3 panic_caller: 0xfffffff008b9206c
+    Nested panic detected - entry count: 4 panic_caller: 0xfffffff008bd2b6c
+    Nested panic count exceeds (limit 5), machine will reset or spin
+    In Nested panic stall. Stage 2 haltout.
+
+So the secondary-CPU path on this board takes a panic whose handler panics again - the console never comes up, which is
+why the capture held only its header.  The arguments are reverted and a working uniprocessor image is packed
+(`271c47cd99328e22c4f2d994bd516079f1d48904a0cb8efc15cd8054aefb1ac0`).
+
+### What this means for the port
+
+Every measurement in this session was taken with a single CPU running, and the port cannot start a second one without
+a panic.  That is a bring-up defect of its own, and it is now the **first** thing to fix rather than a side note: a
+uniprocessor system changes scheduling, workloop behaviour and timing, all of which is exactly the ground the
+ChronoServices stall sits on.
+
+Next instrument: the panic callers above are kernel addresses in this build and can be symbolised against
+`kernel.macho`, which names the path that panics first instead of guessing between GIC, IPI and PSCI.
