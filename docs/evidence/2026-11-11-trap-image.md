@@ -4485,3 +4485,20 @@ the framework already provides are the smaller half.
 
 It also would not by itself explain the current stall: SpringBoard blocks in a synchronous ChronoServices call
 before any drawing happens, and a GPU stack changes how frames are produced, not whether chronod is started.
+## 15:50: the reference board's staged-apps union is in place and mounts cleanly
+
+`j716f`'s patch union-mounts the OS volume's `/private/var/staged_system_apps` (29 built-in apps, Weather among
+them) over `/Applications` **before** the Data volume covers `/private/var`, with the comment that this is what lets
+'LaunchServices and SpringBoard see all built-in apps and their home-screen widgets immediately'.  The same call
+now runs in this port's `native_owner_data_prepare`:
+
+    staged-apps union: stage=5 status=0
+
+and the boot still ends the same way:
+
+    SpringBoard p27  ipc_mqueue_receive_continue
+    frames: 3, chronod absent
+
+so the missing built-in apps are not what stops ChronoServices either.  What remains between this port and the
+reference board is the GPU stack (`drivers/Adreno650`, `build-adreno650.py`, the Metal addon and its trust bundle,
+`pipa-gpu=12` / `sheng-fb-gpu=1`, GPU and SMMU device-tree nodes) - a subsystem, not a switch.
