@@ -9,7 +9,7 @@ description = "OnePlus 8 Pro (IN2020): SM8250, 8 GiB, 1440x3168 DSC command pane
 kit = "instantnoodlep"
 
 [components]
-include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "ShengUfs", "RamBlock", "VirtioMmioBlock", "VerifiedRoot", "QcomXnuUsbDebug", "GopFramebuffer", "AdrenoPM4", "AdrenoFirmware", "ArmSmmu4K", "AirNir", "AppleKeyStoreState"]
+include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot", "KonaUfs", "RamBlock", "VirtioMmioBlock", "VerifiedRoot", "QcomXnuUsbDebug", "GopFramebuffer", "AdrenoPM4", "AdrenoFirmware", "ArmSmmu4K", "AirNir", "AppleKeyStoreState"]
 
 [kernel]
 # Arrays replace inherited arrays, so this list is the complete one: profiles/arch/arm64/profile.toml
@@ -20,7 +20,7 @@ include = ["ArmDTPlatform", "ArmCpu", "SoftwareAES", "XnuPrelink", "DarwinBoot",
 archives = ["build-corecrypto-14.py", "build-corecrypto-14.py --namespace",
             "component:ArmDTPlatform", "component:ArmCpu", "component:SoftwareAES",
             "build-software-aes-bindings.py", "build-mockfs-fixture.py", "build-libpthread-kernel.py",
-            "component:ShengUfs", "build-verified-block-bridge.py", "component:RamBlock", "component:GopFramebuffer", "component:AppleKeyStoreState", "build-adreno650.py", "build-gop-legacy-display.py",
+            "component:KonaUfs", "build-verified-block-bridge.py", "component:RamBlock", "component:GopFramebuffer", "component:AppleKeyStoreState", "build-adreno650.py", "build-gop-legacy-display.py",
             "component:VirtioMmioBlock", "component:VerifiedRoot", "component:QcomXnuUsbDebug", "build-boot-progress.py", "build-ram-watchdog.py"]
 defconfig = "instantnoodlep_defconfig"
 config_fragments = ["arch:configs/common.config", "soc:configs/sm8250.config", "os:configs/ipados.config"]

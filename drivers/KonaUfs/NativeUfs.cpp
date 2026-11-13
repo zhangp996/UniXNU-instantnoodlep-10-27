@@ -7,6 +7,11 @@
 #include <libkern/crypto/sha2.h>
 #include <vm/vm_kern.h>
 #include <vm/vm_map.h>
+/* Newer XNU keeps the kernel memory and map protection interfaces in these headers. */
+#if __has_include(<vm/vm_kern_xnu.h>)
+#include <vm/vm_kern_xnu.h>
+#endif
+#include <mach/mach_vm.h>
 #include <sys/param.h>
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 #include "verified_root.h"
@@ -30,7 +35,6 @@ extern const uint8_t verified_root_key[];
 #include <pexpert/pexpert.h>
 #include <kern/debug.h>
 #include "GccUfs.h"
-#include "UfsPhyTables.h"
 #include "RootDiagnostics.h"
 #include "TransferPoll.h"
 #include "SmmuTakeover.h"
@@ -42,11 +46,13 @@ static void rootDiagnosticFailure (const char *reason);
 extern "C" {
 // Optional passive observer; absent in ordinary builds. It may run while a
 // window lock is held, so its contract forbids blocking or transport access.
+#if defined(NATIVE_UFS_SOURCE_API) && NATIVE_UFS_SOURCE_API
+// The source runtime archive carries a weak no-op definition; a weak
+// reference here would become an unresolved pointer-auth import instead.
+void boot_progress_poll (void);
+#else
 void boot_progress_poll (void) __attribute__((weak));
-// The page publishes its own view of the framebuffer (width, height, stride, frame at 20..23).
-// Reading it is more reliable than PE_state.video: the page is what actually draws, and the
-// heartbeat strip stayed off the panel while it only looked at PE_state.
-extern "C" volatile uint64_t boot_progress_observation[24] __attribute__((weak));
+#endif
 volatile uint32_t native_ufs_probe_calls = 0;
 volatile uint32_t native_ufs_matched = 0;
 volatile uint32_t native_ufs_probe_requested = 0;
@@ -74,7 +80,6 @@ class NativeUfs : public IOService {
   void inspectSmmu (void);
   void inspectContextBanks (void);
   bool startRoot (IOService *provider);
-  static void rootBringUpEntry (void *, wait_result_t);
   static bool waitSet (uintptr_t base, unsigned offset, uint32_t mask, unsigned loops);
 public:
   IOService *probe (IOService *provider, SInt32 *score) override;
@@ -83,12 +88,6 @@ public:
 };
 
 OSDefineMetaClassAndStructors (NativeUfs, IOService)
-
-// The root bring-up runs on its own thread (see NativeUfs::start): probe()/start() run inside the
-// IOKit match on the boot thread, and the UFS work busy-waits for seconds per stage.
-static NativeUfs *gRootBringUpService;
-static IOService *gRootBringUpProvider;
-static unsigned gRootBringUpDelay;   // native-ufs-delay=<seconds>, 0 = start immediately
 
 static uint32_t read32 (uintptr_t base, unsigned offset)
 {
@@ -178,23 +177,9 @@ static uintptr_t mapPhys (uint64_t phys, uint64_t length, OSSharedPtr<IOMemoryMa
   return keep ? static_cast<uintptr_t> (keep->getVirtualAddress ()) : 0;
 }
 
-// iOS 17's XNU does not declare ml_io_map in its public headers; the bdevsw driver in this
-// repository declares it the same way (patches/xnu/kebab-route/kona-ufs-driver.patch).
-extern "C" vm_offset_t ml_io_map (vm_offset_t phys_addr, vm_size_t size);
-
-// Device registers go through ml_io_map, the mapping the bdevsw driver uses: the controller's
-// first read never returned through the IOMemoryDescriptor path above, while the same range
-// answers immediately in firmware (MmioRead32, device memory) and in kona_ufs.c (ml_io_map).
-// A Normal-attribute mapping of MMIO is not architecturally supported on arm64 and can stall
-// the reader instead of faulting, which is what left root=1 for the life of the boot.
-static uintptr_t mapRegisters (uint64_t phys, uint64_t length)
-{
-  return static_cast<uintptr_t> (ml_io_map (phys, length));
-}
-
 void NativeUfs::inspect (void)
 {
-  OSSharedPtr<IOMemoryMap> gccMap, memPhyMap;
+  OSSharedPtr<IOMemoryMap> gccMap, memPhyMap, hcMap;
   uintptr_t gcc = mapPhys (GCC_BASE + 0x77000, 0x1000, gccMap);
   uintptr_t memPhy = mapPhys (GCC_BASE + 0x9e000, 0x1000, memPhyMap);
   if (!gcc || !memPhy) {
@@ -216,7 +201,7 @@ void NativeUfs::inspect (void)
   uint32_t cap = 0, ver = 0, hcs = 0, hce = 0, utrlba = 0, is = 0;
   unsigned readHc = 0;
   if (powered && busClocks) {
-    uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+    uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
     if (hc) {
       cap = read32 (hc, 0x00);
       ver = read32 (hc, 0x08);
@@ -359,7 +344,10 @@ static void dpuEnable (uintptr_t smmu, uintptr_t cb, uint32_t bank, uint32_t old
   const uint32_t old[5] = {read32 (cb, 0x20), read32 (cb, 0x24), read32 (cb, 0x10), read32 (cb, 0x30), read32 (cb, 0x38)};
   gDpuLiveCb = cb;
   write32 (cb, 0x20, static_cast<uint32_t> (pa)); write32 (cb, 0x24, static_cast<uint32_t> (pa >> 32));
-  write32 (cb, 0x10, 5);                              // TCR2: 48-bit output
+  // TCR2 (PASIZE bits 2:0, SEP bits 17:15): 48-bit output and SEP 7 (the sign extension comes from the upstream address, as arm-smmu's AArch64 contexts set it). SEP 0 takes
+  // IA[31] as the sign bit, so every address with bit 31 set but zero above it (the display's own framebuffer at 0xb90f7500: i564, and the
+  // first fetch of every earlier try) is out of TTBR0's range and faults at level 0.
+  write32 (cb, 0x10, 5U | (7U << 15));
   write32 (cb, 0x30, 32U | (1U << 23));               // T0SZ 32, non-cacheable walks, 4 KiB granule, no TTBR1
   write32 (cb, 0x38, 0x44);                           // MAIR attribute 0: normal non-cacheable
   __asm__ volatile ("dsb sy" ::: "memory");
@@ -401,29 +389,6 @@ static unsigned gExtraBank;
 static void smmuBypassStream (uint16_t stream, OSSharedPtr<IOMemoryMap> &keep, uint32_t *report,
                               uint64_t dma, uint64_t bytes)
 {
-  //
-  // kona: the ufshc node carries no iommus property and the 2026-10-17 hardware read found no
-  // stream-match entry for ID 0x60 with unmatched streams faulting, so this controller is not
-  // behind the apps SMMU and its DMA addresses are already physical. The shared ShengUfs takes
-  // the stream over anyway, which is the one part of that driver this port left out, so
-  // native-ufs-smmu=1 runs the same takeover here. With the switch off the function reports the
-  // stream as not taken, which is what every earlier run recorded.
-  //
-  unsigned takeover = 0;
-  PE_parse_boot_argn ("native-ufs-smmu", &takeover, sizeof (takeover));
-  if (!takeover) {
-    (void)stream;
-    (void)keep;
-    (void)dma;
-    (void)bytes;
-    if (report) {
-      report[0] = 0;
-      report[1] = 0;
-      report[2] = 0;
-    }
-    return;
-  }
-
   uintptr_t smmu = mapPhys (0x15000000ULL, 0xd0000, keep);
   if (!smmu) {
     panic ("NATIVE_UFS smmu: map failed");
@@ -467,7 +432,8 @@ static void smmuBypassStream (uint16_t stream, OSSharedPtr<IOMemoryMap> &keep, u
 
 void NativeUfs::adoptAndRead (unsigned level)
 {
-  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+  OSSharedPtr<IOMemoryMap> hcMap;
+  uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
   if (!hc) {
     panic ("NATIVE_UFS adopt: controller map failed");
   }
@@ -809,8 +775,8 @@ static uint32_t dumpWord (const volatile uint32_t *base, unsigned index)
 
 void NativeUfs::dumpFirmwareList (void)
 {
-  OSSharedPtr<IOMemoryMap> listMap, ucdMap;
-  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+  OSSharedPtr<IOMemoryMap> hcMap, listMap, ucdMap;
+  uintptr_t hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, hcMap);
   if (!hc) {
     panic ("NATIVE_UFS dump: controller map failed");
   }
@@ -960,39 +926,6 @@ struct UfsHost {
 };
 UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, nullptr, nullptr, 0, nullptr, false };
 
-// native-ufs-noirq=1 leaves the interrupt bit out of the UTRD. Completion is polled through the
-// doorbell and OCS, so the bit is not needed to finish a command; without it the controller cannot
-// raise the completion interrupt that a polled driver never services.
-static unsigned gUfsNoIrq = 0;
-
-// native-ufs-stop=<code> makes the bring-up return as soon as it reaches that number, so one
-// kernel can bisect the takeover from the boot arguments alone: the runs before the gate stay in
-// the kernel, and only the boot image changes.
-// Counts the block reads that reach the driver, so the page shows whether a mounted file
-// system is really reading through this media: 70000 + calls, capped at 79999.
-static volatile uint32_t gWindowReadCalls;
-static uint32_t gStopStep;
-// native-ufs-stop-reads=<n> caps the block reads the media may serve: the n-th read returns a
-// timeout and every later one does too, so a run can measure how much traffic the controller
-// survives without changing anything else. 71000 + n is left on the page as the stop mark.
-static uint32_t gStopReads;
-// native-ufs-budget-soft=1 makes the refused reads succeed with zeroes instead of returning a
-// timeout. A budget run that still dies then blames something other than the error path; one that
-// survives names the error path itself.
-static unsigned gBudgetSoft;
-static bool stopAfter (uint32_t code)
-{
-  return gStopStep && gStopStep == code;
-}
-
-// One build has to localise the stall. The boot page prints native_ufs_root_step, so the trace
-// packs the command index and the stage into one number: 50000 + command * 16 + stage. Values
-// below 50000 keep their old meaning (1/2/3 bring-up phases, 101-133 refusals, 4000x high-level).
-static void traceStep (unsigned stage)
-{
-  native_ufs_root_step = 50000U + (gRootDiagnostic.command << 4) + (stage & 0xfU);
-}
-
 static IOReturn recordTransport (IOReturn result, uint32_t ocs)
 {
   gRootDiagnostic.result = static_cast<uint32_t> (result);
@@ -1051,389 +984,24 @@ static void hostWrite (unsigned offset, uint32_t value)
 
 #include "RootQueue.h"
 
-// ---- RPMh rail votes -------------------------------------------------------------------------
-// The five UFS supplies are PMIC rails that nothing votes for while this driver runs. The entry
-// layout, the TCS register sequence and the three-register vote are the ones the sheng packages
-// use (package/QcomRpmh.c and WifiProbe.cpp): a 24-byte command-database entry with the resource
-// address at +16, and an active TCS request triggered through the control register.
-struct RpmhLayout {
-  uint32_t stride, cmdStride, irqStatus, irqClear, waitForCmpl, control, status, cmdEnable, msgId, cmdAddr, cmdData;
-};
-
-static RpmhLayout rpmhLayout (uint32_t drvId)
-{
-  if (((drvId >> 16) & 0xffU) >= 3) {
-    return { 672, 24, 0x04, 0x08, 0x20, 0x24, 0x28, 0x2c, 0x34, 0x38, 0x3c };
-  }
-  return { 672, 20, 0x04, 0x08, 0x10, 0x14, 0x18, 0x1c, 0x30, 0x34, 0x38 };
-}
-
-static uint16_t rpmhLe16 (const volatile uint8_t *p)
-{
-  return static_cast<uint16_t> (p[0]) | (static_cast<uint16_t> (p[1]) << 8);
-}
-static uint32_t rpmhLe32 (const volatile uint8_t *p)
-{
-  return uint32_t (rpmhLe16 (p)) | (uint32_t (rpmhLe16 (p + 2)) << 16);
-}
-
-// Walk the database for the 8-byte id. The slave-record header is not used: the magic on this
-// firmware does not match the reference constant, and the entries themselves are laid out exactly
-// as the reference describes (name at +0, address at +16, aux length and offset at +20 and +22).
-static bool rpmhFindRail (const volatile uint8_t *db, size_t bytes, const char *name, uint32_t *address)
-{
-  unsigned length = 0;
-  while (name[length] && length < 8) length++;
-  if (!length) return false;
-  for (size_t at = 0; at + 24 <= bytes; at++) {
-    if (db[at] != static_cast<uint8_t> (name[0])) continue;
-    bool same = true;
-    for (unsigned i = 0; i < 8 && same; i++) {
-      const uint8_t want = i < length ? static_cast<uint8_t> (name[i]) : 0;
-      same = db[at + i] == want;
-    }
-    if (!same) continue;
-    const uint32_t addr = rpmhLe32 (db + at + 16);
-    if (!addr) continue;
-    *address = addr;
-    return true;
-  }
-  return false;
-}
-
-struct RpmhWrite { uint32_t offset, value; };
-
-// Offsets are absolute DRV offsets: the interrupt status and clear registers sit at the DRV base,
-// while the control, enable and command registers sit inside the TCS block. Mixing the two wrote
-// the interrupt clear into the TCS area and took the SoC into 900E on 2026-11-02.
-static unsigned rpmhActiveRequest (const RpmhLayout &l, unsigned tcs, const uint32_t *addresses,
-                                   const uint32_t *values, unsigned count, RpmhWrite *w)
-{
-  if (!count || count > 4) return 0;
-  const uint32_t base = 0xd00U + l.stride * tcs;
-  unsigned n = 0;
-  w[n++] = { base + l.control, 0 };
-  w[n++] = { l.irqClear, 1U << tcs };
-  for (unsigned c = 0; c < count; c++) {
-    const uint32_t cmd = base + l.cmdStride * c;
-    w[n++] = { cmd + l.msgId, 8U | (1U << 8) | (1U << 16) };
-    w[n++] = { cmd + l.cmdAddr, addresses[c] };
-    w[n++] = { cmd + l.cmdData, values[c] };
-  }
-  const uint32_t mask = (1U << count) - 1U;
-  w[n++] = { base + l.waitForCmpl, mask };
-  w[n++] = { base + l.cmdEnable, mask };
-  w[n++] = { base + l.control, 1U << 16 };
-  w[n++] = { base + l.control, (1U << 16) | (1U << 24) };
-  return n;
-}
-
-static unsigned rpmhFinish (const RpmhLayout &l, unsigned tcs, RpmhWrite *w)
-{
-  const uint32_t base = 0xd00U + l.stride * tcs;
-  w[0] = { l.irqClear, 1U << tcs };
-  w[1] = { base + l.control, 0 };
-  w[2] = { base + l.cmdEnable, 0 };
-  return 3;
-}
-
-static void rpmhSend (uintptr_t rsc, const RpmhLayout &l, unsigned tcs, uint32_t address, uint32_t value)
-{
-  RpmhWrite w[16];
-  const unsigned n = rpmhActiveRequest (l, tcs, &address, &value, 1, w);
-  for (unsigned i = 0; i < n; i++) write32 (rsc, w[i].offset, w[i].value);
-  __asm__ volatile ("dsb sy" ::: "memory");
-  IOSleep (2);
-  const unsigned m = rpmhFinish (l, tcs, w);
-  for (unsigned i = 0; i < m; i++) write32 (rsc, w[i].offset, w[i].value);
-}
-
-// The five PMIC rails behind ufshc, with the initial voltages the board DTS gives them. The GDSC
-// that vdd-hba names is a GCC register, not an RPMh resource, so it is not in this list.
-struct UfsRail { const char *name; uint32_t millivolts; };
-
-static char gVoteReport[40];
-
-// Stages, because writing the RSC at 900E-crashed the SoC twice: 3 reads only, 4 writes
-// control and the interrupt clear but nothing else, 5 arms one command without the trigger, 1
-// votes and stops, 2 votes and continues. Every stage reports what it read so a crash can be
-// placed between two of them.
-static uint32_t voteUfsRails (unsigned stage, char *report, size_t capacity)
-{
-  static const UfsRail rails[] = {
-    { "ldoa18", 2498 }, { "ldoa7", 1200 }, { "smpa5", 1800 }, { "ldoc1", 1200 }, { "ldoa10", 1200 },
-  };
-  volatile uint8_t *db = reinterpret_cast<volatile uint8_t *> (ml_io_map (0x80860000ULL, 0x20000));
-  uintptr_t rsc = mapRegisters (0x18220000ULL, 0x10000);
-  if (!db || !rsc) {
-    snprintf (report, capacity, "no map db=%d rsc=%d", db != nullptr, rsc != 0);
-    return 0xf0U;
-  }
-  const uint32_t id = read32 (rsc, 0);
-  const RpmhLayout layout = rpmhLayout (id);
-  const uint32_t cfg = read32 (rsc, 0x0c);
-  const uint32_t irq = read32 (rsc, 0xd00);
-  const uint32_t status = read32 (rsc, 0xd00 + layout.status);
-  if (stage == 3) {
-    snprintf (report, capacity, "id %x cfg %x irq %x st %x", id, cfg, irq, status);
-    return 0x30U;
-  }
-  if (stage == 4) {
-    write32 (rsc, 0xd00 + layout.control, 0);
-    write32 (rsc, layout.irqClear, 1U);
-    __asm__ volatile ("dsb sy" ::: "memory");
-    snprintf (report, capacity, "w4 id %x ctl %x irq %x", id, read32 (rsc, 0xd00 + layout.control),
-              read32 (rsc, layout.irqClear));
-    return 0x40U;
-  }
-  uint32_t voted = 0;
-  if (stage == 5) {
-    uint32_t address = 0;
-    if (!rpmhFindRail (db, 0x20000, "ldoa18", &address)) {
-      snprintf (report, capacity, "ldoa18 missing");
-      return 0x50U;
-    }
-    const uint32_t base = 0;
-    const uint32_t cmd = base + layout.cmdStride * 0;
-    write32 (rsc, 0xd00 + cmd + layout.msgId, 8U | (1U << 8) | (1U << 16));
-    write32 (rsc, 0xd00 + cmd + layout.cmdAddr, address + 8);
-    write32 (rsc, 0xd00 + cmd + layout.cmdData, 4);
-    __asm__ volatile ("dsb sy" ::: "memory");
-    snprintf (report, capacity, "w5 a %x m %x d %x", read32 (rsc, 0xd00 + cmd + layout.cmdAddr),
-              read32 (rsc, 0xd00 + cmd + layout.msgId), read32 (rsc, 0xd00 + cmd + layout.cmdData));
-    return 0x50U;
-  }
-  // The interrupt-enable write the sheng packages do at 0xd00 is left out: this driver polls the
-  // TCS and sleeps, and that write is the other candidate for the 900E crash.
-  for (unsigned i = 0; i < sizeof rails / sizeof rails[0]; i++) {
-    uint32_t address = 0;
-    if (!rpmhFindRail (db, 0x20000, rails[i].name, &address)) {
-      continue;
-    }
-    rpmhSend (rsc, layout, 0, address + 8, 4);            // mode: HPM (the DTS allows <2 4>)
-    rpmhSend (rsc, layout, 0, address, rails[i].millivolts);
-    rpmhSend (rsc, layout, 0, address + 4, 1);            // enable
-    voted |= 1U << i;
-  }
-  snprintf (report, capacity, "voted %x of 1f", voted);
-  return voted;
-}
-
-// native-ufs-link=1 reads the link this way, and the command status line samples it every eighth
-// command, so the helper has to be defined before RootCommands.h: both live in this anonymous
-// namespace, and a forward declaration at file scope would only declare a different function.
-static bool uicGet (uint32_t mib, uint32_t *value)
-{
-  *value = 0xffffffffU;
-  const uint32_t is = read32 (gHost.hc, 0x20);
-  if (is & 0x400U) {
-    write32 (gHost.hc, 0x20, 0x400U);
-  }
-  write32 (gHost.hc, 0x94, mib);
-  write32 (gHost.hc, 0x98, 0);
-  write32 (gHost.hc, 0x9c, 0);
-  write32 (gHost.hc, 0x90, 0x01U);   // DME_GET
-  for (unsigned i = 0; i < 200; i++) {
-    if (read32 (gHost.hc, 0x20) & 0x400U) {
-      write32 (gHost.hc, 0x20, 0x400U);
-      *value = read32 (gHost.hc, 0x9c);
-      return true;
-    }
-    IODelay (100);
-  }
-  return false;
-}
-
 #include "RootCommands.h"
 
 // Bring the live controller up for reading: map, SMMU pass-through for the UFS stream, take over
 // the request list, wake the device from UFS-PowerDown and wait for LUN 0 to be ready.
 // `why` receives a short reason on failure.
-// native-ufs-power=1: enable the UFS branch clocks the bootloader left to hardware gating.
-// Only the branch registers from GccUfs.h are written; GDSCR is read, not written, because its
-// semantics on this board are not qualified and the header asks for no speculative writes.
-static void enableUfsBranches (void)
-{
-  static const uint32_t branches[] = {
-    GCC_UFS_PHY_AXI_ENABLE, GCC_UFS_PHY_AHB_ENABLE, GCC_UFS_PHY_TX_SYMBOL0_ENABLE,
-    GCC_UFS_PHY_RX_SYMBOL0_ENABLE, GCC_UFS_PHY_UNIPRO_CORE_ENABLE, GCC_UFS_PHY_ICE_CORE_ENABLE,
-    GCC_UFS_PHY_PHY_AUX_ENABLE, GCC_UFS_PHY_RX_SYMBOL1_ENABLE, GCC_AGGRE_UFS_PHY_AXI_ENABLE,
-  };
-  uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
-  if (!gcc) {
-    IOLog ("NativeUfs: power: the GCC window did not map\n");
-    return;
-  }
-  // GDSCR bit31 is PWR_ON on this SoC (see the read-only probe above and the 2026-10-30 record).
-  // Write only when the domain reports off, and only the PWR_DOWN bit: nothing else in this
-  // register is qualified on this board.
-  const uint32_t gdscBefore = read32 (gcc, GCC_UFS_PHY_GDSCR);
-  unsigned gdscWrites = 0;
-  if (!(gdscBefore & 0x80000000U)) {
-    write32 (gcc, GCC_UFS_PHY_GDSCR, gdscBefore & ~1U);
-    for (unsigned i = 0; i < 20 && !(read32 (gcc, GCC_UFS_PHY_GDSCR) & 0x80000000U); i++) {
-      IODelay (100);
-    }
-    gdscWrites = 1;
-  }
-  unsigned enabled = 0, already = 0, stillOff = 0;
-  for (unsigned i = 0; i < sizeof (branches) / sizeof (branches[0]); i++) {
-    const uint32_t offset = branches[i];
-    const uint32_t before = read32 (gcc, offset);
-    if (before & GCC_UFS_BRANCH_ENABLE_BIT) {
-      already++;
-    } else {
-      write32 (gcc, offset, before | GCC_UFS_BRANCH_ENABLE_BIT);
-      IODelay (100);
-      enabled++;
-    }
-    if (read32 (gcc, offset) & 0x80000000U) {
-      stillOff++;
-    }
-  }
-  const uint32_t gdscAfter = read32 (gcc, GCC_UFS_PHY_GDSCR);
-  IOLog ("NativeUfs: power: gdsc %08x -> %08x (%u writes), %u branches enabled, %u already on, %u still CLK_OFF\n",
-         gdscBefore, gdscAfter, gdscWrites, enabled, already, stillOff);
-}
-
-// One QMP PHY table, as the UEFI probe wrote it: an offset inside the block and a byte value.
-static void writePhyTable (uintptr_t base, const UFS_PHY_TBL *table, unsigned count)
-{
-  for (unsigned index = 0; index < count; index++) {
-    write32 (base, table[index].offset, table[index].value);
-  }
-}
-
-// UIC commands go through the register interface, the one uicGet already uses: opcode in 0x90,
-// arguments in 0x94/0x98/0x9c, completion in IS bit 10, and the result code back in 0x98.
-static bool uicCommand (uint32_t opcode, uint32_t arg1, uint32_t arg2, uint32_t arg3, uint32_t *result)
-{
-  if (read32 (gHost.hc, 0x20) & 0x400U) {
-    write32 (gHost.hc, 0x20, 0x400U);
-  }
-  write32 (gHost.hc, 0x94, arg1);
-  write32 (gHost.hc, 0x98, arg2);
-  write32 (gHost.hc, 0x9c, arg3);
-  write32 (gHost.hc, 0x90, opcode);
-  for (unsigned index = 0; index < 200; index++) {
-    if (read32 (gHost.hc, 0x20) & 0x400U) {
-      write32 (gHost.hc, 0x20, 0x400U);
-      if (result) {
-        *result = read32 (gHost.hc, 0x98);
-      }
-      return true;
-    }
-    IODelay (100);
-  }
-  return false;
-}
-
-// native-ufs-coldinit=1: own the UFS clock, power and PHY state instead of adopting the
-// bootloader's. The order is the one the UEFI probe ran and Linux's qmp-ufs driver uses: power
-// domain on, branch clocks on, PHY block reset, QMP tables, link start. Every run so far
-// inherited a trained link and a PHY it never touched, so the new variables are the reset pulse
-// and the LINKSTARTUP that follows it - this driver has never started this link itself.
-static bool coldInit (unsigned stage, const char **why)
-{
-  // hostBringUp runs for the probe and again for the root start; the link is started once.
-  static bool done = false;
-  if (done) {
-    return true;
-  }
-  native_ufs_root_step = 68001;   // cold init: GCC map
-  uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
-  if (!gcc) {
-    *why = "coldinit: GCC map";
-    return false;
-  }
-  enableUfsBranches ();
-  native_ufs_root_step = 68002;   // cold init: power domain
-  const uint32_t gdscBefore = read32 (gcc, GCC_UFS_PHY_GDSCR);
-  if (!(gdscBefore & 0x80000000U)) {
-    write32 (gcc, GCC_UFS_PHY_GDSCR, gdscBefore & ~1U);
-    for (unsigned index = 0; index < 100 && !(read32 (gcc, GCC_UFS_PHY_GDSCR) & 0x80000000U); index++) {
-      IODelay (100);
-    }
-  }
-  // The stage argument splits the sequence so a run that crashes says where: 1 is the clock and
-  // power ownership alone (a measured no-op on this board), 2 adds the QMP tables without the
-  // reset, 3 adds the block reset pulse, 4 adds the link start. The 900E on 2026-11-02 came from
-  // the whole sequence at once, and an EDL entry leaves no page to say which part did it.
-  if (stage < 1) {
-    return true;
-  }
-  native_ufs_root_step = 68010U + stage;
-  uintptr_t phy = 0;
-  if (stage >= 2) {
-    native_ufs_root_step = 68003;   // cold init: PHY map
-    phy = mapRegisters (UFS_PHY_BASE, UFS_PHY_SIZE);
-    if (!phy) {
-      *why = "coldinit: PHY map";
-      return false;
-    }
-  }
-  if (stage >= 3) {
-    // qcom_reset_set writes 0 to assert and 1 to release, so a run that leaves 0 behind holds the
-    // PHY in reset: that is what the probe's single write of 0 did.
-    native_ufs_root_step = 68013;   // cold init: block reset assert
-    write32 (gcc, GCC_UFS_PHY_BCR, 0);
-    IODelay (200);
-    write32 (gcc, GCC_UFS_PHY_BCR, 1);
-    IODelay (1000);
-  }
-  if (stage >= 2) {
-    native_ufs_root_step = 68004;   // cold init: QMP tables
-    writePhyTable (phy, SM8150_UFSPHY_SERDES, sizeof (SM8150_UFSPHY_SERDES) / sizeof (UFS_PHY_TBL));
-    writePhyTable (phy + 0x400, SM8150_UFSPHY_TX, sizeof (SM8150_UFSPHY_TX) / sizeof (UFS_PHY_TBL));
-    writePhyTable (phy + 0x800, SM8150_UFSPHY_RX, sizeof (SM8150_UFSPHY_RX) / sizeof (UFS_PHY_TBL));
-    writePhyTable (phy + 0xc00, SM8150_UFSPHY_PCS, sizeof (SM8150_UFSPHY_PCS) / sizeof (UFS_PHY_TBL));
-    IODelay (1000);
-  }
-  if (stage < 4) {
-    done = true;
-    return true;
-  }
-  native_ufs_root_step = 68005;   // cold init: link start
-  uint32_t result = 0;
-  if (!uicCommand (0x16, 0, 0, 0, &result)) {
-    *why = "coldinit: LINKSTARTUP timeout";
-    return false;
-  }
-  if (result & 0x7fU) {
-    *why = "coldinit: LINKSTARTUP error";
-    return false;
-  }
-  for (unsigned index = 0; index < 100; index++) {
-    uint32_t link = 0;
-    if (uicGet (0x2b, &link) && (link & 1U)) {
-      native_ufs_root_step = 68007;   // cold init: link up
-      done = true;
-      return true;
-    }
-    IODelay (100);
-  }
-  native_ufs_root_step = 68006;   // cold init: link did not train
-  *why = "coldinit: link did not train";
-  return false;
-}
-
 static bool hostBringUp (const char **why)
 {
   if (gHost.poisoned) {
     *why = "transport quarantined";
-  native_ufs_root_step = 101;   // why="transport quarantined"
     return false;
   }
   if (gHost.ready) {
     return true;
   }
-  native_ufs_root_step = 40001;
-  if (stopAfter (40001)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "controller map";
-  gHost.hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
+  gHost.hc = mapPhys (UFS_HC_BASE, UFS_HC_SIZE, gHost.hcMap);
   if (!gHost.hc) {
     *why = "controller map";
-  native_ufs_root_step = 102;   // why="controller map"
     return false;
   }
   if (gRootDiagnosticEnabled) {
@@ -1442,30 +1010,14 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.hcs = read32 (gHost.hc, 0x30);
     gRootDiagnostic.hce = read32 (gHost.hc, 0x34);
   }
-  native_ufs_root_step = 40002;
-  if (stopAfter (40002)) { *why = "stop requested"; return false; }
   gRootDiagnostic.stage = "DMA allocation";
-  // native-ufs-dma-low=1 asks for a transfer page below 4 GiB. Every run so far took whatever
-  // address the allocator returned, and the controller's writes into that page are the one thing
-  // the traffic never varies: the wall has survived every change to how the page is used, so the
-  // next question is whether it depends on where the page is.
-  unsigned dmaLow = 0;
-  PE_parse_boot_argn ("native-ufs-dma-low", &dmaLow, sizeof (dmaLow));
-  if (dmaLow) {
-    gHost.dma = IOBufferMemoryDescriptor::inTaskWithPhysicalMask (
-      kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
-      static_cast<IOOptionBits> (kIOMemoryMapperNone),
-      kDmaBytes, 0xffffffffULL);
-  } else {
-    gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
-      kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
-      static_cast<IOOptionBits> (kIOMemoryMapperNone),
-      kDmaBytes, 4096);
-  }
+  gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
+    kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
+    static_cast<IOOptionBits> (kIOMemoryMapperNone),
+    kDmaBytes, 4096);
   gHost.lock = IOLockAlloc ();
   if (!gHost.dma || !gHost.lock) {
     *why = "dma buffer";
-  native_ufs_root_step = 103;   // why="dma buffer"
     return false;
   }
   gHost.virt = static_cast<uint8_t *> (gHost.dma->getBytesNoCopy ());
@@ -1473,48 +1025,18 @@ static bool hostBringUp (const char **why)
   gHost.phys = gHost.dma->getPhysicalSegment (0, &contiguous, kIOMemoryMapperNone);
   gRootDiagnostic.dma = gHost.phys;
   gRootDiagnostic.contiguous = contiguous;
-  native_ufs_root_step = 40003;
-  if (stopAfter (40003)) { *why = "stop requested"; return false; }
-  // native-ufs-nohib=1 disarms the controller's auto-hibernate idle timer once the controller is
-  // mapped: it is hardware state the bootloader may have left running, and this driver has never
-  // touched it. Linux writes 0 here on init.
-  gAhit = read32 (gHost.hc, 0x18);
-  unsigned nohib = 0;
-  PE_parse_boot_argn ("native-ufs-nohib", &nohib, sizeof (nohib));
-  if (nohib) {
-    write32 (gHost.hc, 0x18, 0);
-    gAhit = read32 (gHost.hc, 0x18);
-  }
   if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
       (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
     *why = "DMA address/contiguity";
-  native_ufs_root_step = 104;   // why="DMA address/contiguity"
     return false;
   }
-  native_ufs_root_step = 40004;
-  if (stopAfter (40004)) { *why = "stop requested"; return false; }
   bzero (gHost.virt, kDmaBytes);
   cacheCivac (gHost.virt, kDmaBytes);
   uint32_t report[3] = { 0, 0, 0 };
-  unsigned cold = 0;
-  PE_parse_boot_argn ("native-ufs-coldinit", &cold, sizeof (cold));
-  if (cold && !coldInit (cold, why)) {
-    return false;
-  }
   gRootDiagnostic.stage = "SMMU and request list";
-  native_ufs_root_step = 40005;
-  if (stopAfter (40005)) { *why = "stop requested"; return false; }
   if (!hostStopQueue (why)) return false;
-  native_ufs_root_step = 40006;
-  if (stopAfter (40006)) { *why = "stop requested"; return false; }
-  native_ufs_root_step = 40007;
-  if (stopAfter (40007)) { *why = "stop requested"; return false; }
   smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, kDmaBytes);
-  native_ufs_root_step = 40008;
-  if (stopAfter (40008)) { *why = "stop requested"; return false; }
-  // kona's ufshc node carries no iommus property, so the bypass above is a documented no-op and
-  // leaves smmuMap empty: never dereference it. Everything below guards on a nonzero base.
-  gHost.smmu = gHost.smmuMap ? static_cast<uintptr_t> (gHost.smmuMap->getVirtualAddress ()) : 0;
+  gHost.smmu = gHost.smmuMap->getVirtualAddress ();
   // The board's WiFi endpoint (sheng-wifi=2 or more) needs a pass-through stream of its own, set up here with the same code and at the same moment as the
   // storage stream: the registers of the stream matching group are not safe to touch from another thread later (a read of the first one never returned).
   uint32_t wifi = 0;
@@ -1639,170 +1161,29 @@ static bool hostBringUp (const char **why)
       native_ufs_dpu_state = 0xdead0001U;
     }
   }
-  if (gHost.smmu) {
-    uint32_t idr1 = read32 (gHost.smmu, 0x24);
-    gHost.cb = gHost.smmu + ((1U << (((idr1 >> 28) & 7) + 1)) + (report[0] >> 16)) * 4096;
-  }
-  if (gHost.smmu && gRootDiagnosticEnabled) {
+  uint32_t idr1 = read32 (gHost.smmu, 0x24);
+  gHost.cb = gHost.smmu + ((1U << (((idr1 >> 28) & 7) + 1)) + (report[0] >> 16)) * 4096;
+  if (gRootDiagnosticEnabled) {
     gRootDiagnostic.gfsrBefore = read32 (gHost.smmu, 0x48);
     gRootDiagnostic.fsrBefore = read32 (gHost.cb, 0x58);
     gRootDiagnostic.smmuId2 = read32 (gHost.smmu, 0x28);
     gRootDiagnostic.cba2r = read32 (gHost.smmu, 0x1800 + 4 * (report[0] >> 16));
   }
-  native_ufs_root_step = 40009;
-  if (stopAfter (40009)) { *why = "stop requested"; return false; }
   if (!hostStartQueue (why)) return false;
-  native_ufs_root_step = 40010;
-  if (stopAfter (40010)) { *why = "stop requested"; return false; }
-  // native-ufs-link=1 stops here with the clock and link state in the reason row, which the page
-  // prints: GDSC power, the AXI and AHB branch enables, HCS/HCE, and the three UIC attributes
-  // that say whether the link trained and how many lanes it brought up.
-  unsigned linkProbe = 0;
-  PE_parse_boot_argn ("native-ufs-link", &linkProbe, sizeof (linkProbe));
-  if (linkProbe) {
-    static char linkWhy[64];
-    uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
-    const uint32_t gdsc = gcc ? (read32 (gcc, GCC_UFS_PHY_GDSCR) >> 31) : 0xff;
-    const uint32_t axi = gcc ? (read32 (gcc, GCC_UFS_PHY_AXI_ENABLE) & 1U) : 0xff;
-    const uint32_t ahb = gcc ? (read32 (gcc, GCC_UFS_PHY_AHB_ENABLE) & 1U) : 0xff;
-    const uint32_t hcs = (read32 (gHost.hc, 0x30) & 0xfU);
-    const uint32_t hce = (read32 (gHost.hc, 0x34) & 1U);
-    uint32_t link = 0, tx = 0, rx = 0;
-    uicGet (0x2b, &link);
-    uicGet (0x2e, &tx);
-    uicGet (0x2f, &rx);
-    snprintf (linkWhy, sizeof linkWhy, "gd%u ax%u ah%u hcs%x hce%u ls%x tx%x rx%x",
-              gdsc & 0xfU, axi & 0xfU, ahb & 0xfU, hcs, hce & 0xfU,
-              link & 0xfU, tx & 0xfU, rx & 0xfU);
-    native_ufs_root_step = 63000U + ((link & 0xfU) * 1000U) + ((tx & 0xfU) * 100U) + (rx & 0xfU);
-    *why = linkWhy;
-    return false;
-  }
-  // native-ufs-noc=1: read-only look at the interconnect vote behind the UFS master. The live device
-  // tree puts mas-xm-ufs-mem on aggre1_noc (base 0x016e0000, phandle 0xb6) with qport 3, and that
-  // fabric's QoS blocks sit above base-offset 0x2000 with a 0x1000 stride, so port 3 lands at
-  // 0x5000. Nothing is written: the run stops and leaves the four words in the reason row, which
-  // is the page field a frozen frame keeps. The UFS branch registers are read beside them because
-  // "clk-aggre-ufs-phy-axi-no-rate" is the clock this master's QoS rides on.
-  unsigned nocProbe = 0;
-  PE_parse_boot_argn ("native-ufs-noc", &nocProbe, sizeof (nocProbe));
-  if (nocProbe) {
-    static char nocWhy[96];
-    uintptr_t noc = mapRegisters (0x016e0000ULL, 0x1f180);
-    uintptr_t gcc = mapRegisters (GCC_BASE, 0x1f0000);
-    if (!noc || !gcc) {
-      *why = "noc: map";
-      return false;
-    }
-    const unsigned at = 0x2000U + 3U * 0x1000U;
-    const uint32_t axi = read32 (gcc, GCC_UFS_PHY_AXI_ENABLE) & 1U;
-    const uint32_t agg = read32 (gcc, GCC_AGGRE_UFS_PHY_AXI_ENABLE) & 1U;
-    // The reason row keeps 28 characters, so the branch enables ride the step number instead
-    // (65010 = AXI only, 65001 = aggre only) and the row carries the four fabric words whole.
-    native_ufs_root_step = 65000U + axi * 10U + agg;
-    snprintf (nocWhy, sizeof nocWhy, "noc %x %x %x %x",
-              read32 (noc, at), read32 (noc, at + 4), read32 (noc, at + 8), read32 (noc, at + 0xc));
-    *why = nocWhy;
-    return false;
-  }
-  // Named powerInit, not power: hostBringUp already has a uint32_t power for the bCurrentPowerMode
-  // query result, and the shadow made the CI build fail under -Werror.
-  unsigned powerInit = 0;
-  PE_parse_boot_argn ("native-ufs-power", &powerInit, sizeof (powerInit));
-  if (powerInit) enableUfsBranches ();
-  // native-ufs-wake-first=1 follows the bdevsw driver that reads this disk: straight to START
-  // STOP UNIT on the well-known LU, no NOP and no power query first.
-  unsigned wakeFirst = 0;
-  PE_parse_boot_argn ("native-ufs-wake-first", &wakeFirst, sizeof (wakeFirst));
-  if (wakeFirst) {
-    // native-ufs-nowake=1 skips START STOP UNIT and goes straight to TUR polling. Nothing wakes
-    // the device, so the run is read-only and the device stays in its power state: if the machine
-    // then survives, the wake itself is what takes it down rather than the register reads.
-    unsigned nowake = 0;
-    PE_parse_boot_argn ("native-ufs-nowake", &nowake, sizeof (nowake));
-    if (!nowake) {
-      gRootDiagnostic.stage = "device wake (first)";
-      uint8_t ssu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
-      uint32_t scsi = 0;
-      if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
-        gHost.ready = false;
-        *why = "wake first (START STOP UNIT)";
-        native_ufs_root_step = 140;
-        return false;
-      }
-    }
-    // native-ufs-tur=<n>: issue n TEST UNIT READYs, with the device awake and before any media
-    // read. Every run so far mixed 8 KiB reads with the few bring-up commands, so nothing separates
-    // "any command traffic" from "data traffic". These commands move no bytes: a run that dies near
-    // the same count as the read runs puts the wall in the controller or the link, and one that
-    // survives puts it in the data path. 69xxx on the page is the probe's own counter.
-    unsigned turCount = 0;
-    PE_parse_boot_argn ("native-ufs-tur", &turCount, sizeof (turCount));
-    if (turCount) {
-      static const uint8_t tur[6] = { 0x00, 0, 0, 0, 0, 0 };
-      gRootDiagnostic.stage = "test-unit-ready probe";
-      for (unsigned index = 0; index < turCount; index++) {
-        uint32_t scsi = 0;
-        native_ufs_root_step = 69000U + (index < 999U ? index : 999U);
-        if (hostScsi (0, tur, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
-          gRootDiagnostic.stage = "test-unit-ready probe returned";
-          break;
-        }
-        IODelay (2000);
-      }
-      native_ufs_root_step = 69999U;
-    }
-    // 40014 and 40015 bracket the settle delay: 50029 leaves the SSU inside hostScsi, 40014 puts
-    // the gap in IODelay, and 40015 means the TUR loop was entered.
-    native_ufs_root_step = 40014;
-    // 40014 is the step right after START STOP UNIT returns, so stopping here isolates the wake:
-    // the command was accepted and nothing else has been submitted.
-    if (stopAfter (40014)) { *why = "stop after wake"; return false; }
-    unsigned settle = 50;
-    PE_parse_boot_argn ("native-ufs-settle", &settle, sizeof (settle));
-    if (settle > 5000) settle = 5000;
-    if (settle) IODelay (settle * 1000);
-    native_ufs_root_step = 40015;
-    if (stopAfter (40015)) { *why = "stop before TEST UNIT READY"; return false; }
-    gRootDiagnostic.stage = "LUN ready";
-    for (unsigned attempt = 0; attempt < 20; attempt++) {
-      native_ufs_root_step = 40020 + attempt;
-      uint8_t tur[6] = { 0, 0, 0, 0, 0, 0 };
-      uint32_t scsi2 = 0;
-      if (hostScsi (0, tur, 6, false, 0, 200000, &scsi2) == kIOReturnSuccess) {
-        gHost.ready = true;
-        native_ufs_root_step = 40013;
-        // The wake path used to leave this success without a gate, so a stop-40013 run still went
-        // on to read the manifest and publish. Gate it: one accepted command and nothing else.
-        if (stopAfter (40013)) { *why = "stop after TEST UNIT READY"; return false; }
-        return true;
-      }
-      IODelay (10000);
-    }
-    *why = "LUN 0 not ready (wake first)";
-    native_ufs_root_step = 141;
-    return false;
-  }
   gRootDiagnostic.stage = "NOP OUT";
   // NOP OUT proves the transport before touching the SCSI layer.
   if (hostNop () != kIOReturnSuccess) {
     gHost.ready = false;
     *why = "NOP OUT";
-  native_ufs_root_step = 130;   // why="NOP OUT"
     return false;
   }
   uint32_t power = 0;
-  native_ufs_root_step = 40011;
-  if (stopAfter (40011)) { *why = "stop requested"; return false; }   // NOP OUT done
   gRootDiagnostic.stage = "power mode query";
   if (hostQueryRead (0x03, 0x02, &power) != kIOReturnSuccess) {
     gHost.ready = false;
     *why = "power mode query";
-  native_ufs_root_step = 131;   // why="power mode query"
     return false;
   }
-  native_ufs_root_step = 40012;
-  if (stopAfter (40012)) { *why = "stop requested"; return false; }   // power mode read
   gRootDiagnostic.power = power;
   if ((power & 0xff) != 0x11) {
     gRootDiagnostic.stage = "device wake";
@@ -1812,17 +1193,12 @@ static bool hostBringUp (const char **why)
     if (hostScsi (0xd0, ssu, 6, false, 0, 500000, &scsi) != kIOReturnSuccess) {
       gHost.ready = false;
       *why = "wake (START STOP UNIT)";
-  native_ufs_root_step = 132;   // why="wake (START STOP UNIT)"
       return false;
     }
-    // No pause here: IOSleep stalled the thread and IODelay(50 ms) did not finish either, so
-    // the wait itself is the suspect. 61 means the code got past the wake without any pause.
-    native_ufs_root_step = 40013;
-  if (stopAfter (40013)) { *why = "stop requested"; return false; }
+    IOSleep (50);
   }
   gRootDiagnostic.stage = "LUN ready";
   for (unsigned attempt = 0; attempt < 20; attempt++) {
-    native_ufs_root_step = 40020 + attempt;
     uint8_t tur[6] = { 0, 0, 0, 0, 0, 0 };
     uint32_t scsi = 0;
     if (hostScsi (0, tur, 6, false, 0, 200000, &scsi) == kIOReturnSuccess) {
@@ -1830,11 +1206,10 @@ static bool hostBringUp (const char **why)
       return true;
     }
     if (gHost.poisoned) break;
-    IODelay (10000);
+    IOSleep (10);
   }
   gHost.ready = false;
   *why = "LUN 0 not ready";
-  native_ufs_root_step = 133;   // why="LUN 0 not ready"
   return false;
 }
 }
@@ -1927,12 +1302,10 @@ extern "C" int native_ufs_store_open (uint64_t blocks, uint64_t *firstLba, const
     }
   }
   if (why) *why = reason;
-  // Board bring-up: name the condition that keeps the persistent store closed, since the caller only reports the
-  // refusal to the diagnostic page.
-  IOLog ("NativeUfs: store open mode=%u blocks=%llu valid=%d host=%d reserve=%llu reason=%s ok=%d first=%llu\n",
-         storeMode (), (unsigned long long)blocks, (int)gStoreGeometry.valid, (int)gHost.ready,
-         (unsigned long long)reserveBlocks (), reason, ok, (unsigned long long)gStoreRegionFirst);
   return ok;
+  IOLog ("NativeUfs: store open mode=%u blocks=%llu valid=%d host=%d reason=%s ok=%d first=%llu\n",
+         storeMode (), (unsigned long long)blocks, (int)gStoreGeometry.valid, (int)gHost.ready,
+         reason, ok, (unsigned long long)gStoreRegionFirst);
 }
 
 extern "C" int native_ufs_store_read (uint64_t rel, uint32_t blocks, void *dst)
@@ -2153,6 +1526,13 @@ extern "C" int native_ufs_log_sync (void)
   return gLogRegionBlocks && hostSyncCache () == kIOReturnSuccess;
 }
 
+// From a panic, before the log writes that keep its message: later host commands no longer wait on the host lock. 1 = the log is open.
+extern "C" int native_ufs_log_panic (void)
+{
+  gHostPanic = true;
+  return gLogRegionBlocks != 0;
+}
+
 // Re-read the GPT header and entry array and compare their CRCs with what was recorded at root start. 0 = unchanged.
 extern "C" unsigned native_ufs_store_gpt_check (void)
 {
@@ -2217,6 +1597,15 @@ public:
 };
 OSDefineMetaClassAndStructors (NativeUfsBlock, IOBlockStorageDevice)
 
+#if defined(NATIVE_UFS_SOURCE_API) && NATIVE_UFS_SOURCE_API
+// The source runtime owns registration and attachment after IOStorageFamily
+// has loaded. No second IOKit personality starts this service in that mode.
+extern "C" IOService *native_ufs_source_create (void)
+{
+  return new NativeUfs;
+}
+#endif
+
 extern "C" {
 volatile uint32_t native_ufs_blocks_published = 0;
 volatile uint64_t native_ufs_block_reads = 0;
@@ -2235,13 +1624,7 @@ extern "C" void native_ufs_progress_text (char *out, size_t size)
   sample.published = native_ufs_blocks_published;
   sample.reads = native_ufs_block_reads;
   sample.failures = native_ufs_block_failures;
-  // The boot page prints the CMD row of this text while it runs live, so the soft failure that
-  // stopped the root start rides there: rootDiagnosticFailure() already recorded it, and row 2 of
-  // the page cannot fit it after probe/match/root.
-  const char *why = native_ufs_root_failure;
-  formatUfsRootDiagnostics (out, size, sample,
-                            (why && why[0]) ? why : "cached values; not a new HW fault sample",
-                            "UFS CACHED SNAPSHOT");
+  formatUfsRootDiagnostics (out, size, sample, "cached values; not a new HW fault sample", "UFS CACHED SNAPSHOT");
 }
 
 static void rootDiagnosticFailure (const char *reason)
@@ -2280,15 +1663,39 @@ bool NativeUfsBlock::configure (const char *name, uint64_t absoluteOffset, uint6
 #endif
 }
 
-// The read path records its cost whether or not the verified-block chain is compiled in, so
-// the counter and clock helper live outside that guard.
-volatile uint64_t native_ufs_read_ticks = 0;
-static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\n\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
+// Data objects of the root image (version 2 manifest), recorded by startRoot before windows are configured.
+static RootWindow gRootObject[4];
+static uint32_t gRootObjects;
+static uint64_t gRootObjectBase;
 
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 volatile uint64_t native_ufs_verified_blocks = 0;
-// Time spent hashing and verifying, in generic-timer ticks (diagnostic only).
-volatile uint64_t native_ufs_verify_ticks = 0;
+
+// Read the hash table of a header-only policy from the root image object "<window>.vroot" into `table`.
+// The bytes are untrusted here; vr_open checks them against the digest in the signed header.
+static bool readPolicyTable (const char *window, uint8_t *table, uint64_t tableBytes)
+{
+  char name[32];
+  if (snprintf (name, sizeof (name), "%s.vroot", window) >= static_cast<int> (sizeof (name))) return false;
+  const RootWindow *object = nullptr;
+  for (unsigned i = 0; i < gRootObjects; ++i)
+    if (!strcmp (gRootObject[i].name, name)) object = &gRootObject[i];
+  if (!object || object->size != tableBytes) return false;
+  uint64_t lba = (gRootObjectBase + object->offset) / 4096, done = 0;
+  while (done < tableBytes) {
+    uint64_t left = tableBytes - done;
+    uint32_t blocks = static_cast<uint32_t> (left >= kDataMax ? kDataMax / 4096 : (left + 4095) / 4096);
+    if (hostRead4k (0, lba, blocks, gScratch) != kIOReturnSuccess) return false;
+    uint64_t take = left < blocks * 4096ULL ? left : blocks * 4096ULL;
+    memcpy (table + done, gScratch, take);
+    done += take;
+    lba += blocks;
+  }
+  return true;
+}
+// Time spent hashing/verifying and reading from the UFS transport, in generic-timer ticks (diagnostic only).
+volatile uint64_t native_ufs_verify_ticks = 0, native_ufs_read_ticks = 0;
+static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\n\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
 volatile uint32_t native_ufs_integrity_failures = 0;
 
 bool NativeUfsBlock::configureVerification ()
@@ -2328,6 +1735,19 @@ bool NativeUfsBlock::configureVerification ()
     gRootDiagnostic.stage = "no capacity-matching policy";
     return false;
   }
+  // A header-only policy carries its hash table in the root image instead of the boot image.
+  const bool headerOnly = manifestBytes == VR_HEADER_BYTES + VR_SIGNATURE_BYTES;
+  uint64_t hashBytes = 0;
+  if (headerOnly) {
+    uint64_t count = 0;
+    for (unsigned i = 0; i < 8; ++i) count |= static_cast<uint64_t> (manifest[32 + i]) << (8 * i);
+    if (!count || count > (UINT64_MAX - manifestBytes) / 32) {
+      gRootDiagnostic.stage = "policy header block count";
+      return false;
+    }
+    hashBytes = count * 32;
+    manifestBytes += hashBytes;
+  }
   gRootDiagnostic.stage = "policy storage";
   vm_size_t tableBytes = round_page (static_cast<vm_size_t> (manifestBytes));
   if (tableBytes < manifestBytes || tableBytes > UINT64_MAX - 4096) {
@@ -2340,12 +1760,21 @@ bool NativeUfsBlock::configureVerification ()
                   static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA), VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
     return false;
   }
-  memcpy (reinterpret_cast<void *> (verifiedStorage), manifest, manifestBytes);
+  if (headerOnly) {
+    memcpy (reinterpret_cast<void *> (verifiedStorage), manifest, VR_HEADER_BYTES + VR_SIGNATURE_BYTES);
+    gRootDiagnostic.stage = "policy table object read";
+    if (!readPolicyTable (label, reinterpret_cast<uint8_t *> (verifiedStorage) + VR_HEADER_BYTES + VR_SIGNATURE_BYTES,
+                          hashBytes)) {
+      return false;
+    }
+  } else {
+    memcpy (reinterpret_cast<void *> (verifiedStorage), manifest, manifestBytes);
+  }
   uint8_t *key = reinterpret_cast<uint8_t *> (verifiedStorage + tableBytes);
   memcpy (key, verified_root_key, VR_KEY_BYTES);
   gRootDiagnostic.stage = "policy read-only protection";
-  if (vm_map_protect (kernel_map, verifiedStorage, verifiedStorage + verifiedStorageBytes,
-                      VM_PROT_READ, TRUE) != KERN_SUCCESS) {
+  if (mach_vm_protect (kernel_map, verifiedStorage, verifiedStorageBytes,
+                       TRUE, VM_PROT_READ) != KERN_SUCCESS) {
     return false;
   }
   gRootDiagnostic.stage = "owner signature and hash table";
@@ -2415,67 +1844,13 @@ extern "C" int native_ufs_block_authenticates (IOService *provider, const char *
 }
 #endif
 
-// native-ufs-directcpy's reader: the same chunking and LBA sequence as ufsReadWindow, but the bytes
-// go from the DMA page straight into the caller's memory descriptor, so the bounce buffer is never
-// written and the CPU moves half the data it used to. The window's 1024-byte offset is applied here
-// the same way: the piece's data starts at `skip` inside the DMA page.
-static UfsWindowResult ufsReadWindowDirectCopy (IOMemoryDescriptor *buffer, uint64_t absolute, uint64_t bytes,
-                                                uint64_t block, uint64_t count)
-{
-  UfsWindowResult result = { kIOReturnBadArgument, 0 };
-  if (!buffer || !ufsWindowGeometry (absolute, bytes) || !count || block >= bytes / 512 ||
-      count > bytes / 512 - block) {
-    return result;
-  }
-  result.status = kIOReturnSuccess;
-  const uint64_t start = absolute + block * 512;
-  uint64_t remaining = count * 512;
-  while (remaining && result.status == kIOReturnSuccess) {
-    const uint64_t lba = (start + result.done) / 4096;
-    const uint64_t skip = (start + result.done) % 4096;
-    uint64_t blocks = (skip + remaining + 4095) / 4096;
-    if (blocks > 2) {
-      blocks = 2;
-    }
-    result.status = hostReadPiece (0, lba, static_cast<uint32_t> (blocks));
-    if (result.status != kIOReturnSuccess) {
-      break;
-    }
-    uint64_t usable = blocks * 4096 - skip;
-    if (usable > remaining) {
-      usable = remaining;
-    }
-    if (buffer->writeBytes (result.done, gHost.virt + kDataOffset + skip, usable) != usable) {
-      result.status = kIOReturnIOError;
-      break;
-    }
-    result.done += usable;
-    remaining -= usable;
-  }
-  // The page's request counter counts requests, not commands: the bounce path increments once per
-  // ufsReadWindow chunk, so this does the same and the 259-262 reads stay comparable.
-  if (result.status == kIOReturnSuccess) {
-    __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
-  }
-  return result;
-}
-
 bool NativeUfsBlock::start (IOService *provider)
 {
-  native_ufs_root_step = 41200;   // about to call IOBlockStorageDevice::start
-  // The manifest has been read and the windows enumerated by the time a block is asked to start,
-  // so a stop here leaves the run at "reads done, no media": the difference between the traffic
-  // that already works and the publication the machine dies in.
-  if (stopAfter (41200)) {
-    return false;
-  }
   if (!bounce || !windowLock || !IOBlockStorageDevice::start (provider)) {
     return false;
   }
-  native_ufs_root_step = 41201;   // nub started, registerService next
   online = true;
   registerService ();
-  native_ufs_root_step = 41202;   // media registered
   return true;
 }
 
@@ -2485,10 +1860,6 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
   if (!buffer || !completion || !completion->action || !count || block >= bytes / 512 ||
       count > bytes / 512 - block || buffer->getLength () < count * 512) {
     return kIOReturnBadArgument;
-  }
-  if (gReadBlocks && count > gReadBlocks) {
-    // A short read is legal: the caller retries from block + done.
-    count = gReadBlocks;
   }
   if (buffer->getDirection () != kIODirectionIn) {
     return kIOReturnNotWritable;
@@ -2505,28 +1876,6 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     void lock () { IOLockLock (mutex); }
     void unlock () { IOLockUnlock (mutex); }
     IOReturn read (uint64_t lba, uint32_t blocks, void *out) {
-      const uint32_t call = ++gWindowReadCalls;
-      if (gStopReads && call > gStopReads) {
-        // Record where the budget stopped the media: the first refused LBA and its length are what
-        // a later run needs to reproduce the access, and the page's reason row carries them.
-        static char budgetWhy[40];
-        snprintf (budgetWhy, sizeof budgetWhy, "budget %llx+%u",
-                  (unsigned long long) lba, (unsigned) blocks);
-        gRootDiagnostic.stage = "read budget reached";
-        native_ufs_root_step = 71000U + (gStopReads < 999U ? gStopReads : 999U);
-        native_ufs_root_failure = budgetWhy;
-        if (gBudgetSoft) {
-          memset (out, 0, (size_t) blocks * 4096U);
-          return kIOReturnSuccess;
-        }
-        return kIOReturnTimeout;
-      }
-      native_ufs_root_step = 70000U + (call < 999U ? call : 999U);
-      if (gSsuEvery && !(call % gSsuEvery)) {
-        static const uint8_t pokeSsu[6] = { 0x1b, 0, 0, 0, 0x10, 0 };
-        uint32_t pokeOcs = 0;
-        hostScsi (0xd0, pokeSsu, 6, false, 0, 500000, &pokeOcs);
-      }
       uint64_t t0 = timerTicks ();
       IOReturn r = hostRead4k (0, lba, blocks, out);
       __atomic_fetch_add (&native_ufs_read_ticks, timerTicks () - t0, __ATOMIC_RELAXED);
@@ -2544,19 +1893,17 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
         return kIOReturnNotPrivileged;
       }
       __atomic_fetch_add (&native_ufs_verified_blocks, 1, __ATOMIC_RELAXED);
+#if defined(NATIVE_UFS_SOURCE_API) && NATIVE_UFS_SOURCE_API
+      boot_progress_poll ();
+#else
       if (boot_progress_poll) boot_progress_poll ();
+#endif
 #else
       (void) index; (void) data; (void) length;
 #endif
       return kIOReturnSuccess;
     }
     uint64_t copy (uint64_t offset, const void *data, uint64_t length) {
-      if (gNoCopy) {
-        // Pretend the bytes landed: the caller sees a full request, the page shows how far the
-        // stream got, and the machine either survives or stops in the same place as before.
-        __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
-        return length;
-      }
       uint64_t copied = buffer->writeBytes (offset, data, length);
       if (copied == length) __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
       return copied;
@@ -2566,14 +1913,7 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     , &verified
 #endif
   };
-  UfsWindowResult outcome;
-  if (gDirectCopy && windowLock) {
-    IOLockLock (windowLock);
-    outcome = ufsReadWindowDirectCopy (buffer, absolute, bytes, block, count);
-    IOLockUnlock (windowLock);
-  } else {
-    outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
-  }
+  UfsWindowResult outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
   IOReturn result = outcome.status;
   uint64_t done = outcome.done;
   if (result != kIOReturnSuccess) {
@@ -2614,6 +1954,56 @@ static char gPendingUuid[4][37];
 static UfsRootPlan gPublicationPlan;
 static NativeUfs *gPendingProvider;
 
+static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
+{
+  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
+  OSDictionary *properties = OSDictionary::withCapacity (1);
+  OSString *wanted = OSString::withCString (uuid);
+  bool found = false;
+  if (matching && properties && wanted && properties->setObject ("UUID", wanted) &&
+      matching->setObject ("IOPropertyMatch", properties)) {
+    OSIterator *iterator = IOService::getMatchingServices (matching);
+    if (iterator) {
+      for (unsigned matches = 0; matches < 64 && !found; ++matches) {
+        IORegistryEntry *media = OSDynamicCast (IORegistryEntry, iterator->getNextObject ());
+        if (!media) break;
+        IORegistryIterator *parents = IORegistryIterator::iterateOver (
+          media, gIOServicePlane, kIORegistryIterateRecursively | kIORegistryIterateParents);
+        if (parents) {
+          found = ufsMediaHasAncestor (*parents, window);
+          parents->release ();
+        }
+      }
+      iterator->release ();
+    }
+  }
+  OSSafeReleaseNULL (wanted);
+  OSSafeReleaseNULL (properties);
+  OSSafeReleaseNULL (matching);
+  return found;
+}
+
+static void captureMissingMedia (const char *uuid)
+{
+  int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for signed UUID %s\n", uuid);
+  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
+  OSIterator *iterator = matching ? IOService::getMatchingServices (matching) : nullptr;
+  unsigned count = 0;
+  while (iterator && used < int (sizeof (gRootMediaText)) - 180 && count++ < 8) {
+    IOService *media = OSDynamicCast (IOService, iterator->getNextObject ());
+    if (!media) break;
+    OSString *id = OSDynamicCast (OSString, media->getProperty ("UUID"));
+    OSString *bsd = OSDynamicCast (OSString, media->getProperty (kIOBSDNameKey));
+    OSNumber *size = OSDynamicCast (OSNumber, media->getProperty ("Size"));
+    used += snprintf (gRootMediaText + used, sizeof (gRootMediaText) - used,
+                      "media %.24s bytes=%llx uuid=%.36s\n",
+                      bsd ? bsd->getCStringNoCopy () : "-", size ? size->unsigned64BitValue () : 0ULL,
+                      id ? id->getCStringNoCopy () : "-");
+  }
+  OSSafeReleaseNULL (iterator);
+  OSSafeReleaseNULL (matching);
+}
+
 // Used only for objects that were never started/published. Started objects
 // retain their owner references even on a later failure; clients can have I/O.
 static void discardPendingWindow (unsigned index)
@@ -2631,12 +2021,10 @@ static void publishThread (void *, wait_result_t)
   struct Operations {
     bool start (unsigned index) {
       NativeUfsBlock *device = gPendingDevice[index];
-      native_ufs_root_step = 41001 + index * 2;   // window start begins
       gRootDiagnostic.stage = "root window service start";
       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Start);
       gRootDiagnostic.publicationWindow = index;
       if (!device->start (gPendingProvider)) return false;
-      native_ufs_root_step = 41002 + index * 2;   // window start returned
       native_ufs_blocks_published = native_ufs_blocks_published + 1;
       IOLog ("NativeUfs: published %s\n", device->windowLabel ());
       return true;
@@ -2647,18 +2035,19 @@ static void publishThread (void *, wait_result_t)
       gRootDiagnostic.stage = "media publication";
       gRootDiagnostic.publicationPhase = static_cast<unsigned> (UfsRootPhase::Media);
       gRootDiagnostic.publicationWindow = index;
-      // start() already published the media with registerService(); the kernel's own root
-      // matching (IOFindBSDRoot) is what has to wait for it, not this thread. Polling the
-      // service plane here stalled the boot page on 2026-10-31: with the poll the page stopped
-      // sampling after its first frame and stayed frozen for minutes, without it the same
-      // kernel booted with the page live. The pass therefore records the window and moves on.
-      // The UUID is empty in this build (no NATIVE_VERIFIED_BLOCK), so the log states that.
-      IOLog ("NativeUfs: %s window published (uuid '%.36s' not polled)\n", device->windowLabel (), uuid);
-      return true;
+      bool ready = false;
+      // Diagnostic mode affects reporting only, never the dependency gate.
+      for (unsigned tick = 0; tick <= 300; ++tick) {
+        ready = mediaWithUuidExists (uuid, device);
+        if (ready || tick == 300) break;
+        IOSleep (100);
+      }
+      IOLog ("NativeUfs: %s volume %s %s\n", device->windowLabel (), uuid, ready ? "ready" : "not ready");
+      if (!ready) captureMissingMedia (uuid);
+      return ready;
     }
     void discard (unsigned index) { discardPendingWindow (index); }
   } operations;
-  native_ufs_root_step = 41300;   // publisher thread entered
   UfsRootPublicationResult result = ufsPublishRootWindows (operations, gPublicationPlan);
   if (result.phase != UfsRootPhase::Complete) {
     gRootDiagnostic.result = result.phase == UfsRootPhase::Start ? kIOReturnIOError : kIOReturnTimeout;
@@ -2670,9 +2059,7 @@ static void publishThread (void *, wait_result_t)
     // dereference it here. The media-failure object is deliberately retained.
     rootDiagnosticFailure (reason);
   }
-  native_ufs_root_step = 41301;   // publication loop complete
   gPendingProvider->release ();  // Balanced with successful thread dispatch.
-  native_ufs_root_step = 41302;   // publisher thread done
 }
 
 // Memory snapshot (native-ufs-probe=13): root mode as usual, then, after a delay, the kernel's own
@@ -2683,233 +2070,6 @@ extern unsigned int vm_page_free_count, vm_page_active_count, vm_page_inactive_c
 extern uint32_t vm_page_pages;
 extern unsigned int memorystatus_available_pages;
 extern int nprocs;
-}
-
-// native-ufs-apitest=2: the reads are known to be safe at every time point, so this thread does
-// the host writes of the takeover one at a time, two seconds apart, and leaves the number of the
-// last write that returned in native_ufs_root_step (601xx). A frozen page then names the write
-// that wedged the interconnect.
-static void writeProbeThread (void *, wait_result_t)
-{
-  IOSleep (30 * 1000);
-  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
-  native_ufs_root_step = 60100;
-  if (!hc) {
-    native_ufs_root_step = 60198;
-    return;
-  }
-  uint32_t hce = read32 (hc, 0x34);
-  native_ufs_root_step = 60101;                      // HCE read
-  write32 (hc, 0x34, hce | 1u);
-  native_ufs_root_step = 60102;                      // HCE written
-  IOSleep (2000);
-
-  uint32_t rsr = read32 (hc, 0x60);
-  native_ufs_root_step = 60103;                      // UTRLRSR read
-  write32 (hc, 0x60, rsr & ~1u);
-  native_ufs_root_step = 60104;                      // queue stopped
-  IOSleep (2000);
-
-  write32 (hc, 0x60, read32 (hc, 0x60) | 1u);
-  native_ufs_root_step = 60105;                      // queue started
-  IOSleep (2000);
-
-  write32 (hc, 0x58, 1);
-  native_ufs_root_step = 60106;                      // doorbell written
-  IOSleep (2000);
-
-  (void) read32 (hc, 0x58);
-  (void) read32 (hc, 0x20);
-  native_ufs_root_step = 60199;                      // every write returned
-}
-
-// native-ufs-apitest=3: every write that is known to be safe has already returned, so this probe
-// covers the four that the takeover still performs: interrupt enable (0x24), the queue base
-// (0x50/0x54, written back with its current value first) and the interrupt clear (0x20).
-static void queueProbeThread (void *, wait_result_t)
-{
-  IOSleep (30 * 1000);
-  uintptr_t hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
-  native_ufs_root_step = 60200;
-  if (!hc) {
-    native_ufs_root_step = 60298;
-    return;
-  }
-  write32 (hc, 0x24, 0);
-  native_ufs_root_step = 60201;                      // interrupt enable cleared
-  IOSleep (2000);
-
-  uint32_t baseLow = read32 (hc, 0x50);
-  write32 (hc, 0x50, baseLow);
-  native_ufs_root_step = 60202;                      // queue base low rewritten with its own value
-  IOSleep (2000);
-
-  uint32_t baseHigh = read32 (hc, 0x54);
-  write32 (hc, 0x54, baseHigh);
-  native_ufs_root_step = 60203;                      // queue base high rewritten with its own value
-  IOSleep (2000);
-
-  write32 (hc, 0x20, 1);
-  native_ufs_root_step = 60204;                      // interrupt status cleared
-  IOSleep (2000);
-
-  native_ufs_root_step = 60299;                      // every remaining write returned
-}
-
-// native-ufs-paint=1: after the windows are published, draw a green bar straight into the frame
-// buffer, one row every half second. The boot page freezes with the machine, so this bar answers a
-// different question: is this thread still running while the page is stopped?
-static void paintAlive (void)
-{
-  // vc_info is only forward declared in this build, so read the published layout directly:
-  // v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64 (scripts/xnu-panic-screen.c).
-  const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
-  const uint32_t height = v[0], width = v[1], depth = v[2], rowbytes = v[3];
-  const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
-  if (!baseaddr || !rowbytes || !width || !height || depth != 32) return;
-  volatile uint32_t *base = (volatile uint32_t *)ml_io_map (baseaddr,
-                                                            (vm_size_t)rowbytes * height);
-  if (!base) return;
-  const uint64_t stride = rowbytes / 4;
-  for (unsigned i = 0; i < 80; i++) {
-    const unsigned row = 30 + i;
-    if (row >= height) break;
-    const unsigned limit = 40 + i * 12;
-    for (unsigned x = 0; x < width && x < limit; x++) {
-      base[(uint64_t)row * stride + x] = 0xFF00FF00u;
-    }
-    IOSleep (500);
-  }
-}
-
-// native-ufs-heartbeat=1: write the current root step into the bottom of the frame from its own
-// thread. The direct bring-up freezes the boot page with the machine, and the page samples the
-// counters only when it draws, so a frozen page keeps the step from before the match. This strip
-// is written by the bring-up timeline and stays on the panel after everything stops: sixteen cells
-// hold native_ufs_root_step & 0xffff, most significant bit on the left, green for one.
-static volatile uint32_t *gHeartbeatBase = nullptr;
-static uint64_t gHeartbeatStride = 0;
-static unsigned gHeartbeatWidth = 0, gHeartbeatHeight = 0, gHeartbeatTries = 0;
-
-static void paintStepBits (uint32_t code)
-{
-  if (!gHeartbeatBase) {
-    // The framebuffer is published later than the driver match, so keep trying: a ten-try window
-    // (one second) is what kept the strip off the panel on 2026-10-31.
-    gHeartbeatTries++;
-    // Prefer the layout the page draws with. display.frame is already a kernel virtual address -
-    // boot_progress_bind rejects anything below 0xffff000000000000 - and the page writes through it
-    // directly, so it must never be passed to ml_io_map: mapping a virtual address as physical
-    // wrote through to unrelated memory and froze the machine at monitor=1 on 2026-11-01.
-    uint32_t width = 0, height = 0, rowbytes = 0;
-    uint64_t frame = 0;
-    if (&boot_progress_observation[0]) {
-      width = static_cast<uint32_t> (boot_progress_observation[20]);
-      height = static_cast<uint32_t> (boot_progress_observation[21]);
-      rowbytes = static_cast<uint32_t> (boot_progress_observation[22]);
-      frame = boot_progress_observation[23];
-    }
-    volatile uint32_t *base = nullptr;
-    if (frame >= 0xffff000000000000ULL && width && height && rowbytes && frame <= (~(uintptr_t) 0) - (uint64_t) height * rowbytes) {
-      base = reinterpret_cast<volatile uint32_t *> (frame);
-    }
-    if (!base) {
-      // Fall back to the platform expert's video state, which is a physical address and therefore
-      // needs the mapping. vc_info is only forward declared in this build, so read the published
-      // layout directly: v_height, v_width, v_depth, v_rowbytes as u32, then v_baseaddr as u64.
-      const volatile uint32_t *v = reinterpret_cast<const volatile uint32_t *> (&PE_state.video);
-      const uint32_t vheight = v[0], vwidth = v[1], vdepth = v[2], vrowbytes = v[3];
-      const uint64_t baseaddr = *reinterpret_cast<const volatile uint64_t *> (&v[4]);
-      if (!baseaddr || !vrowbytes || !vwidth || !vheight || vdepth != 32) {
-        return;
-      }
-      base = (volatile uint32_t *) ml_io_map (baseaddr, (vm_size_t)vrowbytes * vheight);
-      if (!base) {
-        return;
-      }
-      width = vwidth;
-      height = vheight;
-      rowbytes = vrowbytes;
-    }
-    gHeartbeatBase = base;
-    gHeartbeatStride = rowbytes / 4;
-    gHeartbeatWidth = width;
-    gHeartbeatHeight = height;
-    IOLog ("NativeUfs: heartbeat mapped %ux%u after %u tries\n", width, height, gHeartbeatTries);
-  }
-  if (gHeartbeatWidth < 8 + 16 * 32) {
-    return;
-  }
-  // Keep clear of the page's last rows and of the pulse strip at the very bottom.
-  const unsigned top = gHeartbeatHeight > 200 ? gHeartbeatHeight - 160 : 0;
-  const uint64_t stride = gHeartbeatStride;
-  volatile uint32_t *edge = gHeartbeatBase + (uint64_t)top * stride;
-  for (unsigned x = 8; x < 8 + 16 * 32; x++) {
-    edge[x] = 0xFFFFFFFFU;
-  }
-  for (unsigned cell = 0; cell < 16; cell++) {
-    const uint32_t colour = ((code >> (15 - cell)) & 1U) ? 0xFF00FF00U : 0xFF000000U;
-    for (unsigned y = 1; y < 33 && top + y < gHeartbeatHeight; y++) {
-      volatile uint32_t *row = gHeartbeatBase + (uint64_t)(top + y) * stride;
-      for (unsigned x = 0; x < 24; x++) {
-        row[8 + cell * 32 + x] = colour;
-      }
-    }
-  }
-}
-
-static void heartbeatEntry (void *, wait_result_t)
-{
-  IOLog ("NativeUfs: heartbeat thread running\n");
-  unsigned tick = 0;
-  for (;;) {
-    paintStepBits (native_ufs_root_step);
-    // A second, moving row: when the boot page freezes the step strip alone cannot say whether the
-    // machine died or only the page stopped, because the step stops changing either way. This cell
-    // advances once a second from the driver's own thread, so a frozen page over a live machine
-    // still shows movement.
-    if (gHeartbeatBase && gHeartbeatWidth > 8 + 16 * 32 && gHeartbeatHeight > 200) {
-      const unsigned top = gHeartbeatHeight > 160 ? gHeartbeatHeight - 160 : 0;
-      const unsigned liveRow = top > 40 ? top - 40 : 0;
-      for (unsigned cell = 0; cell < 16; cell++) {
-        const uint32_t colour = ((tick / 10) % 16 == cell) ? 0xFF00FFFFU : 0xFF000000U;
-        for (unsigned y = 0; y < 24 && liveRow + y < gHeartbeatHeight; y++) {
-          volatile uint32_t *row = gHeartbeatBase + (uint64_t) (liveRow + y) * gHeartbeatStride;
-          for (unsigned x = 0; x < 24; x++) {
-            row[8 + cell * 32 + x] = colour;
-          }
-        }
-      }
-    }
-    tick++;
-    IOSleep (100);
-  }
-}
-
-// native-ufs-apitest=1: read the controller at fixed times and leave the trace in
-// native_ufs_root_step, 60000 + point * 10 + phase. A frozen page therefore names the point whose
-// read did not return; 60099 means every point read fine.
-static void accessProbeThread (void *, wait_result_t)
-{
-  static const unsigned points[5] = { 2, 5, 10, 20, 40 };
-  uintptr_t hc = 0;
-  unsigned previous = 0;
-  for (unsigned i = 0; i < 5; i++) {
-    IOSleep ((points[i] - previous) * 1000);
-    previous = points[i];
-    native_ufs_root_step = 60000 + i * 10;
-    if (!hc) {
-      hc = mapRegisters (UFS_HC_BASE, UFS_HC_SIZE);
-    }
-    native_ufs_root_step = 60000 + i * 10 + 1;
-    if (!hc) {
-      continue;
-    }
-    native_ufs_cap = read32 (hc, 0x00);
-    native_ufs_hcs = read32 (hc, 0x30);
-    native_ufs_root_step = 60000 + i * 10 + 2;
-  }
-  native_ufs_root_step = 60099;
 }
 
 static void statsThread (void *argument, wait_result_t)
@@ -2992,67 +2152,6 @@ bool NativeUfs::start (IOService *provider)
   unsigned diagnostic = 0;
   PE_parse_boot_argn ("native-ufs-diagnostics", &diagnostic, sizeof (diagnostic));
   gRootDiagnosticEnabled = diagnostic == 1;
-  // native-ufs-heartbeat=1: keep a step strip on the panel while the page is frozen with the machine.
-  unsigned heartbeat = 0;
-  PE_parse_boot_argn ("native-ufs-heartbeat", &heartbeat, sizeof (heartbeat));
-  if (heartbeat) {
-    thread_t thread = nullptr;
-    if (kernel_thread_start (heartbeatEntry, nullptr, &thread) == KERN_SUCCESS) {
-      thread_deallocate (thread);
-    }
-  }
-  PE_parse_boot_argn ("native-ufs-stop", &gStopStep, sizeof (gStopStep));
-  PE_parse_boot_argn ("native-ufs-stop-reads", &gStopReads, sizeof (gStopReads));
-  PE_parse_boot_argn ("native-ufs-budget-soft", &gBudgetSoft, sizeof (gBudgetSoft));
-  PE_parse_boot_argn ("native-ufs-post-delay", &gPostDelay, sizeof (gPostDelay));
-  PE_parse_boot_argn ("native-ufs-reset-every", &gResetEvery, sizeof (gResetEvery));
-  PE_parse_boot_argn ("native-ufs-tag-rotate", &gTagRotate, sizeof (gTagRotate));
-  PE_parse_boot_argn ("native-ufs-noinval", &gNoInvalidate, sizeof (gNoInvalidate));
-  PE_parse_boot_argn ("native-ufs-chunk-blocks", &gChunkBlocks, sizeof (gChunkBlocks));
-  PE_parse_boot_argn ("native-ufs-ssu-every", &gSsuEvery, sizeof (gSsuEvery));
-  PE_parse_boot_argn ("native-ufs-read-blocks", &gReadBlocks, sizeof (gReadBlocks));
-  PE_parse_boot_argn ("native-ufs-nocopy", &gNoCopy, sizeof (gNoCopy));
-  PE_parse_boot_argn ("native-ufs-directcpy", &gDirectCopy, sizeof (gDirectCopy));
-  unsigned slots = 0;
-  PE_parse_boot_argn ("native-ufs-slots", &slots, sizeof (slots));
-  gSlotAlternate = slots >= 2 ? 1U : 0U;
-  PE_parse_boot_argn ("native-ufs-noirq", &gUfsNoIrq, sizeof (gUfsNoIrq));
-  // native-ufs-gic-mask=1 masks the UFS SPI at the GIC and drops any pending state before the
-  // bring-up. The device tree gives the node interrupts = <GIC_SPI 0x109 ...>, so the interrupt
-  // XNU would have to service is INTID 32 + 265 = 297 (bank 9, bit 9). This driver polls and has
-  // no handler, and the machine dies 50-150 ms after the SSU whatever the driver is doing, so an
-  // unhandled level interrupt is the cheapest thing to rule out.
-  unsigned gicMask = 0;
-  PE_parse_boot_argn ("native-ufs-gic-mask", &gicMask, sizeof (gicMask));
-  if (gicMask) {
-    volatile uint32_t *gicd = (volatile uint32_t *) ml_io_map (0x17a00000ULL, 0x2000);
-    if (gicd) {
-      const unsigned intid = 297;
-      const unsigned bank = intid / 32;
-      const uint32_t bit = 1U << (intid % 32);
-      const uint32_t enabled = gicd[0x100 / 4 + bank];
-      const uint32_t pending = gicd[0x200 / 4 + bank];
-      gicd[0x180 / 4 + bank] = bit;   // GICD_ICENABLER
-      gicd[0x280 / 4 + bank] = bit;   // GICD_ICPENDR
-      IOLog ("NativeUfs: GIC SPI 265 (INTID %u) masked: enable=%08x pending=%08x\n",
-             intid, enabled, pending);
-    }
-  }
-  unsigned apitest = 0;
-  PE_parse_boot_argn ("native-ufs-apitest", &apitest, sizeof (apitest));
-  if (apitest) {
-    thread_t thread = nullptr;
-    void (*entry) (void *, wait_result_t) = accessProbeThread;
-    if (apitest == 2) {
-      entry = writeProbeThread;
-    } else if (apitest == 3) {
-      entry = queueProbeThread;
-    }
-    if (kernel_thread_start (entry, nullptr, &thread) == KERN_SUCCESS) {
-      thread_deallocate (thread);
-    }
-    return true;
-  }
   if (probe == 2) {
     inspect ();
   }
@@ -3153,245 +2252,42 @@ bool NativeUfs::start (IOService *provider)
     return true;
   }
   if (rootMode && !probe) {
-    // probe()/start() run inside the IOKit match on the boot thread, and the UFS work busy-waits
-    // (IODelay) for seconds per stage. While it ran there the boot page stopped sampling after
-    // its first frame and bsd_init waited: the control boot with native-ufs-root=0 kept both
-    // alive. The bring-up therefore runs on its own thread; the windows publish when it finishes
-    // and IOFindBSDRoot is the party that waits for them.
-    // native-ufs-direct=1 keeps the pre-deferral behaviour: the bring-up runs on the matching
-    // thread. That configuration ran 61 commands and published a window while the deferred
-    // thread stops after three commands, so both are selectable from one kernel.
-    unsigned direct = 0;
-    PE_parse_boot_argn ("native-ufs-direct", &direct, sizeof (direct));
-    if (direct) {
-      return startRoot (provider);
-    }
-    unsigned delay = 0;
-    PE_parse_boot_argn ("native-ufs-delay", &delay, sizeof (delay));
-    gRootBringUpDelay = delay;
-    provider->retain ();
-    gRootBringUpService = this;
-    gRootBringUpProvider = provider;
-    thread_t thread = nullptr;
-    if (kernel_thread_start (rootBringUpEntry, nullptr, &thread) != KERN_SUCCESS) {
-      gRootBringUpService = nullptr;
-      gRootBringUpProvider = nullptr;
-      provider->release ();
-      rootDiagnosticFailure ("root bring-up thread creation failed");
-      return false;
-    }
-    thread_deallocate (thread);
-    return true;
+    return startRoot (provider);
   }
   return false;
 }
 
-void NativeUfs::rootBringUpEntry (void *, wait_result_t)
-{
-  NativeUfs *service = gRootBringUpService;
-  IOService *provider = gRootBringUpProvider;
-  unsigned delay = gRootBringUpDelay;
-  gRootBringUpService = nullptr;
-  gRootBringUpProvider = nullptr;
-  // The bdevsw driver reads the same controller from IOFindBSDRoot without trouble, so a first
-  // access during IOKit matching may be too early. A delay turns that into a measurement.
-  if (delay) {
-    if (delay > 120) delay = 120;
-    IOLog ("NativeUfs: holding the root bring-up for %u s\n", delay);
-    IOSleep (delay * 1000);
-  }
-  bool started = false;
-  if (service && provider) started = service->startRoot (provider);
-  if (provider) provider->release ();
-  unsigned paint = 0;
-  PE_parse_boot_argn ("native-ufs-paint", &paint, sizeof (paint));
-  if (paint && started) {
-    IOLog ("NativeUfs: painting the live bar after publishing\n");
-    paintAlive ();
-  }
-}
-
 // Boot the root image's windows as block devices. Soft-fails (logs, publishes nothing).
-// native-ufs-rpmh=1: read-only cmd-db probe. An RPMh vote needs two things this port has never
-// confirmed: the cmd-db header layout at 0x80860000 and the resource name each UFS rail votes
-// against. Writing a TCS before that could switch a rail off, so this probe only reads: the
-// header words and the first printable name that contains "ufs".
-static void rpmhProbe (char *reason, size_t capacity, uint32_t *code)
-{
-  static char name[24];
-  name[0] = 0;
-  volatile uint8_t *cdb = (volatile uint8_t *) ml_io_map (0x80860000ULL, 0x20000);
-  if (!cdb) {
-    snprintf (reason, capacity, "cmd-db did not map");
-    *code = 64000;
-    return;
-  }
-  // The mapping is device memory, so read it through a volatile-safe little-endian helper rather
-  // than the shared le32 (), which takes a plain const pointer.
-  struct Word {
-    static uint32_t at (const volatile uint8_t *p)
-    {
-      return uint32_t (p[0]) | (uint32_t (p[1]) << 8) | (uint32_t (p[2]) << 16) | (uint32_t (p[3]) << 24);
-    }
-  };
-  const uint32_t version = Word::at (cdb);
-  const uint32_t magic = Word::at (cdb + 4);
-  const uint32_t entries = Word::at (cdb + 8);
-  // Count the NUL-terminated printable runs of at least four characters and keep the first one.
-  // The earlier probe only looked for "ufs" and found nothing, which cannot tell an empty region
-  // from a region whose names are laid out differently; the count and one sample name can.
-  unsigned runs = 0;
-  for (unsigned at = 0; at + 24 < 0x20000; at++) {
-    unsigned length = 0;
-    while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
-    if (length < 4 || cdb[at + length] != 0) continue;
-    runs++;
-    if (!name[0]) {
-      for (unsigned i = 0; i < length && i + 1 < sizeof name; i++) name[i] = static_cast<char> (cdb[at + i]);
-      name[length < sizeof name ? length : sizeof name - 1] = 0;
-    }
-    at += length;
-  }
-  // The region holds names, so look for one of the five UFS rails and print the two words that
-  // follow it: whichever of them reads as a small resource address is the entry layout this
-  // firmware uses, and that is the last unknown before a vote can be written.
-  uint32_t follow0 = 0, follow1 = 0, follow2 = 0;
-  bool matched = false;
-  // Look for the rail this port needs first, then fall back to any rail name: the first run that
-  // matched found smpa4, which tells us the entries are there but not what the word order means.
-  for (unsigned pass = 0; pass < 2 && !matched; pass++) {
-    for (unsigned at = 0; at + 40 < 0x20000 && !matched; at++) {
-      unsigned length = 0;
-      while (length < 16 && cdb[at + length] >= 0x20 && cdb[at + length] <= 0x7e) length++;
-      if (length < 4 || length > 12 || cdb[at + length] != 0) continue;
-      // Compare byte by byte: the mapping is volatile and a cast to const char * would drop that.
-      const bool ldoa18 = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a'
-        && cdb[at + 4] == '1' && cdb[at + 5] == '8';
-      const bool ldoa = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'a';
-      const bool smpa = cdb[at] == 's' && cdb[at + 1] == 'm' && cdb[at + 2] == 'p' && cdb[at + 3] == 'a';
-      const bool ldoc = cdb[at] == 'l' && cdb[at + 1] == 'd' && cdb[at + 2] == 'o' && cdb[at + 3] == 'c';
-      if (pass == 0 ? !ldoa18 : !(ldoa || smpa || ldoc)) continue;
-      for (unsigned i = 0; i < length; i++) name[i] = static_cast<char> (cdb[at + i]);
-      name[length] = 0;
-      follow0 = Word::at (cdb + at + 16);
-      follow1 = Word::at (cdb + at + 20);
-      follow2 = Word::at (cdb + at + 24);
-      matched = true;
-    }
-  }
-  if (matched) {
-    // Only the name and three words fit the row: the header is already known.
-    snprintf (reason, capacity, "%s a=%x b=%x c=%x", name, follow0, follow1, follow2);
-  } else {
-    snprintf (reason, capacity, "v%x m%x n%u c%u %s", version, magic, entries, runs & 0x3ffU,
-              name[0] ? name : "-");
-  }
-  *code = 64000U + (entries & 0xfffU);
-}
-
 bool NativeUfs::startRoot (IOService *provider)
 {
   const char *why = "";
   native_ufs_root_step = 1;
-  // native-ufs-rpmh-vote=1 votes the five UFS rails and stops with the bitmap of what was found
-  // and written; =2 votes and then runs the normal bring-up, which is the run that says whether
-  // the rails were the missing piece.
-  unsigned rpmhVote = 0;
-  PE_parse_boot_argn ("native-ufs-rpmh-vote", &rpmhVote, sizeof (rpmhVote));
-  if (rpmhVote) {
-    const uint32_t voted = voteUfsRails (rpmhVote, gVoteReport, sizeof gVoteReport);
-    native_ufs_root_step = 66000U + (voted & 0xffU);
-    if (rpmhVote == 1 || rpmhVote == 3 || rpmhVote == 4 || rpmhVote == 5) {
-      rootDiagnosticFailure (gVoteReport);
-      return false;
-    }
-  }
-  unsigned rpmh = 0;
-  PE_parse_boot_argn ("native-ufs-rpmh", &rpmh, sizeof (rpmh));
-  if (rpmh) {
-    static char rpmhWhy[64];
-    uint32_t code = 64000;
-    rpmhProbe (rpmhWhy, sizeof rpmhWhy, &code);
-    native_ufs_root_step = code;
-    rootDiagnosticFailure (rpmhWhy);
-    return false;
-  }
-  // native-ufs-probe-lba=<hex> with native-ufs-probe-count=<n>: once the bring-up has succeeded,
-  // read that one block n times and stop. It answers whether the stop is attached to a block - the
-  // 200 ms runs stopped on LBA 0x40c461 - or to the stream that led there.
-  unsigned probeLba = 0, probeCount = 0;
-  if (PE_parse_boot_argn ("native-ufs-probe-lba", &probeLba, sizeof (probeLba)) && probeLba) {
-    PE_parse_boot_argn ("native-ufs-probe-count", &probeCount, sizeof (probeCount));
-    if (!probeCount) {
-      probeCount = 8;
-    }
-    if (!hostBringUp (&why)) {
-      rootDiagnosticFailure (why);
-      return false;
-    }
-    static uint8_t probeBuffer[4096];
-    unsigned ok = 0;
-    for (unsigned i = 0; i < probeCount; i++) {
-      native_ufs_root_step = 67000U + (i & 0xffU);
-      if (hostRead4k (0, probeLba, 1, probeBuffer) == kIOReturnSuccess) {
-        ok++;
-      }
-      IOSleep (200);
-    }
-    static char probeWhy[40];
-    snprintf (probeWhy, sizeof probeWhy, "block %x ok %u of %u", probeLba, ok, probeCount);
-    native_ufs_root_step = 67100U + (ok & 0x3fU);
-    rootDiagnosticFailure (probeWhy);
-    return false;
-  }
   if (!hostBringUp (&why)) {
     rootDiagnosticFailure (why);
-    // No register reads here: a gated UFS/GCC branch stalls the CPU on the first access
-    // (the page froze at monitor=1 with IRQ=0 when this path read GDSCR and the HC), so the
-    // refusal only records the reason, which the boot page prints from the CMD row.
     IOLog ("NativeUfs: root bring-up failed: %s\n", why);
     return false;
   }
   native_ufs_root_step = 2;
   RootLayout *layout = static_cast<RootLayout *> (IOMalloc (sizeof (RootLayout)));
-  // Reads go through the same controller that wedges elsewhere, so a missing manifest is retried
-  // before it is treated as a board fact: run 5 rejected a manifest that run 4 had accepted.
-  bool read = false;
-  for (unsigned attempt = 0; layout && attempt < 3 && !read; attempt++) {
-    if (attempt) IODelay (20000);
-    read = findRootLayout (layout, &why);
-  }
-  if (!layout || !read) {
+  if (!layout || !findRootLayout (layout, &why)) {
     rootDiagnosticFailure (layout ? why : "root layout allocation failed");
     IOLog ("NativeUfs: root layout failed: %s\n", why);
     if (layout) IOFree (layout, sizeof (RootLayout));
     return false;
   }
   native_ufs_root_step = 3;
-  for (unsigned attempt = 0; attempt < 2 && layout->manifestStatus != 0; attempt++) {
-    IODelay (20000);
-    findRootLayout (layout, &why);
-  }
   if (layout->manifestStatus != 0) {
-    // The page prints only the reason, so pack the verdict into it: status says which check
-    // failed (1 magic, 2 version/count, 3 hash, 4 bounds, 5 names, 6 overlap, 7 attributes) and
-    // the magic says whether the block is even the manifest at all.
-    static char manifestWhy[48];
-    // The page keeps 40 characters, so print what separates a wrong LBA from changed content:
-    // the userdata first LBA, the four bytes at offset 32 ("NXSB" would mean an APFS block) and
-    // the magic actually read.
-    snprintf (manifestWhy, sizeof manifestWhy, "s%u l%llx b%08x m%08x",
-              layout->manifestStatus, (unsigned long long)layout->userdataFirst,
-              le32 (gScratch + 32), layout->magic0);
-    rootDiagnosticFailure (manifestWhy);
-    IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x, first %llx windows %u)\n",
-           layout->manifestStatus, layout->magic0, layout->magic1,
-           (unsigned long long)layout->userdataFirst, layout->windows);
+    rootDiagnosticFailure ("root manifest rejected");
+    IOLog ("NativeUfs: no valid root manifest in userdata (status %u, magic %08x %08x)\n",
+           layout->manifestStatus, layout->magic0, layout->magic1);
     IOFree (layout, sizeof (RootLayout));
     return false;
   }
   gStoreGeometry = { true, layout->userdataFirst, layout->userdataLast, layout->imageBytes, layout->gptEntriesLba,
                      layout->gptHeaderCrc, layout->gptEntriesCrc, layout->gptEntryCount };
+  gRootObjects = layout->objects;
+  for (unsigned i = 0; i < layout->objects; ++i) gRootObject[i] = layout->object[i];
+  gRootObjectBase = layout->userdataFirst * 4096ULL;
   const char *names[4] = {};
   for (unsigned i = 0; i < layout->windows; ++i) names[i] = layout->window[i].name;
   if (!ufsBuildRootPlan (names, layout->windows, gPublicationPlan)) {
@@ -3440,12 +2336,7 @@ bool NativeUfs::startRoot (IOService *provider)
       }
       return true;
 #else
-      // Bring-up deviation: this board has no owner-signed policy bundle yet, so the windows are
-      // published without the signed-identity check - the same concession as
-      // kona-rootauth-bypass.patch on the BSD side. The storage record states it; remove this once
-      // a signed bundle exists and NATIVE_VERIFIED_BLOCK can be compiled in.
-      gRootDiagnostic.stage = "root windows published unverified (bring-up)";
-      return true;
+      return false; // Root publication requires owner verification in every build.
 #endif
     }
     bool schedule () {
@@ -3467,28 +2358,14 @@ bool NativeUfs::startRoot (IOService *provider)
   IOFree (layout, sizeof (RootLayout));
   if (result.phase != UfsRootPhase::Complete) {
     gPending = 0;
-    // kIOReturn* expand to a signed int expression while the diagnostic field is
-    // uint32_t; cast each operand so the ?: keeps one type and -Wsign-conversion stays quiet.
-    gRootDiagnostic.result = result.phase == UfsRootPhase::Identity ? static_cast<uint32_t> (kIOReturnNotPrivileged) :
-      result.phase == UfsRootPhase::Schedule ? static_cast<uint32_t> (kIOReturnNoResources) :
-      static_cast<uint32_t> (kIOReturnError);
+    gRootDiagnostic.result = result.phase == UfsRootPhase::Identity ? kIOReturnNotPrivileged :
+      result.phase == UfsRootPhase::Schedule ? kIOReturnNoResources : kIOReturnError;
     IOLog ("NativeUfs: root preparation failed phase=%u window=%u; nothing published\n",
            static_cast<unsigned> (result.phase), result.index);
     IOService::stop (provider);
-    if (result.phase == UfsRootPhase::Schedule) {
-      rootDiagnosticFailure ("root publisher thread creation failed");
-    } else if (result.phase == UfsRootPhase::Identity) {
-      rootDiagnosticFailure ("signed window identities rejected");
-    } else {
-      // The generic message hid which step of configureVerification() refused: the page's row
-      // holds 28 characters, so carry the vr_open status and the first letters of the stage.
-      static char konaPrepReason[48];
-      // The window size is what the policy's signed image_bytes is compared against, so it has to
-      // be on the page beside the refusal: "prep v=ffffffff b=16a408600" still fits 28 columns.
-      snprintf (konaPrepReason, sizeof (konaPrepReason), "prep v=%x b=%llx",
-                gRootDiagnostic.verify, static_cast<unsigned long long> (gRootDiagnostic.windowBytes));
-      rootDiagnosticFailure (konaPrepReason);
-    }
+    rootDiagnosticFailure (result.phase == UfsRootPhase::Schedule ? "root publisher thread creation failed" :
+                          result.phase == UfsRootPhase::Identity ? "signed window identities rejected" :
+                          "root window preparation failed");
     return false;
   }
   return true;
