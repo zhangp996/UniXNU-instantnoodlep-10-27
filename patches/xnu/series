@@ -24,7 +24,7 @@ zzz-knote-trace.patch
 zzz-smp-core-gate.patch
 zzz-arm64-mpidr-aff1.patch
 zzz-machport-event-trace.patch
-zzz-knote-post-trace.patch
 zzz-inheritor-trace.patch
 zzz-nofail-trace.patch
 zzz-prepost-trace.patch
+zzz-skip-setup-prefs.patch

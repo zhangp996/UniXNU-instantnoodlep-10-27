@@ -117,7 +117,11 @@ static void lookup_peer(struct bt_entry *e,ipc_space_t space) {
  /* waitq_links is the linkage for waitq sets, not the waiter queue: reading it made every
  * sample look unwaited.  waitq_queue is the circle queue the waiters are on. */
  e->peer_waiters=!circle_queue_empty(&port->ip_waitq.waitq_queue);
- e->peer_turnstile=port->ip_waitq.waitq_ts!=0;ip_mq_unlock(port);
+ e->peer_turnstile=port->ip_waitq.waitq_ts!=0;
+ /* imq_msgcount counts reservations, not only queued messages: record whether a message is
+  * actually in the queue, which separates 'queued and unwaited' from 'send reserved and blocked'. */
+ e->peer_head=(unsigned long)(uintptr_t)ipc_kmsg_queue_first(&port->ip_messages.imq_messages);
+ ip_mq_unlock(port);
 }
 void boot_ui_trace_task(task_t task,unsigned index,int pid,const char *name,unsigned slide) {
  if(!ml_get_interrupts_enabled()){++draft_busy;return;}

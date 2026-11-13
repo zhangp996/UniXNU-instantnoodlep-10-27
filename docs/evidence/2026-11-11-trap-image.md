@@ -6022,3 +6022,31 @@ stall is **before** the enqueue, in the send path, not in the wake path.
 The probe must distinguish the two: read `ipc_kmsg_queue_first(&port->ip_messages.imq_messages)` alongside
 `imq_msgcount`.  A message present means 'queued and unwaited'; a NULL head with a non-zero count means 'send reserved
 and blocked' - and that is a completely different defect to chase.
+
+## 01:35 (Nov 14): q>0 with an empty queue points at a leaked reservation
+
+The co-located record was added: `NOFAIL out port=... q=... head=... destroyed=...` at the end of the
+no-receiver post path, and `qm=<queue head>` on the probe's UIT row.  Boot with both:
+
+    4148 log lines, NOFAIL 0
+    UIT[8] ... peer=1 pt=0xfffffff9e568a600 q=2 w=0 t=0 e0 qm=fff   (row truncated at 120 chars)
+
+So a launchd port reports **two** outstanding messages while the post path that would queue them never ran.  Two
+readings remain, and the code narrows them:
+
+- `imq_msgcount` is raised in `ipc_mqueue_send_locked()` (the reservation) and lowered either when the message is
+  queued-and-consumed or by `ipc_mqueue_release_msgcount()`;
+- the only place a port's queue is **filled** is `ipc_mqueue_post()`'s no-receiver branch, which is instrumented and
+  silent.
+
+That leaves **a reservation raised by a send that never reached the post and never went through the release path** - i.e.
+a leaked `imq_msgcount`.  A leak of this kind is invisible to every wake instrument, because no message ever exists: the
+count alone is wrong, and any consumer that waits on it (including a wake path that compares queue occupancy) sees
+traffic that is not there.
+
+### How to confirm locally, without the device
+
+Read the two functions side by side: `ipc_mqueue_send_locked()` (raise) and `ipc_mqueue_release_msgcount()` (lower), and
+list every return path between them in `ipc_kmsg_send()`.  If any path returns after the raise without posting or
+releasing, the leak is proven by inspection; if none does, the count is trustworthy and the sample must be re-taken with
+the row buffer widened so `qm` is not truncated.

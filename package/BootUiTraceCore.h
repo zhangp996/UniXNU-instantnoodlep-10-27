@@ -18,6 +18,7 @@ struct bt_entry {
  int peer;unsigned peer_code;
  unsigned peer_queue,peer_waiters,peer_turnstile;
  unsigned long peer_port; /* messages already queued on the destination port when sampled */
+ unsigned long peer_head; /* first queued kmsg, or 0 when the queue is empty */
  unsigned index,count,error;
  char role;
 };

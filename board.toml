@@ -55,6 +55,7 @@ windows = [
 ]
 
 [payload]
+skip_setup_tool = "scripts/seed-data-skip-setup.py"
 panic_screen = false
 volume = "OP8PRO"
 timeout = 60
