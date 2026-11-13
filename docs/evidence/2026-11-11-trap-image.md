@@ -5929,3 +5929,29 @@ registers captured, and the stop it reached has none.  That is harness bookkeepi
 The QEMU route is no longer blocked by toolchain age or missing inputs: it runs this kernel.  What remains is the
 probe's checkpoint contract (which register set it requires at the stop).  Even so, the fixture still cannot reproduce
 the ChronoServices stall - no dyld cache, no libdispatch - so this is a debugging platform, not an answer.
+## 01:05: the QEMU harness now runs end to end on this host
+
+After the CPU-model fix (`UNIXNU_QEMU_CPU`, default unchanged) and one probe adjustment - the translation check now
+runs only when QEMU's gdbstub actually advertises `TCR_EL1`/`SCTLR_EL1`/`TTBR0_EL1`/`TTBR1_EL1`, and records the gap
+otherwise, because QEMU 6.2 does not expose `SCTLR_EL1` - the probe completes:
+
+    DARWINBOOT: ARM64 va=0xFFFFFFF007004000 pa=0x40004000 entry=0x44A11488
+    DARWINBOOT: inputs validated; exiting boot services
+    ... stop at 0xfffffff00c017738 = _panic + 0
+    Observed _panic; functional iPadOS remains unverified
+
+The harness's stop address is `_panic` itself, so what it captured is this port's kernel **reaching panic inside QEMU
+virt** - which is expected: the kernel is built for BCM2837 with SM8250 bring-up and QEMU provides none of that
+hardware.  The important part is that the whole chain works: UEFI application, DarwinBoot handoff, kernel start,
+GDB-stub stop, state capture, report.
+
+### What the harness can now do
+
+- boot this kernel in QEMU and stop at `_panic` (or any configured checkpoint) with registers and memory;
+- read process/thread state with `thread_snapshot.py` against a guest that reaches those structures;
+- iterate in seconds instead of flashing the phone.
+
+### What it still cannot do
+
+Reach a running userland: our kernel panics under QEMU virt before any BSD init, and the fixture carries neither the
+dyld cache nor libdispatch.  Testing the ChronoServices stall still requires the phone.
