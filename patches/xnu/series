@@ -27,3 +27,5 @@ zzz-pmgr-run.patch
 zzz-machport-event-trace.patch
 zzz-knote-post-trace.patch
 zzz-inheritor-trace.patch
+zzz-nofail-trace.patch
+zzz-prepost-trace.patch

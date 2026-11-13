@@ -1,0 +1,26 @@
+diff --git a/osfmk/ipc/ipc_mqueue.c b/osfmk/ipc/ipc_mqueue.c
+index 4ae2939..a47f1ae 100644
+--- a/osfmk/ipc/ipc_mqueue.c
++++ b/osfmk/ipc/ipc_mqueue.c
+@@ -696,6 +696,21 @@ ipc_mqueue_post(
+ 		/* waitq still locked, thread not runnable */
+ 
+ 		if (receiver == THREAD_NULL) {
++			/* Board diagnostic: a message arrives with no thread parked in msg_receive.  Record the
++			 * port, its receive-right owner, whether a knote can be posted on it and its sync-link
++			 * state - the three facts that decide which wake path the kernel has left. */
++			{
++				static unsigned nofail_trace;
++				if (__atomic_load_n(&nofail_trace, __ATOMIC_RELAXED) < 100) {
++					uintptr_t owner_task = 0;
++					__atomic_add_fetch(&nofail_trace, 1, __ATOMIC_RELAXED);
++					int owner = ipc_port_get_receiver_task_locked(port, &owner_task);
++					kprintf("NOFAIL port=%p owner=%d klist=%d state=%d q=%u\n",
++					    (void *)port, owner, ipc_port_has_klist(port) ? 1 : 0,
++					    (int)port->ip_sync_link_state,
++					    (unsigned)mqueue->imq_msgcount);
++				}
++			}
+ 			/*
+ 			 * no receivers; queue kmsg if space still reserved
+ 			 * Reservations are cancelled when the port goes inactive.

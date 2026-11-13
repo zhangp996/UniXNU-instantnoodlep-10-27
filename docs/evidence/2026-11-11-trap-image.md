@@ -5955,3 +5955,38 @@ GDB-stub stop, state capture, report.
 
 Reach a running userland: our kernel panics under QEMU virt before any BSD init, and the fixture carries neither the
 dyld cache nor libdispatch.  Testing the ChronoServices stall still requires the phone.
+## 00:30 (Nov 14): every notification path is silent, and that changes the reading
+
+Three instruments now cover every way this kernel can tell a kqueue client that a message arrived:
+
+| instrument | site | fires during a boot |
+| --- | --- | --- |
+| `NOFAIL` | `ipc_mqueue_post` when `receiver == THREAD_NULL` (message queued with no parked thread) | **0** |
+| `MPOST` | the `KNOTE()` inside that same branch | **0** |
+| `PREPOST` | `ipc_pset_prepost()` - the only notify path for a knote on a **port set** | **0** |
+| `INHERIT` | `ipc_port_send_update_inheritor()` - the turnstile redirect | **0** |
+
+All four strings are present in the shipped kernel (`strings kernel.macho`), so the instruments were live; the boot
+reached 4075 log lines and launchd, and none of the counters moved.
+
+### What it means
+
+During a whole boot, **not one message was posted to a port that had no parked receiver**.  Every message found a
+thread in `mach_msg`, and the kernel handed it over directly - the wake path that this investigation spent hours
+looking for was never needed.
+
+That contradicts the probe's `q=1 w=0` samples unless one of these is true:
+
+1. the queued messages were posted **before** the port's kqueue owner parked (in which case `NOFAIL` should have
+   printed - it did not);
+2. `imq_msgcount` is not measuring what the probe assumes, or the sample is taken under a different lock than the
+   post path;
+3. the probe is sampling ports that are **not** the ones the launch-services traffic uses.
+
+### Honest position after this round
+
+The evidence no longer supports 'the kernel fails to wake the port'.  It supports: **the kernel never needed to wake a
+parked receiver it did not have**, and the probe's queued-and-unwaited samples are the artefact to explain next -
+by sampling the same port on both sides of a post (before and after) instead of on a timer.
+
+Image: `6e32f578796f63ac24d82f352afd5a8f02ca3be503a15422a6f03478bd60ea3e` (this boot did not reach the display).

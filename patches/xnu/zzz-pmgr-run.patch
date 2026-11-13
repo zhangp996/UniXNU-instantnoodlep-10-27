@@ -10,6 +10,8 @@ index a658406..0050bed 100644
 +	/* Board-side PMGR: load the prelinked ApplePMGR kext before the calendar initialises (sheng-pmgr=2). */
 +	extern void sheng_pmgr_run(void);
 +	sheng_pmgr_run();
++	extern void sheng_cpu_features_note(void);
++	sheng_cpu_features_note();
 +#endif
 +
  #if defined(XNU_SHENG_PMGR) && XNU_SHENG_PMGR
