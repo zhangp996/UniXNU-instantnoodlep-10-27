@@ -4892,3 +4892,20 @@ could be retired.
 No push is required for any of this: device components resolve from the local device repository (the tree links
 `tree/drivers/KonaUfs -> UniXNU-instantnoodlep/drivers/KonaUfs`), and `local.toml` exists as a documented fallback.
 The remaining work is the link mapping, not the remote.
+## 18:55: the board now runs this repository's UFS driver, and it boots
+
+Chain of measurements that got there:
+
+1. the shared ShengUfs source, linked as-is, panicked at 'UFS ROOT FAILURE: SMMU stream mapping readback' -
+   it takes the UFS stream over unconditionally, and this board's ufshc has no iommus property;
+2. the kona fork's smmuBypassStream (gated by native-ufs-smmu=1) fixes exactly that, so that function was
+   ported into the compilable source instead of the whole 3502-line fork, which trips clang's parser;
+3. with the gate in place the boot then died in hostBringUp + 0x2ec (data abort, far=0) because the skipped
+   takeover left the SMMU mapping null while callers still used it - hoisting mapPhys above the gate fixes that;
+4. libRamBlock.a takes the address of native_ufs_store_write_cached, which no UFS source provided; the entry
+   point was added, and a ufs-archive-alias.py step publishes the component archive under the name the kernel
+   build script force-loads (build/sheng-ufs/libShengUfs.a), because that script only knows the ShengUfs name.
+
+Result: SystemOS and OS published, boot device found, launchd started, three frames, no panic - so the driver this
+repository maintains is now the driver the device runs.  native_ufs_store_open is still not called, so the store
+window remains closed: that decision is inside RamBlock's overlay, and its inputs are the next thing to print.
