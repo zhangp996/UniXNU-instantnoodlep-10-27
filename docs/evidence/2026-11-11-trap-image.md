@@ -5660,3 +5660,22 @@ Image: `ba08ddaabb437c3c0e5cfe17a2c01d187f28c01e6cd0cc3a519586fb77490f7e`.
 - the stall is characterised precisely: armed port, queued message, no waiter, receiver in `_kevent_id`;
 - and the newest fact is that **chronod is never launched**, which the reference port's own logs say should happen on
   this OS line.
+## 00:00 (Nov 14): eight cores boot on this board
+
+With the MPIDR fix and the per-CPU publication gate in place, `sheng-smp=1 sheng-smp-max=7` now brings the kernel up on
+**all eight logical CPUs**:
+
+    4708 log lines, three frames, zero panics
+    containers made=1 present=7   (persistent Data intact)
+    SpringBoard p27 n14 r0 w14, kernel side ipc_mqueue_receive_continue
+    chronod: still absent
+
+The earlier eight-core attempt panicked in a nest (`pe_init.c:725`) for two reasons that are now fixed: `start.s`
+masked MPIDR with `0xFF`, which aliases CPU1 onto CPU0, and the CPU nub gate started every core at once instead of
+publishing only the selected ones.
+
+Image: `66d79f594a1951f68238d611856d65511b413ccbc176fa3b5aac5cb5fed08409`.
+
+So the foundation the sibling port advertises - eight-core startup, persistent Data, native UFS, PMGR, CPU GOP
+presentation - is now all present here as well.  The ChronoServices stall and chronod's absence are unchanged by the
+extra cores.
