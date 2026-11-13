@@ -4194,3 +4194,23 @@ on the calling context, not on our descriptor.  The XML descriptor itself names 
 
 So the factory path is open at the connection but closed at the method.  `iosurface-create` is left off by default:
 the call costs a boot and does not change the surface the family uses.
+## 11:30: correction - lsd was never blocked on a vnode
+
+`filt_wlwait_continue` is not a vnode wait: it is the workloop (kqueue/libdispatch) continuation in
+`bsd/kern/kern_event.c` (`kevent_register_wait_block`).  Re-read with that:
+
+    lsd          -> filt_wlwait_continue        idle in its workloop
+    SpringBoard  -> ipc_mqueue_receive_continue idle, waiting for a Mach message
+    backboardd   -> ipc_mqueue_receive_continue idle, waiting for a Mach message
+
+so the graphical stack is idle rather than deadlocked, and the earlier 'lsd waits on a vnode, so seeding is
+blocked' conclusion is withdrawn.  What this port shows is a system that finished its boot, presented three
+client frames, and then had nothing to draw.
+
+The LaunchServices store drop is also confirmed harmless but idle: the containers are found now (4 -> 6 -> 11 as
+boot proceeds), each one's `Library/Caches` exists, and none of them holds a `com.apple.LaunchServices-*` file, so
+`removed` stays 0.
+
+SpringBoard's main thread is in `ipc_mqueue_receive`, its frames decoded (image 0x1e50e0000, cache+0x15744000).
+Naming those frames needs the dyld shared cache from the IPSW - the same artefact the framework's macOS workflow
+extracts in its 'Locate the dyld shared cache' step.
