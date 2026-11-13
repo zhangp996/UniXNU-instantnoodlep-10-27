@@ -4710,3 +4710,30 @@ Two consequences worth stating plainly:
 Print, for the same sample, whether the port has a knote attached and whether the owner thread's `ith_knote` matches
 it: that separates 'no knote was ever registered' (a libdispatch side effect of how the port was made) from
 'a knote is registered and was not posted' (a kernel wake defect).
+## 17:15: the port has a message, no waiter and no turnstile
+
+The waiter probe adds `w=` (a thread blocked on the port's wait queue) and `t=` (its turnstile) beside `q=`:
+
+| sample | q | w | t |
+| --- | --- | --- | --- |
+| SpringBoard to lsd (`peer=99`) | **1** | **0** | **0** |
+| a sender to launchd (`peer=1`) | 1-2 | 0 | 0 |
+| early senders to other daemons | 6, 9 | 0 | 0 |
+
+so on this system **no port ever has a thread blocked on its wait queue, for any sender**.  launchd still answers those
+sends (it spawns the daemons we watch), which places the working path somewhere other than this wait queue: the
+receiver side is not `mach_msg_receive`, it is `kevent`.
+
+### What that narrows to
+
+`EVFILT_MACHPORT` is compiled in (`machport_attach_filtops` at index -8), and every dispatch-based daemon here - lsd
+above all - waits in `_kevent_id` with no wait-queue registration on the port it should read.  A message enqueued on
+such a port has nothing to notify, so it stays queued:
+
+    lsd p97  _kevent_id + 8          (waiting for events, none armed for this port)
+    springBoard  mach_msg2_trap      (waiting for the reply that would follow)
+    port 7003 q=1                    (the request, still queued)
+
+Either libdispatch could not arm the port (a userland consequence of how the port or its right was made here), or the
+arming was dropped in this kernel build.  That is the question left, and it is narrower than every one before it:
+not 'why is chronod missing' but 'why does a Mach port armed for kqueue never see its message'.
