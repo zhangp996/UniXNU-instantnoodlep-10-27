@@ -4629,3 +4629,28 @@ where today's GPU attempt stopped twice.
 
 lsd alternates running and waiting with a constant kernel PC, exactly the shape seen for it all along, and the frame
 count stays at three.  A longer capture is needed for the stack rows that name where it waits.
+## 16:50: where lsd actually is
+
+lsd's own saved user PC, taken from the process row of the live run, symbolises directly:
+
+    PROC[3] lsd p99 ... U1d92708c0 +daf0000
+    unslid 0x1cb7808c0 -> /usr/lib/system/libsystem_kernel.dylib  _kevent_id + 8
+
+so lsd is **not stuck in a call at all**: it sits in its kqueue event loop waiting for work, exactly where an idle
+LaunchServices daemon belongs.  SpringBoard, in the same sample, sits in `_mach_msg2_trap + 8` waiting for a reply.
+
+That pairing is the whole finding:
+
+| process | where | meaning |
+| --- | --- | --- |
+| SpringBoard | `_mach_msg2_trap + 8` | sent a synchronous message and is waiting for the reply |
+| lsd | `_kevent_id + 8` | waiting for events; no work in hand |
+
+Neither side holds a lock and neither is blocked on I/O, so the message SpringBoard is waiting on is **not being
+serviced by lsd**.  Two explanations remain and they are distinguishable: either the destination port is not the
+port lsd reads (a stale or wrong send right), or the port is lsd's but its dispatch source never wakes the queue.
+
+Neither reference repository can settle that: `lsd` is Apple's binary and both ports leave it untouched - their
+board-local patches are a throttle/console fix, 'cryptex view always' and the appsync/sandbox wildcard, none of
+which touch LaunchServices.  What the comparison does say is that the reference does not hit this at all, so the
+difference has to be in this port's launchd/port state rather than in lsd's code.
