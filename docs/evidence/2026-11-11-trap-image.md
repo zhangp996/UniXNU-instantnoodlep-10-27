@@ -5905,3 +5905,27 @@ supported core and a regenerated state fixture).
 Everything up to QEMU itself now works on Linux - host tools, firmware inputs, DT synthesis, GDB driver, FD image -
 and the single remaining gate is the CPU model.  Worth noting again that even a working fixture could not reproduce
 the ChronoServices stall, which needs the dyld cache and libdispatch the fixture excludes.
+## 00:55: QEMU now boots this port's kernel to the XNU handoff
+
+Two host-side fixes unblocked the run: the harness's hardcoded `-cpu cortex-a710` became `UNIXNU_QEMU_CPU` (default
+unchanged, so the reference harness behaves as before), and the AAVMF image was linked to the `edk2-aarch64-code.fd`
+name the GDB driver expects.  SM8250 is ARMv8.2 (Kryo 585: Cortex-A77 + A55), so an ARMv8 core model is both more
+faithful and what this host's QEMU 6.2 offers; the run below used `UNIXNU_QEMU_CPU=max`.
+
+With that, the fixture's UART shows a real boot chain:
+
+    UNIXNU: boot: entry 'source-4k' (Source native 4K XNU)
+    DARWINBOOT: ARM64 va=0xFFFFFFF007004000 pa=0x40004000 args=0x46FCC000 entry=0x44A11488 owned=0x10000000
+    DARWINBOOT: command line: -v serial=3 debug=0x14e kt_fixed_zones=120
+    DARWINBOOT: inputs validated; exiting boot services
+
+so the UEFI application, the DarwinBoot handoff and the kernel image all load and run in QEMU on this host.
+
+The probe then fails on its own validation, `KeyError: 'SCTLR_EL1'`: it expects a checkpoint stop with EL1 system
+registers captured, and the stop it reached has none.  That is harness bookkeeping, not a kernel fault.
+
+### What this changes
+
+The QEMU route is no longer blocked by toolchain age or missing inputs: it runs this kernel.  What remains is the
+probe's checkpoint contract (which register set it requires at the stop).  Even so, the fixture still cannot reproduce
+the ChronoServices stall - no dyld cache, no libdispatch - so this is a debugging platform, not an answer.
