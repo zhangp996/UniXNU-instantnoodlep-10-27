@@ -4966,3 +4966,31 @@ The verification image is staged without the switch
 either stay silent (the store holds this seed) or name a different header, and — the point of the whole exercise —
 the containers, preferences and LaunchServices state that this port has been rebuilding at every boot should then
 survive a second boot.
+## 19:20: the Data volume survives a reboot
+
+Second boot without `sheng-data-reset` (image sha `2d719030c8b51e60f8d8e0e2bcfe2a3960146e2db39cb9c272fdcc48a75f6ef8`):
+
+    NativeRamBlock: attachStore gate: mode=2 pages=... open=1 read=1 write=1 sync=1 gpt=1
+    DISPLAY: setup-skip containers made=1 present=7 failed=0 prefs=0/0/0
+
+two measurements, both new:
+
+| signal | every earlier boot | this boot |
+| --- | --- | --- |
+| store report | 'holds no Data of this seed' | silent - the store holds this seed |
+| containers | `made=8 present=0` (all rebuilt) | **`made=1 present=7`** |
+
+so the persistent store window at the tail of userdata is open, carries this seed's Data, and the containers that
+existed at the previous boot are still there.  The Data volume is persistent - the first time in this port's life.
+
+### What this retires
+
+Everything this port added to work around a Data volume that was rebuilt at every boot can now be retired: the Setup
+preferences the kernel writes at display start (`native_owner_setup_skip`), the LaunchServices store drop, and the
+staged-apps union.  They were compensating for state that now survives on disk.
+
+### What it does not yet explain
+
+chronod is still absent and SpringBoard still waits on its ChronoServices reply - but the ground has changed: the
+userland now keeps whatever it wrote at the previous boot, which is the state the reference board has and this port
+did not.
