@@ -5458,3 +5458,34 @@ r59-r74 Metal) - and the fact that its desktop is drawn through a GPU stack this
 
 Open question, unchanged since the queue probe: a synchronous message on lsd's port (`q=1`) with no waiter and no
 turnstile (`w=0 t=0`) while lsd sits in `_kevent_id`.
+## 22:25: display wiring compared - this port is already a superset
+
+`ye3912`'s `package/SmGopDisplay.cpp` (548 lines) is board wiring for the framework's `NativeLegacyDisplay`, exactly
+the role this port's `package/LegacyDisplayProbe.cpp` plays.  The hooks each provides:
+
+| hook family | theirs | ours |
+| --- | --- | --- |
+| display allocate / probe / late probe | yes | yes |
+| backend guard, prepare scanout, transfer, vsync | yes | yes |
+| client enter/observed, swap stage, swap validation | yes | yes |
+| frame observed, frame colours observed, copy timing | yes | yes |
+| gop mapping, registration, retirement, pm, surface rejected | yes | yes |
+| gpu offer / gpu fallback | yes | yes |
+| **surface allocation / descriptor / width / height / stride** | no | **yes** |
+| `native_legacy_display_static_init` | no | **yes** |
+
+so this port's display wiring covers everything the sibling port's does and four surface hooks besides.  Both present
+through the CPU GOP path (`GopFramebuffer`/`NativeLegacyDisplay`), which is why the sibling port could reach its
+desktop at R44 with **no GPU driver** - and why this port's three presented frames come from the same machinery.
+
+### What that rules out
+
+The display path is not the difference between the two ports.  The sibling port's advantage lies in its GUI/IPC
+diagnostic ladder (r22-r31, c2) and its board services (backlight, touch, owner-data), not in how frames are copied.
+
+### Next candidates, in order of expected value
+
+1. its **`In2020BacklightService`** and touch wiring - services SpringBoard expects from the platform;
+2. the **r22-r31 GUI ladder** - diagnostics that let it watch `SpringBoard`/`backboardd`/`chronod` through the same
+   stall this port is stuck at;
+3. `desktop-ipc-r31`'s PK30/PK31 slot tracer, which records request/recv/reply/done for desktop IPC.
