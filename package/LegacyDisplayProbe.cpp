@@ -640,6 +640,11 @@ publish_thread(void *, wait_result_t)
 	publish_display();
 }
 
+/* Board backlight: the sibling IN2020 port publishes AppleARMBacklight-conforming brightness properties over
+ * the DSI0 transport (In2020BacklightService.h).  Started once, after the display family is loaded. */
+static bool gBacklightStarted;
+/* Backlight port parked: startIn2020Backlight() lives in an anonymous namespace. */
+
 extern "C" void
 native_legacy_display_late_probe(void)
 {

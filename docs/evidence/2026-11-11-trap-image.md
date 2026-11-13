@@ -5489,3 +5489,25 @@ diagnostic ladder (r22-r31, c2) and its board services (backlight, touch, owner-
 2. the **r22-r31 GUI ladder** - diagnostics that let it watch `SpringBoard`/`backboardd`/`chronod` through the same
    stall this port is stuck at;
 3. `desktop-ipc-r31`'s PK30/PK31 slot tracer, which records request/recv/reply/done for desktop IPC.
+## 22:35: backlight port parked, build green again
+
+The sibling port's backlight service was copied in (`package/In2020BacklightService.h`,
+`package/In2020BacklightTransport.h`, 8.4 kB and 6.7 kB) and called once from
+`native_legacy_display_late_probe()`.  It does not link: `startIn2020Backlight()` is defined **inside the header's
+anonymous namespace** (`namespace { ... void startIn2020Backlight() {...} ... }`), so it has internal linkage, and
+the kernel links `_startIn2020Backlight` as an external symbol.  Their own call site works because it sits in the
+same translation unit that includes the header and calls it while the namespace is still in scope.
+
+Reverted to the consolidated baseline; the two headers stay in the package for a proper port (a dedicated source
+file that includes the header and exports a C entry point).  Kernel hash is unchanged from the consolidated
+baseline: `1d525b9eb0635c411f6db67c71d7e13f2209a5d96082e07a739df0838f3e5d47`.
+
+### Consolidated baseline (what is on the device image)
+
+    args (40, 796 bytes): -v serial=3 debug=0x14e -no_slto_panic sheng-aks=1 amfi_get_out_of_my_way=1
+      native-ufs-root=1 native-ufs-allow-unverified=1 root-unverified=1 qcom-usb-debug=1 kt_fixed_zones=120
+      sheng-pmgr=2 sheng-smp=1 sheng-smp-max=2 vm_compressor=2 ml-timeout-lock-panic-scale=40
+      disable-watchdogd=1 sheng-crashlog=1 log=1 data-persist=2 native-vroot-cache=1 boot-ui-trace=1
+      boot-ui-focus{,...2..4} boot-ui-chrono=1 offline-legacy-{register,gop,unit-scale=2,pm,validate,
+      transfer,cpu-present,phase=4,adopt}=1 sheng-vsync=120 sheng-vsync-fixed=1
+      offline-mobile-graphics-{load,client}=1
