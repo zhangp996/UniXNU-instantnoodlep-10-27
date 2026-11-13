@@ -5739,3 +5739,33 @@ The probe can already read a port's waitq; it needs to name the **owner of the r
 port has never instrumented).  If the owner is some other process, that process is the one to look at instead.
 
 That is one more field in the existing queue probe, and it decides between the two remaining explanations.
+## 00:30 (Nov 14): the owner field answers it - launchd and lsd
+
+The probe already carried the answer: `ipc_port_get_receiver_task_locked()` returns the **pid of the receive-right
+owner**, and the UIT row prints it as `peer=`.  Reading the queued-port samples back through it:
+
+| log | queued port | owner |
+| --- | --- | --- |
+| cont124 | `0xfffffff671597100` | **pid 1 (launchd)** |
+| cont125 | `0xfffffff345a62fc0` | **pid 1 (launchd)** |
+| cont125 | `0xfffffff345f97d80` | pid 97 (**lsd**) |
+| cont131 | `0xfffffff7833411a0` | **pid 1 (launchd)** |
+| cont133, cont134 | - | -1 (no receiver: the port was translated from a stale name) |
+
+So the messages that queue with no waiter sit on **two kinds of ports**:
+
+1. **launchd's** (pid 1) - the on-demand service placeholder for `com.apple.chronoservices`; the message should
+   trigger launchd to spawn chronod, and it never does;
+2. **lsd's** (pid 97) - a port lsd armed a knote on and then stopped receiving from, which is why lsd sits in
+   `_kevent_id` while its own port holds a message.
+
+Both receivers are kqueue clients, and in both cases the queued message does not wake them.  That is the single shared
+symptom this session has been circling: **armed ports whose kqueue client is not woken when a message arrives** - for
+launchd the missing wake means chronod is never spawned, and for lsd the missing wake is what SpringBoard waits on.
+
+### What this finally narrows it to
+
+Not Mach port registration (armed), not the message queue (it holds the message), not the receiver's willingness (both
+have knotes).  The wake path from `ipc_mqueue_post` into the **kqueue workloop** is the one component common to both
+failures, and the earlier `MPOST` trace already showed that branch never fires with a klist during a boot - which is
+consistent with the wake being attempted through the turnstile path instead, and failing there.
