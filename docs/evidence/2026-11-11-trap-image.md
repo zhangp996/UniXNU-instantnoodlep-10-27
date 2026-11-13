@@ -4286,3 +4286,18 @@ Force the job to start: write a launchd override for `com.apple.chronod` (RunAtL
 `/private/var/db/com.apple.xpc.launchd/overrides.plist` from the kernel, next to the disabled database the port
 already writes.  If SpringBoard then leaves `mach_msg` and the frame count grows, the missing on-demand start is
 the whole of the blocker.
+## 12:10: the launchd override is written but chronod still does not start
+
+`overrides.plist` with
+
+    com.apple.chronod = { Disabled = false; OnDemand = false; }
+
+is written by the kernel (status 0, four passes), yet the boot still shows no `chronod`, no exit record for it, and
+the frame count stays at three.  So either launchd does not treat `OnDemand` as a start trigger in this override
+database, or the lookup never reaches launchd at all.
+
+### Next mechanism to try
+
+The port already mounts read-only **union overlays** (`native_gpu_addon_mount`, source `/private/var/ngpu`).  The
+same mechanism can serve a modified `com.apple.chronod.plist` with `RunAtLoad = true` over
+`/System/Library/LaunchDaemons`, which changes the job itself rather than hoping the override database is honoured.
