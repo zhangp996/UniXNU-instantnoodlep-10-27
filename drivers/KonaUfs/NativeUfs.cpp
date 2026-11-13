@@ -4,6 +4,7 @@
 #include <IOKit/IOService.h>
 #include <IOKit/IOPlatformExpert.h>
 #include <IOKit/storage/IOBlockStorageDevice.h>
+#include <IOKit/storage/IOStorageDeviceCharacteristics.h>
 #include <libkern/crypto/sha2.h>
 #include <vm/vm_kern.h>
 #include <vm/vm_map.h>
@@ -25,6 +26,11 @@ extern const uint8_t verified_root_key[];
 #include <libkern/c++/OSIterator.h>
 #include <IOKit/IOBSD.h>
 #include <kern/thread.h>
+#include <kern/sched_prim.h>
+extern "C" {
+#include <kern/ast.h>   // ast_pending: no C linkage block of its own
+}
+#include <machine/machine_routines.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
 #include <IOKit/IOMemoryDescriptor.h>
@@ -37,6 +43,7 @@ extern const uint8_t verified_root_key[];
 #include "GccUfs.h"
 #include "RootDiagnostics.h"
 #include "TransferPoll.h"
+#include "CompletionWait.h"
 #include "SmmuTakeover.h"
 
 static UfsRootDiagnostics gRootDiagnostic;
@@ -929,8 +936,8 @@ void NativeUfs::inspectContextBanks (void)
 // ======================================================================================
 // Root media: the live controller as a read-only block device.
 //
-// One shared host (a single UTP request slot, polled; interrupts stay masked) serves every
-// block device. The DMA region is ordinary cached, physically contiguous kernel memory with
+// One shared host serves every block device: up to kSlots commands in flight, each in its own request slot
+// (RootTransportLayout.h), polled; interrupts stay masked. The DMA region is ordinary cached, physically contiguous kernel memory with
 // explicit cache maintenance around each command (the stream is mapped through the reserved
 // apps_smmu bypass context bank by smmuBypassStream, so physical addresses are used as-is).
 // Nothing here writes to the storage: only INQUIRY-class and READ(10) commands are built, plus
@@ -945,12 +952,15 @@ struct UfsHost {
   IOBufferMemoryDescriptor *dma;
   uint8_t *virt;
   uint64_t phys;
-  IOLock *lock;
+  uint32_t dmaBytes;
+  IOLock *lock;   // the command slot pool's (RootCommands.h)
   bool ready;
   bool poisoned = false;
   uintptr_t smmu = 0, cb = 0;
 };
-UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, nullptr, nullptr, 0, nullptr, false };
+UfsHost gHost = { OSSharedPtr<IOMemoryMap> (), OSSharedPtr<IOMemoryMap> (), 0, nullptr, nullptr, 0, 0, nullptr, false };
+// Command slots in use (1 to kSlots), for the log.
+extern "C" volatile uint32_t native_ufs_slots = 0;
 
 static IOReturn recordTransport (IOReturn result, uint32_t ocs)
 {
@@ -1010,7 +1020,216 @@ static void hostWrite (unsigned offset, uint32_t value)
 
 #include "RootQueue.h"
 
+// Completion interrupt hooks of RootCommands.h; defined after it.
+static uint32_t hostCompletionCount (unsigned slot);
+static bool hostInterruptMode (void);
+static void hostWaitCompletion (unsigned slot, uint32_t seen, uint64_t started);
+static void hostWaitDone (uint64_t started);
+static uint64_t hostDmaAddress (const void *va);
 #include "RootCommands.h"
+
+// ---- Completion interrupt ------------------------------------------------------------------------------------------
+// The controller's interrupt (GIC SPI 265, level) with only UTRCS enabled (IE bit 0), as in UFSHCI's legacy doorbell mode under Linux
+// ufshcd. The handler clears UTRCS, then, like ufshcd's completion of the requests whose doorbell bits cleared, finds the outstanding
+// commands whose bits are clear and wakes only their waiters; a waiter rechecks its own doorbell bit and OCS. A wait polls for its
+// spin budget (gSpinUs) first and then sleeps until its slot's completion (CompletionWait.h; boot-arg native-ufs-wait selects how it
+// polls). Bring-up and the panic path always poll; without the interrupt (attach refused) the host polls as before.
+//
+// Why the polls spin: a command takes about 100 us here, and on this platform a thread that blocks takes 30 to 37 us on average to run
+// again, whether a timer or the completion interrupt ends the block (pauses and wakes of the log's UFS row). Sleeping on every
+// completion halved small-block throughput against polling, and pausing with IODelay (2) blocks on a timer 2 to 3 times per command,
+// because the cores register no idle exit latency (ml_delay_should_spin), and each block is charged to the task as a wakeup.
+extern "C" IOReturn armcpu_spi_attach (uint32_t, bool, void (*) (void *), void *, uint32_t *, uint64_t *) __attribute__((weak_import));
+extern "C" IOReturn armcpu_spi_mask (uint32_t, bool) __attribute__((weak_import));
+constexpr uint32_t kUfsIrq = 265 + 32;
+static volatile uint32_t gIrqCount = 0;
+static bool gIrqMode = false;
+extern "C" volatile uint64_t native_ufs_irq_sleeps = 0, native_ufs_irqs = 0;
+extern "C" volatile uint32_t native_ufs_irq_mode = 0;
+
+static uint32_t hostCompletionCount (unsigned slot) { return __atomic_load_n (&gSlotGen[slot], __ATOMIC_ACQUIRE); }
+static bool hostInterruptMode (void) { return gIrqMode && !gHostPanic; }
+static uint64_t gSpinTicks = 0;
+static uint32_t gSpinTicksUs = ~0U;
+static uint32_t gWaitMode = kUfsWaitSpin;   // boot-arg native-ufs-wait (CompletionWait.h)
+// Completion wait statistics, for the log (native_ufs_stats_text).
+// A paced pause is IODelay (2). XNU's delay spins only when the delay is shorter than the idle exit latency the CPU was registered with
+// (ml_delay_should_spin, from ml_processor_info_t.powergate_latency); on a CPU registered without one it blocks the thread on a timer,
+// so a pause then lasts longer than 2 us and its end is charged to the calling task as an interrupt wakeup.
+// gWaitPauses and gWaitPauseTicks record what the paced pauses cost on the running platform. gSlotSpin counts the spinning pauses and
+// their time per slot, written only by the slot's waiter, so a spin touches no shared cache line. gWaitYields counts the spins that
+// ended in a sleep because a preemption was pending, gWaitRange the time from the start of a wait to the poll that saw its command
+// complete. gIrqWakes, gIrqWakeTicks and gIrqWakeMaxTicks
+// record the sleeps the interrupt ended and the time from the handler first seeing the completion to the waiter running again;
+// gIrqTimeouts the sleeps that ran into their timeout.
+// gSlotDoneAt holds that first sighting: the waiter clears it before it sleeps and the handler fills it only while it is clear, since
+// every later interrupt sees the same command complete again until its waiter has run.
+static volatile uint64_t gWaitPauses = 0, gWaitPauseTicks = 0, gIrqWakes = 0, gIrqWakeTicks = 0, gIrqWakeMaxTicks = 0, gIrqTimeouts = 0;
+static volatile uint64_t gWaitYields = 0, gWaitRange[kUfsWaitRanges] = {};
+struct alignas (64) UfsSlotSpin { volatile uint64_t pauses, ticks; };
+static UfsSlotSpin gSlotSpin[kSlots];
+static volatile uint64_t gSlotDoneAt[kSlots] = {};
+static void hostWaitCompletion (unsigned slot, uint32_t seen, uint64_t started)
+{
+  const uint32_t spinUs = *static_cast<volatile uint32_t *> (&gSpinUs);
+  if (spinUs != gSpinTicksUs) { nanoseconds_to_absolutetime (uint64_t (spinUs) * 1000, &gSpinTicks); gSpinTicksUs = spinUs; }
+  const uint64_t now = mach_absolute_time ();
+  const bool canBlock = preemption_enabled ();   // interrupts on and preemption level 0
+  // A stale read after a migration only moves the switch to sleeping by one pause.
+  const bool preemptPending = canBlock && (*ast_pending () & AST_PREEMPTION) != 0;
+  const UfsWaitStep step = ufsWaitStep (gWaitMode, hostInterruptMode (), canBlock, preemptPending, now - started, gSpinTicks);
+  if (step == UfsWaitStep::Spin) {
+    __builtin_arm_wfe ();
+    UfsSlotSpin &spin = gSlotSpin[slot];
+    spin.pauses = spin.pauses + 1;
+    spin.ticks = spin.ticks + (mach_absolute_time () - now);
+    return;
+  }
+  if (step == UfsWaitStep::Pause) {
+    IODelay (2);
+    __atomic_fetch_add (&gWaitPauses, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add (&gWaitPauseTicks, mach_absolute_time () - now, __ATOMIC_RELAXED);
+    return;
+  }
+  if (preemptPending && gWaitMode == kUfsWaitSpin && now - started < gSpinTicks) __atomic_fetch_add (&gWaitYields, 1, __ATOMIC_RELAXED);
+  __atomic_store_n (&gSlotDoneAt[slot], 0, __ATOMIC_RELAXED);
+  assert_wait_timeout ((event_t) (uintptr_t) &gSlotGen[slot], THREAD_UNINT, 1000, NSEC_PER_USEC);
+  if (hostCompletionCount (slot) != seen) {
+    clear_wait (current_thread (), THREAD_AWAKENED);
+    return;
+  }
+  __atomic_fetch_add (&native_ufs_irq_sleeps, 1, __ATOMIC_RELAXED);
+  thread_block (THREAD_CONTINUE_NULL);
+  if (hostCompletionCount (slot) == seen) {
+    __atomic_fetch_add (&gIrqTimeouts, 1, __ATOMIC_RELAXED);
+    return;
+  }
+  const uint64_t done = __atomic_load_n (&gSlotDoneAt[slot], __ATOMIC_RELAXED), woke = mach_absolute_time ();
+  if (!done) return;
+  const uint64_t late = woke > done ? woke - done : 0;
+  __atomic_fetch_add (&gIrqWakes, 1, __ATOMIC_RELAXED);
+  __atomic_fetch_add (&gIrqWakeTicks, late, __ATOMIC_RELAXED);
+  uint64_t longest = __atomic_load_n (&gIrqWakeMaxTicks, __ATOMIC_RELAXED);
+  while (late > longest && !__atomic_compare_exchange_n (&gIrqWakeMaxTicks, &longest, late, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) { }
+}
+
+static void hostWaitDone (uint64_t started)
+{
+  uint64_t ns = 0;
+  absolutetime_to_nanoseconds (mach_absolute_time () - started, &ns);
+  __atomic_fetch_add (&gWaitRange[ufsWaitRange (ns / 1000)], 1, __ATOMIC_RELAXED);
+}
+
+static void hostInterrupt (void *)
+{
+  if (read32 (gHost.hc, 0x20) & 1) {
+    write32 (gHost.hc, 0x20, 1);
+    __asm__ volatile ("dsb sy" ::: "memory");
+  }
+  __atomic_add_fetch (&gIrqCount, 1, __ATOMIC_RELEASE);
+  __atomic_fetch_add (&native_ufs_irqs, 1, __ATOMIC_RELAXED);
+  uint32_t done = __atomic_load_n (&gOutstanding, __ATOMIC_ACQUIRE) & ~read32 (gHost.hc, 0x58);
+  const uint64_t now = done ? mach_absolute_time () : 0;
+  while (done) {
+    const unsigned entry = static_cast<unsigned> (__builtin_ctz (done));
+    done &= done - 1;
+    const int slot = gEntrySlot[entry];
+    if (slot < 0) continue;
+    uint64_t clear = 0;
+    __atomic_compare_exchange_n (&gSlotDoneAt[slot], &clear, now, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+    __atomic_add_fetch (&gSlotGen[slot], 1, __ATOMIC_RELEASE);
+    thread_wakeup ((event_t) (uintptr_t) &gSlotGen[slot]);
+  }
+}
+
+// Zero copy (RootCommands.h): a kernel page's physical address, if the storage stream can reach it (gDmaLimit, from the SMMU's
+// bypass width and the controller's 64-bit addressing, set at bring-up; 0 until then, so no zero copy).
+static uint64_t gDmaLimit = 0;
+static uint64_t hostDmaAddress (const void *va)
+{
+  const uint64_t address = ml_vtophys (reinterpret_cast<vm_offset_t> (va));
+  return address && address < gDmaLimit && gDmaLimit - address >= 4096 ? address : 0;
+}
+extern "C" void native_ufs_set_zero_copy (int on) { gZeroCopy = on != 0; }
+extern "C" void native_ufs_set_spin (uint32_t us) { gSpinUs = us; }
+
+static void hostEnableInterrupt (void)
+{
+  if (gIrqMode || !&armcpu_spi_attach || !&armcpu_spi_mask) return;
+  uint32_t mode = kUfsWaitSpin, spinUs = 0;
+  if (PE_parse_boot_argn ("native-ufs-wait", &mode, sizeof (mode)) && mode <= kUfsWaitSleep) gWaitMode = mode;
+  if (PE_parse_boot_argn ("native-ufs-spin-us", &spinUs, sizeof (spinUs))) gSpinUs = spinUs;
+  if (armcpu_spi_attach (kUfsIrq, false, hostInterrupt, nullptr, nullptr, nullptr) != kIOReturnSuccess) return;
+  hostWrite (0x24, 1);                      // UTRCE only
+  if (armcpu_spi_mask (kUfsIrq, false) != kIOReturnSuccess) { hostWrite (0x24, 0); return; }
+  gIrqMode = true;
+  native_ufs_irq_mode = 1;
+}
+
+// The request list on a write-combined page of its own (RootTransportLayout.h): every entry serves a slot, and region A's slots use
+// entries 0..n-1. With 32 entries and region A's 16 slots, region B adds slots 16..31. Any refusal (allocation, address beyond the
+// stream's bypass width or 32 bits without 64-bit addressing, mapping) keeps region A's list and entries 0, 2, ...
+static OSSharedPtr<IOMemoryMap> gListMap;
+static IOBufferMemoryDescriptor *gListDma, *gRegionB;
+extern "C" volatile uint32_t native_ufs_list_mode = 0;   // 0 list in region A (entry 2s), 1 own write-combined page, 2 also region B
+static bool hostReachable (uint64_t phys, uint64_t bytes, bool wide)
+{
+  if (!wide && phys + bytes > 0x100000000ULL) return false;
+  if (!gHost.smmu) return false;
+  const uint32_t idr2 = read32 (gHost.smmu, 0x28);
+  for (unsigned shift = 0; shift <= 8; shift += 4) {
+    const unsigned bits = ufsSmmuAddressBits ((idr2 >> shift) & 15);
+    if (!bits || phys >= (1ULL << bits) || bytes > (1ULL << bits) - phys) return false;
+  }
+  return true;
+}
+static IOBufferMemoryDescriptor *hostContiguous (uint32_t bytes, IOOptionBits cache, bool wide, uint8_t **virt, uint64_t *phys)
+{
+  IOBufferMemoryDescriptor *dma = IOBufferMemoryDescriptor::inTaskWithOptions (
+    kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
+    static_cast<IOOptionBits> (kIOMemoryMapperNone) | cache, bytes, 4096);
+  if (!dma) return nullptr;
+  IOByteCount contiguous = 0;
+  *virt = static_cast<uint8_t *> (dma->getBytesNoCopy ());
+  *phys = dma->getPhysicalSegment (0, &contiguous, kIOMemoryMapperNone);
+  if (!*virt || !*phys || (*phys & 4095) || contiguous < bytes || !hostReachable (*phys, bytes, wide)) {
+    dma->release ();
+    return nullptr;
+  }
+  bzero (*virt, bytes);
+  cacheCivac (*virt, bytes);
+  return dma;
+}
+static void hostSlotsUpgrade (unsigned regionSlots, unsigned entries, bool wide)
+{
+  if (gListDma || regionSlots < 2 || entries < regionSlots) return;
+  uint8_t *cached = nullptr; uint64_t listPhys = 0;
+  IOBufferMemoryDescriptor *list = hostContiguous (4096, kIOMapWriteCombineCache, wide, &cached, &listPhys);
+  if (!list) return;
+  OSSharedPtr<IOMemoryMap> map (list->createMappingInTask (kernel_task, 0, kIOMapAnywhere | kIOMapWriteCombineCache), OSNoRetain);
+  uint8_t *listVirt = map ? reinterpret_cast<uint8_t *> (map->getVirtualAddress ()) : nullptr;
+  if (!listVirt) { list->release (); return; }
+  for (unsigned i = 0; i < 4096; ++i) listVirt[i] = 0;
+  __asm__ volatile ("dsb sy" ::: "memory");
+  gListDma = list; gListMap = map; gUtrlPhys = listPhys;
+  for (unsigned e = 0; e < 32; ++e) gEntrySlot[e] = -1;
+  for (unsigned s = 0; s < regionSlots; ++s)
+    hostSlotGeometry (s, listVirt + 32 * s, s, gHost.virt + ufsSlotUcdOffset (s), gHost.phys + ufsSlotUcdOffset (s),
+                      gHost.virt + ufsSlotDataOffset (s), gHost.phys + ufsSlotDataOffset (s));
+  gListUncached = true;
+  unsigned total = regionSlots;
+  native_ufs_list_mode = 1;
+  uint8_t *b = nullptr; uint64_t bPhys = 0;
+  if (regionSlots == kRegionSlots && entries >= kSlots && (gRegionB = hostContiguous (kRegionBBytes, 0, wide, &b, &bPhys))) {
+    for (unsigned k = 0; k < kRegionSlots; ++k)
+      hostSlotGeometry (kRegionSlots + k, listVirt + 32 * (kRegionSlots + k), kRegionSlots + k, b + k * kUcdStride,
+                        bPhys + k * kUcdStride, b + kRegionBDataOffset + k * kDataMax, bPhys + kRegionBDataOffset + k * kDataMax);
+    total = kSlots;
+    native_ufs_list_mode = 2;
+  }
+  hostSlotsInit (total, gHost.lock);
+  native_ufs_slots = gSlotCount;
+}
 
 // Bring the live controller up for reading: map, SMMU pass-through for the UFS stream, take over
 // the request list, wake the device from UFS-PowerDown and wait for LUN 0 to be ready.
@@ -1037,42 +1256,61 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.hce = read32 (gHost.hc, 0x34);
   }
   gRootDiagnostic.stage = "DMA allocation";
-  gHost.dma = IOBufferMemoryDescriptor::inTaskWithOptions (
-    kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
-    static_cast<IOOptionBits> (kIOMemoryMapperNone),
-    kDmaBytes, 4096);
+  // All kSlots command slots when the region is physically contiguous and addressable, else slot 0's original layout alone. The
+  // request list must also have entries for them (CAP.NUTRS, entries 0, 2, ...).
+  const bool wide = read32 (gHost.hc, 0) & 0x01000000;
+  const unsigned entries = (read32 (gHost.hc, 0) & 0x1f) + 1;
+  unsigned slots = (entries + 1) / 2 < kRegionSlots ? (entries + 1) / 2 : kRegionSlots;
   gHost.lock = IOLockAlloc ();
-  if (!gHost.dma || !gHost.lock) {
-    *why = "dma buffer";
+  // Smaller regions keep the same layout for their first slots: 16, then 8, then 1.
+  const uint32_t sizes[3] = { uint32_t (kDmaBytes), uint32_t (kDmaBytesEightSlots), uint32_t (kDmaBytesOneSlot) };
+  const unsigned counts[3] = { kRegionSlots, 8, 1 };
+  for (unsigned attempt = 0; attempt < 3 && !gHost.virt; ++attempt) {
+    const uint32_t bytes = sizes[attempt];
+    if (counts[attempt] > slots && counts[attempt] > 1) continue;
+    IOBufferMemoryDescriptor *dma = IOBufferMemoryDescriptor::inTaskWithOptions (
+      kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
+      static_cast<IOOptionBits> (kIOMemoryMapperNone),
+      bytes, 4096);
+    if (!dma) continue;
+    uint8_t *virt = static_cast<uint8_t *> (dma->getBytesNoCopy ());
+    IOByteCount contiguous = 0;
+    uint64_t phys = dma->getPhysicalSegment (0, &contiguous, kIOMemoryMapperNone);
+    gRootDiagnostic.dma = phys;
+    gRootDiagnostic.contiguous = contiguous;
+    if (!virt || !phys || (phys & 4095) || contiguous < bytes || (!wide && phys + bytes > 0x100000000ULL)) {
+      dma->release ();
+      continue;
+    }
+    gHost.dma = dma; gHost.virt = virt; gHost.phys = phys; gHost.dmaBytes = bytes;
+  }
+  if (!gHost.virt || !gHost.lock) {
+    *why = !gHost.lock ? "dma buffer" : "DMA address/contiguity";
     return false;
   }
-  gHost.virt = static_cast<uint8_t *> (gHost.dma->getBytesNoCopy ());
-  IOByteCount contiguous = 0;
-  gHost.phys = gHost.dma->getPhysicalSegment (0, &contiguous, kIOMemoryMapperNone);
-  gRootDiagnostic.dma = gHost.phys;
-  gRootDiagnostic.contiguous = contiguous;
-  if (!gHost.virt || !gHost.phys || (gHost.phys & 4095) || contiguous < kDmaBytes ||
-      (!(read32 (gHost.hc, 0) & 0x01000000) && gHost.phys + kDmaBytes > 0x100000000ULL)) {
-    *why = "DMA address/contiguity";
-    return false;
-  }
-  bzero (gHost.virt, kDmaBytes);
-  cacheCivac (gHost.virt, kDmaBytes);
+  const unsigned regionSlots = gHost.dmaBytes == kDmaBytes ? slots : gHost.dmaBytes == kDmaBytesEightSlots ? (slots < 8 ? slots : 8) : 1;
+  hostSlotGeometryRegionA (regionSlots);
+  hostSlotsInit (regionSlots, gHost.lock);
+  native_ufs_slots = gSlotCount;
+  bzero (gHost.virt, gHost.dmaBytes);
+  cacheCivac (gHost.virt, gHost.dmaBytes);
   uint32_t report[3] = { 0, 0, 0 };
   gRootDiagnostic.stage = "SMMU and request list";
   if (!hostStopQueue (why)) return false;
-  smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, kDmaBytes);
+  smmuBypassStream (0x60, gHost.smmuMap, report, gHost.phys, gHost.dmaBytes);
   gHost.smmu = gHost.smmuMap->getVirtualAddress ();
-  // The board's WiFi endpoint (sheng-wifi=2 or more) needs a pass-through stream of its own, set up here with the same code and at the same moment as the
+  // The board's WiFi endpoint (wifi=2 or more) needs a pass-through stream of its own, set up here with the same code and at the same moment as the
   // storage stream: the registers of the stream matching group are not safe to touch from another thread later (a read of the first one never returned).
   uint32_t wifi = 0;
-  if (PE_parse_boot_argn ("sheng-wifi", &wifi, sizeof (wifi)) && wifi >= 2) {
+  if (PE_parse_boot_argn ("wifi", &wifi, sizeof (wifi)) && wifi >= 2) {
     static OSSharedPtr<IOMemoryMap> extraMap;   // kept: the fault registers are read from it later
     uint32_t extraReport[3] = { 0, 0, 0 };
     smmuBypassStream (0x1401, extraMap, extraReport, 0x9c900000ULL, 8ULL << 20);
     // The endpoint only produces 32-bit addresses and the memory here is above 4 GiB: give its context bank a stage 1 table (4 KiB granule,
     // 32-bit input, L1 -> L2 with 2 MiB blocks) that maps kExtraIova upward onto one contiguous buffer. Own bank only: refused when it is the storage's.
-    constexpr uint32_t kExtraIova = 0x10000000U, kExtraBlocks = 24, kBlock = 2U << 20;
+    // Mainline ath12k owns firmware memory, CE, DP refill and monitor rings.
+    // The former 48 MiB window exhausted before HTC startup on WCN7850.
+    constexpr uint32_t kExtraIova = 0x10000000U, kExtraBlocks = 64, kBlock = 2U << 20;
     IOBufferMemoryDescriptor *buffer = IOBufferMemoryDescriptor::inTaskWithOptions (
       kernel_task, static_cast<IOOptionBits> (kIODirectionInOut) | static_cast<IOOptionBits> (kIOMemoryPhysicallyContiguous) |
       static_cast<IOOptionBits> (kIOMemoryMapperNone) , (kExtraBlocks + 1) * kBlock, kBlock);
@@ -1091,7 +1329,7 @@ static bool hostBringUp (const char **why)
       const uint64_t tablesPa = tables->getPhysicalSegment (0, nullptr, kIOMemoryMapperNone);
       l1[0] = (tablesPa + 4096) | 3;
       uint32_t attr = 0;
-      PE_parse_boot_argn ("sheng-wifi-attr", &attr, sizeof (attr));   // 1: normal non-cacheable, non-shareable memory for the endpoint's accesses
+      PE_parse_boot_argn ("wifi-attr", &attr, sizeof (attr));   // 1: normal non-cacheable, non-shareable memory for the endpoint's accesses
       const uint64_t share = attr == 1 ? 0 : (3ULL << 8);
       for (uint32_t i = 0; i < kExtraBlocks; ++i)
         l2[(kExtraIova >> 21) + i] = (bpa + i * kBlock) | (1ULL << 11) | (1ULL << 10) | share | (1ULL << 6) | 1;   // block, non-global, AF, inner shareable, readable and writable by unprivileged requesters, attribute index 0
@@ -1142,11 +1380,11 @@ static bool hostBringUp (const char **why)
     }
     native_ufs_extra_stream = 0x80000000U | extraReport[0];
   }
-  // The display's streams (sheng-dpu=2 or more, or sheng-dpu-scanout), read here for the same reason: what the boot loader left for 0x1c00 and 0x1c02 (`iommus =
+  // The display's streams (dpu=2 or more, or dpu-scanout), read here for the same reason: what the boot loader left for 0x1c00 and 0x1c02 (`iommus =
   // <&apps_smmu 0x1c00 0x2>`), the first step of letting the display fetch the compositor's pages. Nothing is written.
   uint32_t dpu = 0, scanout = 0;
-  PE_parse_boot_argn ("sheng-dpu", &dpu, sizeof (dpu));
-  PE_parse_boot_argn ("sheng-dpu-scanout", &scanout, sizeof (scanout));
+  PE_parse_boot_argn ("dpu", &dpu, sizeof (dpu));
+  PE_parse_boot_argn ("dpu-scanout", &scanout, sizeof (scanout));
   if (dpu >= 2 || scanout) {
     const uintptr_t s = gHost.smmu;
     const uint32_t idr0 = read32 (s, 0x20), idr1 = read32 (s, 0x24);
@@ -1174,7 +1412,7 @@ static bool hostBringUp (const char **why)
       }
     }
     native_ufs_dpu_smmu[0] = 0x80000000U | groups | (valid << 8) | (banks << 16);
-    // sheng-dpu-scanout=1 or more: stage 1 for the display's bank (i562: bank 3, CBAR type 1, SCTLR 0xe0 = translation off, so the display
+    // dpu-scanout=1 or more: stage 1 for the display's bank (i562: bank 3, CBAR type 1, SCTLR 0xe0 = translation off, so the display
     // fetched physical addresses; its pipe address registers are 32-bit and every kernel allocation is above 4 GiB). The table keeps
     // 0x80000000..0xffffffff as it was (two 1 GiB identity blocks, so the boot loader's scanout at 0xb8000000 carries on unchanged) and adds
     // kDpuSlots windows of kDpuSlotBytes at kDpuWindow for the compositor's surfaces, filled by native_ufs_dpu_map. Undone at once when the
@@ -1195,6 +1433,17 @@ static bool hostBringUp (const char **why)
     gRootDiagnostic.smmuId2 = read32 (gHost.smmu, 0x28);
     gRootDiagnostic.cba2r = read32 (gHost.smmu, 0x1800 + 4 * (report[0] >> 16));
   }
+  {
+    uint64_t limit = wide ? ~0ULL : 0x100000000ULL;
+    const uint32_t idr2 = gHost.smmu ? read32 (gHost.smmu, 0x28) : 0;
+    for (unsigned shift = 0; shift <= 8; shift += 4) {
+      const unsigned bits = ufsSmmuAddressBits ((idr2 >> shift) & 15);
+      const uint64_t width = bits ? (bits >= 64 ? ~0ULL : 1ULL << bits) : 0;
+      if (width < limit) limit = width;
+    }
+    gDmaLimit = limit;
+  }
+  hostSlotsUpgrade (regionSlots, entries, wide);
   if (!hostStartQueue (why)) return false;
   gRootDiagnostic.stage = "NOP OUT";
   // NOP OUT proves the transport before touching the SCSI layer.
@@ -1229,6 +1478,7 @@ static bool hostBringUp (const char **why)
     uint32_t scsi = 0;
     if (hostScsi (0, tur, 6, false, 0, 200000, &scsi) == kIOReturnSuccess) {
       gHost.ready = true;
+      hostEnableInterrupt ();
       return true;
     }
     if (gHost.poisoned) break;
@@ -1248,13 +1498,14 @@ static uint32_t be32w (const uint8_t *at)
 
 #include "RootLayout.h"
 #include "RootWindowRead.h"
+#include "VerifiedTableCache.h"
 #include "RootPublication.h"
 
 }
 
-// ---- Persistent Data store window (sheng-data-persist) ----------------------------------------------------------
+// ---- Persistent Data store window (data-persist) ----------------------------------------------------------
 // The only part of this driver that ever writes. The consumer (NativeRamBlock's overlay) asks for a window of the given
-// size at the END of the userdata partition. Mode 1 (boot argument sheng-data-persist=1) only reads: it proves the window and
+// size at the END of the userdata partition. Mode 1 (boot argument data-persist=1) only reads: it proves the window and
 // lets the consumer inspect its header. Mode 2 additionally opens the write window. A window is refused unless it lies inside
 // the partition, clear of the flashed root image plus a 4 MiB guard, and is at most a quarter of the partition.
 namespace {
@@ -1265,14 +1516,14 @@ struct StoreGeometry {
 };
 StoreGeometry gStoreGeometry;
 uint64_t gStoreRegionFirst, gStoreRegionBlocks;
-// The diagnostic log (sheng-log=1): always the last 32 MiB of userdata, so the Data store's place does not depend on logging.
+// The diagnostic log (log=1): always the last 32 MiB of userdata, so the Data store's place does not depend on logging.
 constexpr uint64_t kLogReserveBlocks = 8192;
 // The log's export region: the 256 MiB just below the log window (the render server's pipeline caches, kits/sheng BootLog.c). It is
 // part of the log's write window, so the store ends below both.
 constexpr uint64_t kExportBlocks = 65536;
 uint64_t gLogRegionFirst, gLogRegionBlocks;
-// The reserve at the end of userdata that the Data store stays clear of: the log and its export region sit inside it (sheng-log=1), the rest
-// is unused. sheng-log-reserve=<MiB>, default 1024; 0 gives all the room to Data and is only accepted with the log off. The store's place
+// The reserve at the end of userdata that the Data store stays clear of: the log and its export region sit inside it (log=1), the rest
+// is unused. log-reserve=<MiB>, default 1024; 0 gives all the room to Data and is only accepted with the log off. The store's place
 // depends on it, so an image keeps one value for its whole life (a different value moves the store: the old one is read as blank).
 constexpr uint32_t kDefaultReserveMiB = 1024;
 static uint64_t reserveBlocks (void)
@@ -1280,7 +1531,7 @@ static uint64_t reserveBlocks (void)
   static int64_t cached = -1;
   if (cached < 0) {
     uint32_t mib = kDefaultReserveMiB;
-    if (!PE_parse_boot_argn ("sheng-log-reserve", &mib, sizeof (mib)) || mib > 16384) mib = kDefaultReserveMiB;
+    if (!PE_parse_boot_argn ("log-reserve", &mib, sizeof (mib)) || mib > 16384) mib = kDefaultReserveMiB;
     cached = static_cast<int64_t> (mib) * 256;   // 4096-byte blocks
   }
   return static_cast<uint64_t> (cached);
@@ -1291,7 +1542,7 @@ static unsigned storeMode (void)
   static int cached = -1;
   if (cached < 0) {
     uint32_t value = 0;
-    if (!PE_parse_boot_argn ("sheng-data-persist", &value, sizeof (value)) || value > 2) value = 0;
+    if (!PE_parse_boot_argn ("data-persist", &value, sizeof (value)) || value > 2) value = 0;
     cached = static_cast<int> (value);
   }
   return static_cast<unsigned> (cached);
@@ -1329,49 +1580,84 @@ extern "C" int native_ufs_store_open (uint64_t blocks, uint64_t *firstLba, const
   }
   if (why) *why = reason;
   return ok;
-  IOLog ("NativeUfs: store open mode=%u blocks=%llu valid=%d host=%d reason=%s ok=%d first=%llu\n",
-         storeMode (), (unsigned long long)blocks, (int)gStoreGeometry.valid, (int)gHost.ready,
-         reason, ok, (unsigned long long)gStoreRegionFirst);
+}
+
+// Store window commands, in mach_absolute_time ticks: count and time of reads, writes and cache flushes, and the longest single call.
+extern "C" volatile uint64_t native_ufs_store_rd_ops = 0, native_ufs_store_rd_ticks = 0, native_ufs_store_wr_ops = 0,
+                             native_ufs_store_wr_ticks = 0, native_ufs_store_sync_ops = 0, native_ufs_store_sync_ticks = 0,
+                             native_ufs_store_max_ticks = 0;
+// What the longest call was, for the log: 'r' read, 'w' write, 's' cache flush, and its blocks. Written without a lock right after the
+// longest time, so under a race the pair may name a call of almost the same length.
+static volatile uint32_t gStoreMaxKind = 0, gStoreMaxBlocks = 0;
+static void storeAccount (volatile uint64_t *ops, volatile uint64_t *ticks, uint64_t t0, char kind, uint32_t blocks)
+{
+  const uint64_t spent = mach_absolute_time () - t0;
+  __atomic_fetch_add (ops, 1, __ATOMIC_RELAXED);
+  __atomic_fetch_add (ticks, spent, __ATOMIC_RELAXED);
+  uint64_t seen = native_ufs_store_max_ticks;
+  while (spent > seen) {
+    if (!__atomic_compare_exchange_n (&native_ufs_store_max_ticks, &seen, spent, false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) continue;
+    __atomic_store_n (&gStoreMaxKind, static_cast<uint32_t> (kind), __ATOMIC_RELAXED);
+    __atomic_store_n (&gStoreMaxBlocks, blocks, __ATOMIC_RELAXED);
+    break;
+  }
 }
 
 extern "C" int native_ufs_store_read (uint64_t rel, uint32_t blocks, void *dst)
 {
   if (!gStoreRegionBlocks || !dst || !blocks || rel >= gStoreRegionBlocks || blocks > gStoreRegionBlocks - rel) return 0;
+  const uint64_t t0 = mach_absolute_time ();
+  const uint32_t asked = blocks;
+  int ok = 1;
   while (blocks) {
-    uint32_t chunk = blocks > kDataMax / 4096 ? static_cast<uint32_t> (kDataMax / 4096) : blocks;
-    if (hostRead4k (0, gStoreRegionFirst + rel, chunk, dst) != kIOReturnSuccess) return 0;
+    uint32_t chunk = blocks > kXferMax / 4096 ? static_cast<uint32_t> (kXferMax / 4096) : blocks;
+    if (hostRead4k (0, gStoreRegionFirst + rel, chunk, dst) != kIOReturnSuccess) { ok = 0; break; }
     dst = static_cast<uint8_t *> (dst) + chunk * 4096ULL;
     rel += chunk;
     blocks -= chunk;
   }
-  return 1;
+  storeAccount (&native_ufs_store_rd_ops, &native_ufs_store_rd_ticks, t0, 'r', asked);
+  return ok;
 }
 
-extern "C" int native_ufs_store_write (uint64_t rel, uint32_t blocks, const void *src)
+static int storeWrite (uint64_t rel, uint32_t blocks, const void *src, bool fua)
 {
   if (storeMode () != 2 || !gStoreRegionBlocks || !src || !blocks || rel >= gStoreRegionBlocks ||
       blocks > gStoreRegionBlocks - rel) return 0;
+  const uint64_t t0 = mach_absolute_time ();
+  const uint32_t asked = blocks;
+  int ok = 1;
   while (blocks) {
-    uint32_t chunk = blocks > kDataMax / 4096 ? static_cast<uint32_t> (kDataMax / 4096) : blocks;
-    // Forced unit access: the block is on the medium when the command completes, so the overlay needs no cache flush.
-    if (hostWrite4k (0, gStoreRegionFirst + rel, chunk, src, true) != kIOReturnSuccess) return 0;
+    uint32_t chunk = blocks > kXferMax / 4096 ? static_cast<uint32_t> (kXferMax / 4096) : blocks;
+    if (hostWrite4k (0, gStoreRegionFirst + rel, chunk, src, fua) != kIOReturnSuccess) { ok = 0; break; }
     src = static_cast<const uint8_t *> (src) + chunk * 4096ULL;
     rel += chunk;
     blocks -= chunk;
   }
-  return 1;
+  storeAccount (&native_ufs_store_wr_ops, &native_ufs_store_wr_ticks, t0, 'w', asked);
+  return ok;
 }
 
-// The Data store overlay (RamBlock) prefers this entry point and takes its address, so the symbol must exist
-// even when the overlay never asks for a cached write: it writes with forced unit access, like the plain path.
+// Forced unit access: the block is on the medium when the command completes, so a write-through overlay needs no cache flush.
+extern "C" int native_ufs_store_write (uint64_t rel, uint32_t blocks, const void *src)
+{
+  return storeWrite (rel, blocks, src, true);
+}
+
+// No forced unit access: the device may keep the blocks in its volatile write cache until native_ufs_store_sync. For a
+// write-back overlay, which makes its pages durable with a sync before it writes the bitmap blocks that name them.
 extern "C" int native_ufs_store_write_cached (uint64_t rel, uint32_t blocks, const void *src)
 {
-  return native_ufs_store_write (rel, blocks, src);
+  return storeWrite (rel, blocks, src, false);
 }
 
 extern "C" int native_ufs_store_sync (void)
 {
-  return storeMode () == 2 && gStoreRegionBlocks && hostSyncCache () == kIOReturnSuccess;
+  if (storeMode () != 2 || !gStoreRegionBlocks) return 0;
+  const uint64_t t0 = mach_absolute_time ();
+  const int ok = hostSyncCache () == kIOReturnSuccess;
+  storeAccount (&native_ufs_store_sync_ops, &native_ufs_store_sync_ticks, t0, 's', 0);
+  return ok;
 }
 
 // ---- Read-only access to other partitions, by GPT name ------------------------------------------------------------
@@ -1384,11 +1670,11 @@ extern "C" uint8_t *native_ufs_extra_va = nullptr;
 extern "C" volatile uint32_t native_ufs_extra_uncached = 0;
 extern "C" volatile uint32_t native_ufs_extra_iova = 0, native_ufs_extra_bytes = 0;
 extern "C" volatile uint32_t native_ufs_extra_atos[8] = { 0, 0, 0, 0 };
-// The display streams' state as the boot loader left it (sheng-dpu=2): [0] bit 31 read, stream-match groups | valid ones << 8 | context banks << 16;
+// The display streams' state as the boot loader left it (dpu=2): [0] bit 31 read, stream-match groups | valid ones << 8 | context banks << 16;
 // [1] sCR0, [2] IDR0, [3] IDR1; for 0x1c00 at [4] and 0x1c02 at [13]: group | bank << 16 (all ones: no match), SMR, S2CR, CBAR, CBA2R, SCTLR,
 // TTBR0 low, high, TCR; [22], [23] the two banks' FSR.
 extern "C" volatile uint32_t native_ufs_dpu_smmu[24] = {};
-// The display bank's stage 1 (sheng-dpu-scanout): bit 31 on, low bits the bank; 0xdead000n the step that refused it (1 bank not as expected,
+// The display bank's stage 1 (dpu-scanout): bit 31 on, low bits the bank; 0xdead000n the step that refused it (1 bank not as expected,
 // 2 no memory, 3 the bank ignored the table registers, 4 TLB sync timeout, 5 the display's fetches faulted with translation on).
 extern "C" volatile uint32_t native_ufs_dpu_state = 0;
 // TTBR0 low and TCR read back, FSR before and after the 50 ms watch, FAR low and high and FSYNR0 of the first fault, us watched.
@@ -1461,7 +1747,7 @@ extern "C" int native_ufs_part_read (uint32_t lun, uint64_t lba, uint32_t blocks
 {
   if (!gHost.ready || !dst || !blocks || lun > 5) return 0;
   while (blocks) {
-    uint32_t chunk = blocks > kDataMax / 4096 ? static_cast<uint32_t> (kDataMax / 4096) : blocks;
+    uint32_t chunk = blocks > kXferMax / 4096 ? static_cast<uint32_t> (kXferMax / 4096) : blocks;
     if (hostRead4k (static_cast<uint8_t> (lun), lba, chunk, dst) != kIOReturnSuccess) return 0;
     dst = static_cast<uint8_t *> (dst) + chunk * 4096ULL;
     lba += chunk;
@@ -1480,7 +1766,7 @@ extern "C" int native_ufs_extra_fault (uint32_t *out)
   return 1;
 }
 
-// ---- Diagnostic log window (sheng-log=1) --------------------------------------------------------------------------
+// ---- Diagnostic log window (log=1) --------------------------------------------------------------------------
 // The board's log writer (kits/sheng BootLog.c) gets the last kLogReserveBlocks of userdata and the kExportBlocks below them, refused
 // unless the partition holds them clear of the flashed root image plus a 4 MiB guard. Off without the boot argument.
 static unsigned logMode (void)
@@ -1488,7 +1774,7 @@ static unsigned logMode (void)
   static int cached = -1;
   if (cached < 0) {
     uint32_t value = 0;
-    if (!PE_parse_boot_argn ("sheng-log", &value, sizeof (value)) || value > 1) value = 0;
+    if (!PE_parse_boot_argn ("log", &value, sizeof (value)) || value > 1) value = 0;
     cached = static_cast<int> (value);
   }
   return static_cast<unsigned> (cached);
@@ -1554,6 +1840,39 @@ extern "C" int native_ufs_export_write (uint64_t rel, uint32_t blocks, const voi
   return 1;
 }
 
+// ---- UniPro attributes (read only) --------------------------------------------------------------------------------
+// DME_GET through the UIC command registers (UFSHCI 5.6): wait for HCS.UCRDY, write UCMDARG1..3 and UICCMD, poll IS.UCCS, read the
+// result code (UCMDARG2[7:0]) and the value (UCMDARG3). Interrupts stay masked, so completion is polled. Under the slot pool lock: one
+// UIC command at a time. Returns 1 with *value, 0 on refusal, timeout or a nonzero result code (*value then holds 0xffff0000 | code).
+extern "C" int native_ufs_dme_get (uint32_t attribute, uint32_t selector, uint32_t *value)
+{
+  if (!gHost.ready || !value || gHostPanic) return 0;
+  IOLockLock (gHost.lock);
+  int ok = 0;
+  *value = 0xffffffffU;
+  if (hostWaitRegister (0x30, 1U << 3, 1U << 3)) {
+    hostWrite (0x20, 1U << 10);                       // clear a stale UIC completion
+    hostWrite (0x94, (attribute << 16) | (selector & 0xffff));
+    hostWrite (0x98, 0);
+    hostWrite (0x9c, 0);
+    hostWrite (0x90, 0x01);                           // DME_GET
+    if (hostWaitRegister (0x20, 1U << 10, 1U << 10)) {
+      const uint32_t code = read32 (gHost.hc, 0x98) & 0xff;
+      if (!code) { *value = read32 (gHost.hc, 0x9c); ok = 1; }
+      else *value = 0xffff0000U | code;
+      hostWrite (0x20, 1U << 10);
+    }
+  }
+  IOLockUnlock (gHost.lock);
+  return ok;
+}
+
+// Command slots: in use, the most taken at once, takes that waited for a free slot (RootCommands.h), for the log.
+extern "C" void native_ufs_slot_stats (uint32_t *slots, uint32_t *peak, uint64_t *waits)
+{
+  *slots = gSlotCount; *peak = gSlotsPeak; *waits = gSlotWaits;
+}
+
 extern "C" int native_ufs_log_sync (void)
 {
   return gLogRegionBlocks && hostSyncCache () == kIOReturnSuccess;
@@ -1581,6 +1900,11 @@ extern "C" unsigned native_ufs_store_gpt_check (void)
   return rootCrc32 (entries, gStoreGeometry.entryCount * 128) == gStoreGeometry.entriesCrc ? 0 : 5;
 }
 
+// Root window requests, for the log (native_ufs_stats_text): their count, bytes and time from entry to the completion call (the wait
+// for a bounce buffer, the reads, the block verification and the copy to the caller), and the requests that had to wait for a bounce
+// buffer with the time they waited.
+static volatile uint64_t gWindowRequests = 0, gWindowBytes = 0, gWindowTicks = 0, gBounceWaits = 0, gBounceWaitTicks = 0;
+
 // One read-only window of the root image as a block device: 512-byte sectors on top of 4096-byte
 // UFS blocks, so the unchanged dmg disk images (GPT with 512-byte sectors) parse as they do on
 // the virtio path.
@@ -1589,18 +1913,54 @@ class NativeUfsBlock : public IOBlockStorageDevice {
   uint64_t absolute = 0;      // byte offset of the window on LUN 0
   uint64_t bytes = 0;
   char label[32] = {};
-  uint8_t *bounce = nullptr;
-  IOLock *windowLock = nullptr;
+  // Requests run concurrently, each with its own bounce buffer from the pool: a request verifies and copies the snapshot in its
+  // own buffer, so no lock is held across the read, the integrity check or the copy (RootWindowRead.h).
+  static constexpr unsigned kBounces = 4;
+  uint8_t *bounces[kBounces] = {};
+  uint32_t bounceFree = 0;
+  IOLock *windowLock = nullptr;   // guards bounceFree
   bool online = false;
+  uint8_t *takeBounce ()
+  {
+    IOLockLock (windowLock);
+    if (!bounceFree) {
+      const uint64_t t0 = mach_absolute_time ();
+      while (!bounceFree) IOLockSleep (windowLock, &bounceFree, THREAD_UNINT);
+      __atomic_fetch_add (&gBounceWaits, 1, __ATOMIC_RELAXED);
+      __atomic_fetch_add (&gBounceWaitTicks, mach_absolute_time () - t0, __ATOMIC_RELAXED);
+    }
+    const unsigned k = static_cast<unsigned> (__builtin_ctz (bounceFree));
+    bounceFree &= ~(1U << k);
+    IOLockUnlock (windowLock);
+    return bounces[k];
+  }
+  void giveBounce (uint8_t *buffer)
+  {
+    IOLockLock (windowLock);
+    for (unsigned k = 0; k < kBounces; ++k) if (bounces[k] == buffer) bounceFree |= 1U << k;
+    IOLockWakeup (windowLock, &bounceFree, true);
+    IOLockUnlock (windowLock);
+  }
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
   struct vr_view verified = {};
   vm_offset_t verifiedStorage = 0;
   vm_size_t verifiedStorageBytes = 0;
+  bool verifiedReady = false;          // the signed header (and its whole table) authenticated
+  // Cached table mode (verified.hashes is null): page hashes and the cache index of a header-only policy.
+  VrootTable table = {};
+  vm_offset_t tableHashStorage = 0, tableIndexStorage = 0;
+  vm_size_t tableHashBytes = 0, tableIndexBytes = 0;
+  // SHA-384 of header, signature and table for the root authorization query, taken on its first use from a fresh read of the
+  // table that is authenticated again against the signed header.
+  uint8_t envelopeDigest[48] = {};
+  volatile bool envelopeDigestReady = false;
+  bool cachedEnvelopeDigest (uint8_t out[48]);
   bool configureVerification ();
+  bool configureCachedTable (const uint8_t *manifest, uint64_t hashBytes);
 #endif
 public:
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
-  bool authenticatesVolume (const char *uuid, uint8_t *manifestDigest = nullptr) const;
+  bool authenticatesVolume (const char *uuid, uint8_t *manifestDigest = nullptr);
   bool signedVolumeUuid (char out[37]) const;
 #endif
   const char *windowLabel () const { return label; }
@@ -1683,9 +2043,13 @@ bool NativeUfsBlock::configure (const char *name, uint64_t absoluteOffset, uint6
   bytes = size;
   windowLock = IOLockAlloc ();
   if (!windowLock) return false;
-  bounce = static_cast<uint8_t *> (IOMalloc (kDataMax));
-  if (!bounce) {
-    return false;
+  for (unsigned k = 0; k < kBounces; ++k) {
+    bounces[k] = static_cast<uint8_t *> (IOMalloc (kDataMax));
+    if (!bounces[k]) {
+      if (!k) return false;
+      break;
+    }
+    bounceFree |= 1U << k;
   }
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
   // Reads are served only after each 4096-byte integrity block verifies against the owner-signed
@@ -1704,17 +2068,25 @@ static uint64_t gRootObjectBase;
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
 volatile uint64_t native_ufs_verified_blocks = 0;
 
-// Read the hash table of a header-only policy from the root image object "<window>.vroot" into `table`.
-// The bytes are untrusted here; vr_open checks them against the digest in the signed header.
-static bool readPolicyTable (const char *window, uint8_t *table, uint64_t tableBytes)
+// The LUN 0 block of the root image object "<window>.vroot", the hash table of a header-only policy, whose size must be tableBytes.
+static bool policyTableLba (const char *window, uint64_t tableBytes, uint64_t *lba)
 {
   char name[32];
   if (snprintf (name, sizeof (name), "%s.vroot", window) >= static_cast<int> (sizeof (name))) return false;
   const RootWindow *object = nullptr;
   for (unsigned i = 0; i < gRootObjects; ++i)
     if (!strcmp (gRootObject[i].name, name)) object = &gRootObject[i];
-  if (!object || object->size != tableBytes) return false;
-  uint64_t lba = (gRootObjectBase + object->offset) / 4096, done = 0;
+  if (!object || object->size != tableBytes || ((gRootObjectBase + object->offset) & 4095)) return false;
+  *lba = (gRootObjectBase + object->offset) / 4096;
+  return true;
+}
+
+// Read the hash table of a header-only policy into `table`.
+// The bytes are untrusted here; vr_open checks them against the digest in the signed header.
+static bool readPolicyTable (const char *window, uint8_t *table, uint64_t tableBytes)
+{
+  uint64_t lba = 0, done = 0;
+  if (!policyTableLba (window, tableBytes, &lba)) return false;
   while (done < tableBytes) {
     uint64_t left = tableBytes - done;
     uint32_t blocks = static_cast<uint32_t> (left >= kDataMax ? kDataMax / 4096 : (left + 4095) / 4096);
@@ -1730,6 +2102,159 @@ static bool readPolicyTable (const char *window, uint8_t *table, uint64_t tableB
 volatile uint64_t native_ufs_verify_ticks = 0, native_ufs_read_ticks = 0;
 static inline uint64_t timerTicks (void) {uint64_t v; __asm__ volatile ("isb\n\tmrs %0, cntpct_el0" : "=r" (v)); return v;}
 volatile uint32_t native_ufs_integrity_failures = 0;
+
+// Table pages of header-only policies are cached (VerifiedTableCache.h) unless native-vroot-cache=0, which keeps every
+// window's whole table wired. native-vroot-cache=N sizes the cache shared by all windows in MiB (default 8, 2048 table pages,
+// which cover 1 GiB of image). Each window's whole table is still read and authenticated at bring-up.
+static VrootTableCache gVrootCache;
+static IOLock *gVrootLock = nullptr;
+static uint32_t gVrootCacheMiB = 8;
+static bool gVrootCacheParsed = false;
+volatile uint64_t native_ufs_vroot_wired_bytes = 0;   // wired bytes of policies, tables, page hashes, index and cache
+struct VrootKernelOps {
+  void lock () { IOLockLock (gVrootLock); }
+  void unlock () { IOLockUnlock (gVrootLock); }
+  void sleep (void *event) { IOLockSleep (gVrootLock, event, THREAD_UNINT); }
+  void wakeup (void *event) { IOLockWakeup (gVrootLock, event, false); }
+  // Straight to the transport: the table object is not a window, so this read never needs a verified read or an allocation.
+  bool readPage (const VrootTable &table, uint64_t page, void *dst) {
+    return hostRead4k (0, table.firstLba + page, 1, dst) == kIOReturnSuccess;
+  }
+  bool sha256 (const void *data, size_t bytes, uint8_t out[32]) { return vr_xnu_crypto.sha256 (data, bytes, out) != 0; }
+};
+
+static bool vrootCacheWanted ()
+{
+  if (!gVrootCacheParsed) {
+    uint32_t mib = 0;
+    if (PE_parse_boot_argn ("native-vroot-cache", &mib, sizeof (mib))) gVrootCacheMiB = mib;
+    gVrootCacheParsed = true;
+  }
+  return gVrootCacheMiB != 0;
+}
+
+// Allocated once, before the first window is published, and kept: a fill never allocates.
+static bool vrootCacheReady ()
+{
+  if (gVrootCache.count) return true;
+  if (gVrootCacheMiB > UINT32_MAX / 256) return false;
+  const uint32_t count = gVrootCacheMiB * 256;
+  const vm_size_t pageBytes = static_cast<vm_size_t> (count) * 4096;
+  const vm_size_t entryBytes = round_page (static_cast<vm_size_t> (count) * sizeof (VrootCacheEntry));
+  vm_offset_t pages = 0, entries = 0;
+  if (!gVrootLock && !(gVrootLock = IOLockAlloc ())) return false;
+  if (kmem_alloc (kernel_map, &pages, pageBytes, static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA),
+                  VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) return false;
+  if (kmem_alloc (kernel_map, &entries, entryBytes, static_cast<kma_flags_t> (KMA_KOBJECT | KMA_ZERO),
+                  VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
+    kmem_free (kernel_map, pages, pageBytes);
+    return false;
+  }
+  gVrootCache.pages = reinterpret_cast<uint8_t *> (pages);
+  gVrootCache.entries = reinterpret_cast<VrootCacheEntry *> (entries);
+  gVrootCache.count = count;
+  __atomic_fetch_add (&native_ufs_vroot_wired_bytes, pageBytes + entryBytes, __ATOMIC_RELAXED);
+  return true;
+}
+
+// Read the table object at `lba` in pieces through `buffer` (kDataMax bytes) and hash it as a whole into `whole` (the digest the
+// signed header carries, as vr_open checks it). Optionally hash each 4096-byte page into `pageHashes` and the policy envelope
+// (signed header `header`, then the table) into `envelope`. Every digest is taken from the same bytes of one read.
+static bool hashPolicyTable (uint64_t lba, uint64_t hashBytes, uint8_t *buffer, uint8_t *pageHashes,
+                             const uint8_t *header, uint8_t whole[32], uint8_t *envelope = nullptr)
+{
+  SHA256_CTX table;
+  SHA384_CTX outer;
+  SHA256_Init (&table);
+  if (envelope) {
+    SHA384_Init (&outer);
+    SHA384_Update (&outer, header, VR_HEADER_BYTES + VR_SIGNATURE_BYTES);
+  }
+  for (uint64_t done = 0, page = 0; done < hashBytes;) {
+    const uint64_t left = hashBytes - done;
+    const uint32_t blocks = static_cast<uint32_t> (left >= kDataMax ? kDataMax / 4096 : (left + 4095) / 4096);
+    if (hostRead4k (0, lba, blocks, buffer) != kIOReturnSuccess) return false;
+    const uint64_t take = left < blocks * 4096ULL ? left : blocks * 4096ULL;
+    SHA256_Update (&table, buffer, take);
+    if (envelope) SHA384_Update (&outer, buffer, take);
+    for (uint64_t at = 0; pageHashes && at < take; at += 4096, ++page) {
+      const uint64_t length = take - at < 4096 ? take - at : 4096;
+      if (!vr_xnu_crypto.sha256 (buffer + at, static_cast<size_t> (length), pageHashes + page * 32)) return false;
+    }
+    done += take;
+    lba += blocks;
+  }
+  SHA256_Final (whole, &table);
+  if (envelope) SHA384_Final (envelope, &outer);
+  return true;
+}
+
+// A header-only policy without its whole table in memory: the signed header is authenticated and the table object is read
+// once, hashed as a whole and page by page; a page hash is kept only if the whole table matches the signed digest.
+bool NativeUfsBlock::configureCachedTable (const uint8_t *manifest, uint64_t hashBytes)
+{
+  constexpr size_t kSigned = VR_HEADER_BYTES + VR_SIGNATURE_BYTES;
+  static_assert (kSigned + VR_KEY_BYTES <= 4096, "header, signature and key share one page");
+  gRootDiagnostic.stage = "policy allocation";
+  verifiedStorageBytes = round_page (static_cast<vm_size_t> (4096));
+  if (kmem_alloc (kernel_map, &verifiedStorage, verifiedStorageBytes,
+                  static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA | KMA_ZERO), VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
+    verifiedStorage = 0;
+    return false;
+  }
+  __atomic_fetch_add (&native_ufs_vroot_wired_bytes, verifiedStorageBytes, __ATOMIC_RELAXED);
+  uint8_t *header = reinterpret_cast<uint8_t *> (verifiedStorage);
+  uint8_t *key = header + 4096 - VR_KEY_BYTES;
+  memcpy (header, manifest, kSigned);
+  memcpy (key, verified_root_key, VR_KEY_BYTES);
+  gRootDiagnostic.stage = "policy read-only protection";
+  if (mach_vm_protect (kernel_map, verifiedStorage, verifiedStorageBytes, TRUE, VM_PROT_READ) != KERN_SUCCESS) return false;
+  gRootDiagnostic.stage = "owner signature";
+  int status = vr_open_header (header, kSigned, key, 1, &vr_xnu_crypto, &verified);
+  gRootDiagnostic.verify = static_cast<uint32_t> (status);
+  if (status != VR_OK || verified.image_bytes != bytes || verified.block_count * 32 != hashBytes) return false;
+
+  gRootDiagnostic.stage = "policy table object";
+  uint64_t lba = 0;
+  if (!policyTableLba (label, hashBytes, &lba)) return false;
+  const uint64_t pages = (hashBytes + 4095) / 4096;
+  tableHashBytes = round_page (static_cast<vm_size_t> (pages * 32));
+  tableIndexBytes = round_page (static_cast<vm_size_t> (pages * sizeof (uint32_t)));
+  gRootDiagnostic.stage = "policy page hash allocation";
+  if (kmem_alloc (kernel_map, &tableHashStorage, tableHashBytes, static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA),
+                  VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
+    tableHashStorage = 0;
+    return false;
+  }
+  __atomic_fetch_add (&native_ufs_vroot_wired_bytes, tableHashBytes, __ATOMIC_RELAXED);
+  if (kmem_alloc (kernel_map, &tableIndexStorage, tableIndexBytes, static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA | KMA_ZERO),
+                  VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
+    tableIndexStorage = 0;
+    return false;
+  }
+  __atomic_fetch_add (&native_ufs_vroot_wired_bytes, tableIndexBytes, __ATOMIC_RELAXED);
+
+  gRootDiagnostic.stage = "policy table object read";
+  uint8_t *pageHashes = reinterpret_cast<uint8_t *> (tableHashStorage);
+  uint8_t digest[32];
+  if (!hashPolicyTable (lba, hashBytes, gScratch, pageHashes, nullptr, digest)) return false;
+  gRootDiagnostic.stage = "owner signature and hash table";
+  if (!vrootSame (digest, header + 88, 32)) {
+    gRootDiagnostic.verify = VR_HASH_TABLE;
+    return false;
+  }
+  gRootDiagnostic.stage = "policy read-only protection";
+  if (mach_vm_protect (kernel_map, tableHashStorage, tableHashBytes, TRUE, VM_PROT_READ) != KERN_SUCCESS) return false;
+  gRootDiagnostic.stage = "policy table cache allocation";
+  if (!vrootCacheReady ()) return false;
+  table.pageHashes = pageHashes;
+  table.where = reinterpret_cast<uint32_t *> (tableIndexStorage);
+  table.tableBytes = hashBytes;
+  table.pages = pages;
+  table.firstLba = lba;
+  verifiedReady = true;
+  return true;
+}
 
 bool NativeUfsBlock::configureVerification ()
 {
@@ -1779,6 +2304,7 @@ bool NativeUfsBlock::configureVerification ()
       return false;
     }
     hashBytes = count * 32;
+    if (vrootCacheWanted ()) return configureCachedTable (manifest, hashBytes);
     manifestBytes += hashBytes;
   }
   gRootDiagnostic.stage = "policy storage";
@@ -1791,8 +2317,10 @@ bool NativeUfsBlock::configureVerification ()
   gRootDiagnostic.stage = "policy allocation";
   if (kmem_alloc (kernel_map, &verifiedStorage, verifiedStorageBytes,
                   static_cast<kma_flags_t> (KMA_KOBJECT | KMA_DATA), VM_KERN_MEMORY_SECURITY) != KERN_SUCCESS) {
+    verifiedStorage = 0;
     return false;
   }
+  __atomic_fetch_add (&native_ufs_vroot_wired_bytes, verifiedStorageBytes, __ATOMIC_RELAXED);
   if (headerOnly) {
     memcpy (reinterpret_cast<void *> (verifiedStorage), manifest, VR_HEADER_BYTES + VR_SIGNATURE_BYTES);
     gRootDiagnostic.stage = "policy table object read";
@@ -1814,12 +2342,32 @@ bool NativeUfsBlock::configureVerification ()
   int status = vr_open (reinterpret_cast<const uint8_t *> (verifiedStorage), manifestBytes, key, 1,
                         &vr_xnu_crypto, &verified);
   gRootDiagnostic.verify = static_cast<uint32_t> (status);
-  return status == VR_OK && verified.image_bytes == bytes;
+  verifiedReady = status == VR_OK && verified.hashes && verified.image_bytes == bytes;
+  return verifiedReady;
 }
 
-bool NativeUfsBlock::authenticatesVolume (const char *uuid, uint8_t *manifestDigest) const
+bool NativeUfsBlock::cachedEnvelopeDigest (uint8_t out[48])
 {
-  if (!uuid || !online || !verifiedStorage || !verified.hashes) {
+  if (!envelopeDigestReady) {
+    // Thread context (the root mount); the buffer is the query's own, not the bring-up scratch.
+    uint8_t *buffer = static_cast<uint8_t *> (IOMallocData (kDataMax));
+    if (!buffer) return false;
+    uint8_t whole[32], envelope[48];
+    const uint8_t *header = reinterpret_cast<const uint8_t *> (verifiedStorage);
+    const bool ok = hashPolicyTable (table.firstLba, table.tableBytes, buffer, nullptr, header, whole, envelope) &&
+                    vrootSame (whole, header + 88, 32);
+    IOFreeData (buffer, kDataMax);
+    if (!ok) return false;
+    memcpy (envelopeDigest, envelope, sizeof (envelope));
+    __atomic_store_n (&envelopeDigestReady, true, __ATOMIC_RELEASE);
+  }
+  memcpy (out, envelopeDigest, sizeof (envelopeDigest));
+  return true;
+}
+
+bool NativeUfsBlock::authenticatesVolume (const char *uuid, uint8_t *manifestDigest)
+{
+  if (!uuid || !online || !verifiedReady) {
     return false;
   }
   static const char hex[] = "0123456789ABCDEF";
@@ -1836,7 +2384,9 @@ bool NativeUfsBlock::authenticatesVolume (const char *uuid, uint8_t *manifestDig
   if (strcmp (uuid, expected)) {
     return false;
   }
-  if (manifestDigest) {
+  if (manifestDigest && !verified.hashes) {
+    if (!cachedEnvelopeDigest (manifestDigest)) return false;
+  } else if (manifestDigest) {
     // Hash only the authenticated envelope, excluding allocation padding and the key.
     const uint64_t envelope = VR_HEADER_BYTES + VR_SIGNATURE_BYTES + verified.block_count * 32;
     SHA384_CTX context;
@@ -1849,7 +2399,7 @@ bool NativeUfsBlock::authenticatesVolume (const char *uuid, uint8_t *manifestDig
 
 bool NativeUfsBlock::signedVolumeUuid (char out[37]) const
 {
-  if (!verifiedStorage || !verified.hashes) {
+  if (!verifiedReady) {
     return false;
   }
   static const char hex[] = "0123456789ABCDEF";
@@ -1879,9 +2429,18 @@ extern "C" int native_ufs_block_authenticates (IOService *provider, const char *
 
 bool NativeUfsBlock::start (IOService *provider)
 {
-  if (!bounce || !windowLock || !IOBlockStorageDevice::start (provider)) {
+  if (!bounceFree || !windowLock || !IOBlockStorageDevice::start (provider)) {
     return false;
   }
+  // The medium is flash. IOMediaBSDClient answers DKIOCISSOLIDSTATE from this dictionary, found from any media above this device;
+  // without it XNU treats the disk as rotating (throttle periods, read-ahead and page-in cluster sizes, the mount's MNTK_SSD).
+  OSDictionary *characteristics = OSDictionary::withCapacity (1);
+  OSString *medium = OSString::withCString (kIOPropertyMediumTypeSolidStateKey);
+  if (characteristics && medium && characteristics->setObject (kIOPropertyMediumTypeKey, medium)) {
+    setProperty (kIOPropertyDeviceCharacteristicsKey, characteristics);
+  }
+  OSSafeReleaseNULL (medium);
+  OSSafeReleaseNULL (characteristics);
   online = true;
   registerService ();
   return true;
@@ -1901,13 +2460,13 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     return kIOReturnNotReady;
   }
   struct Operations {
-    IOLock *mutex;
     IOMemoryDescriptor *buffer;
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
     const vr_view *view;
+    const VrootTable *table;   // cached table mode when view->hashes is null
 #endif
-    void lock () { IOLockLock (mutex); }
-    void unlock () { IOLockUnlock (mutex); }
+    void lock () {}     // the request's own bounce buffer holds its snapshot
+    void unlock () {}
     IOReturn read (uint64_t lba, uint32_t blocks, void *out) {
       uint64_t t0 = timerTicks ();
       IOReturn r = hostRead4k (0, lba, blocks, out);
@@ -1917,7 +2476,13 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
     IOReturn verify (uint64_t index, const void *data, size_t length) {
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
       uint64_t t0 = timerTicks ();
-      int status = vr_verify_block (view, index, data, length, &vr_xnu_crypto);
+      int status;
+      if (view->hashes) {
+        status = vr_verify_block (view, index, data, length, &vr_xnu_crypto);
+      } else {
+        VrootKernelOps ops;
+        status = vrootVerifyBlock (gVrootCache, ops, *table, *view, index, data, length, &vr_xnu_crypto);
+      }
       __atomic_fetch_add (&native_ufs_verify_ticks, timerTicks () - t0, __ATOMIC_RELAXED);
       if (status != VR_OK) {
         gRootDiagnostic.stage = "read block integrity";
@@ -1941,12 +2506,18 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
       if (copied == length) __atomic_fetch_add (&native_ufs_block_reads, 1, __ATOMIC_RELAXED);
       return copied;
     }
-  } operations = { windowLock, buffer
+  } operations = { buffer
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
-    , &verified
+    , &verified, &table
 #endif
   };
+  const uint64_t entered = mach_absolute_time ();
+  uint8_t *bounce = takeBounce ();
   UfsWindowResult outcome = ufsReadWindow (operations, absolute, bytes, block, count, bounce);
+  giveBounce (bounce);
+  __atomic_fetch_add (&gWindowRequests, 1, __ATOMIC_RELAXED);
+  __atomic_fetch_add (&gWindowBytes, outcome.done, __ATOMIC_RELAXED);
+  __atomic_fetch_add (&gWindowTicks, mach_absolute_time () - entered, __ATOMIC_RELAXED);
   IOReturn result = outcome.status;
   uint64_t done = outcome.done;
   if (result != kIOReturnSuccess) {
@@ -1958,18 +2529,97 @@ IOReturn NativeUfsBlock::doAsyncReadWrite (IOMemoryDescriptor *buffer, UInt64 bl
   return kIOReturnSuccess;
 }
 
+// One row of command and wait statistics for the board's log. It only reads counters, so any context may call it.
+//   direct, staged    data commands straight to or from the caller's pages, and through the slot's data area with a copy
+//   busy              commands the device answered with BUSY or TASK SET FULL and the driver sent again
+//   long k/n          the longest store call (native_ufs_store_max_ticks): r read, w write, s cache flush, and its blocks
+//   pauses n/us       IODelay (2) poll pauses of the completion waits and their total time (2 us each where the delay spins)
+//   spins n/us        spinning poll pauses (one WFE each) and their total time
+//   yields            spins that ended in a sleep because a preemption was pending on the CPU
+//   done a/b/c/d/e    waits whose command completed under 50, 100, 200, 400 us after the wait began, and later
+//   old ms/op/slot    the oldest command in flight now: its age, opcode (hex) and slot; old=0 when none is out
+//   takers            threads waiting for a free command slot now
+//   poison p/r/op     1 once a command timed out or the controller reported a fatal error (every later command is refused), with
+//                     that command's IOReturn and opcode (hex)
+//   irqs, sleeps      completion interrupts taken, and waits that slept for one
+//   wakes n/us max    sleeps the interrupt ended, the total and the longest time from the interrupt to the waiter running again
+//   timeouts          sleeps that ended on their 1 ms timeout instead
+//   win n/MiB/ms      root window requests, their bytes and their time (bounce wait, reads, block verification, copy)
+//   wait n/ms         root window requests that waited for a bounce buffer, and the time they waited
+//   vb                integrity blocks verified
+//   vt h/m/r/e/w/f    verified-root table cache: hits, misses, table page reads, evictions, waits for a page or entry being
+//                     filled, refused table pages (read error or hash mismatch); all 0 with native-vroot-cache=0
+//   vtc n/KiB         table cache pages (0 when every whole table is wired) and wired verified-root bytes (policies, tables or
+//                     page hashes and index, cache) in KiB
+extern "C" void native_ufs_stats_text (char *out, size_t size)
+{
+  if (!out || !size) return;
+  const auto us = [] (uint64_t ticks) { uint64_t ns = 0; absolutetime_to_nanoseconds (ticks, &ns); return static_cast<unsigned long long> (ns / 1000); };
+  const auto count = [] (const volatile uint64_t &value) { return static_cast<unsigned long long> (__atomic_load_n (&value, __ATOMIC_RELAXED)); };
+#if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+  const unsigned long long verified = count (native_ufs_verified_blocks);
+  const VrootCacheStats &vt = gVrootCache.stats;
+  const unsigned long long vtHits = count (vt.hits), vtMisses = count (vt.misses), vtReads = count (vt.reads),
+                           vtEvictions = count (vt.evictions), vtWaits = count (vt.waits), vtFailures = count (vt.failures),
+                           vtPages = gVrootCache.count, vtWiredKiB = count (native_ufs_vroot_wired_bytes) >> 10;
+#else
+  const unsigned long long verified = 0, vtHits = 0, vtMisses = 0, vtReads = 0, vtEvictions = 0, vtWaits = 0, vtFailures = 0,
+                           vtPages = 0, vtWiredKiB = 0;
+#endif
+  const uint32_t kind = __atomic_load_n (&gStoreMaxKind, __ATOMIC_RELAXED);
+  uint64_t spins = 0, spinTicks = 0, oldest = 0;
+  unsigned oldSlot = 0;
+  for (unsigned slot = 0; slot < kSlots; ++slot) { spins += gSlotSpin[slot].pauses; spinTicks += gSlotSpin[slot].ticks; }
+  const uint64_t now = mach_absolute_time ();
+  for (unsigned slot = 0; slot < kSlots; ++slot) {
+    const uint64_t at = __atomic_load_n (&gSlotIssuedAt[slot], __ATOMIC_RELAXED);
+    if (at && at < now && now - at > oldest) { oldest = now - at; oldSlot = slot; }
+  }
+  snprintf (out, size, "UFS direct=%llu staged=%llu busy=%llu long=%c/%u pauses=%llu/%lluus spins=%llu/%lluus yields=%llu "
+            "done=%llu/%llu/%llu/%llu/%llu old=%llu/%x/%u takers=%u poison=%u/%x/%x irqs=%llu sleeps=%llu wakes=%llu/%lluus "
+            "max=%lluus timeouts=%llu win=%llu/%lluM/%llums wait=%llu/%llums vb=%llu vt=%llu/%llu/%llu/%llu/%llu/%llu vtc=%llu/%llu",
+            count (gDirectCommands), count (gStagedCommands), count (gBusyRetries), kind ? static_cast<char> (kind) : '-',
+            __atomic_load_n (&gStoreMaxBlocks, __ATOMIC_RELAXED), count (gWaitPauses), us (count (gWaitPauseTicks)),
+            static_cast<unsigned long long> (spins), us (spinTicks), count (gWaitYields), count (gWaitRange[0]), count (gWaitRange[1]),
+            count (gWaitRange[2]), count (gWaitRange[3]), count (gWaitRange[4]), us (oldest) / 1000,
+            oldest ? gSlotOpcode[oldSlot] : 0U, oldest ? oldSlot : 0U, gSlotWaitersNow, gHost.poisoned ? 1U : 0U,
+            gHost.poisoned ? gRootDiagnostic.result : 0U, gHost.poisoned ? gRootDiagnostic.opcode : 0U,
+            count (native_ufs_irqs), count (native_ufs_irq_sleeps), count (gIrqWakes), us (count (gIrqWakeTicks)),
+            us (count (gIrqWakeMaxTicks)), count (gIrqTimeouts), count (gWindowRequests), count (gWindowBytes) >> 20,
+            us (count (gWindowTicks)) / 1000, count (gBounceWaits), us (count (gBounceWaitTicks)) / 1000, verified,
+            vtHits, vtMisses, vtReads, vtEvictions, vtWaits, vtFailures, vtPages, vtWiredKiB);
+}
+
 void NativeUfsBlock::free ()
 {
 #if defined(NATIVE_VERIFIED_BLOCK) && NATIVE_VERIFIED_BLOCK
+  if (table.where) {
+    VrootKernelOps ops;
+    vrootTableDrop (gVrootCache, ops, table);
+    table = {};
+  }
+  if (tableHashStorage) {
+    kmem_free (kernel_map, tableHashStorage, tableHashBytes);
+    __atomic_fetch_sub (&native_ufs_vroot_wired_bytes, tableHashBytes, __ATOMIC_RELAXED);
+    tableHashStorage = 0;
+  }
+  if (tableIndexStorage) {
+    kmem_free (kernel_map, tableIndexStorage, tableIndexBytes);
+    __atomic_fetch_sub (&native_ufs_vroot_wired_bytes, tableIndexBytes, __ATOMIC_RELAXED);
+    tableIndexStorage = 0;
+  }
   if (verifiedStorage) {
     kmem_free (kernel_map, verifiedStorage, verifiedStorageBytes);
+    __atomic_fetch_sub (&native_ufs_vroot_wired_bytes, verifiedStorageBytes, __ATOMIC_RELAXED);
     verifiedStorage = 0;
   }
+  verifiedReady = false;
 #endif
-  if (bounce) {
-    IOFree (bounce, kDataMax);
-    bounce = nullptr;
+  for (unsigned k = 0; k < kBounces; ++k) {
+    if (bounces[k]) IOFree (bounces[k], kDataMax);
+    bounces[k] = nullptr;
   }
+  bounceFree = 0;
   if (windowLock) {
     IOLockFree (windowLock);
     windowLock = nullptr;
@@ -2016,25 +2666,24 @@ static bool mediaWithUuidExists (const char *uuid, NativeUfsBlock *window)
   return found;
 }
 
-static void captureMissingMedia (const char *uuid)
+// What sits below the window in the service plane, matched or not (getMatchingServices lists only services whose matching has
+// finished, so media held up in matching would not show): each entry's class, BSD name, busy count and whether its matching is done.
+static void captureMissingMedia (const char *uuid, IOService *window)
 {
   int used = snprintf (gRootMediaText, sizeof (gRootMediaText), "Waiting for signed UUID %s\n", uuid);
-  OSDictionary *matching = IOService::serviceMatching ("IOMedia");
-  OSIterator *iterator = matching ? IOService::getMatchingServices (matching) : nullptr;
+  IORegistryIterator *children = window ? IORegistryIterator::iterateOver (window, gIOServicePlane, kIORegistryIterateRecursively) : nullptr;
   unsigned count = 0;
-  while (iterator && used < int (sizeof (gRootMediaText)) - 180 && count++ < 8) {
-    IOService *media = OSDynamicCast (IOService, iterator->getNextObject ());
-    if (!media) break;
-    OSString *id = OSDynamicCast (OSString, media->getProperty ("UUID"));
-    OSString *bsd = OSDynamicCast (OSString, media->getProperty (kIOBSDNameKey));
-    OSNumber *size = OSDynamicCast (OSNumber, media->getProperty ("Size"));
-    used += snprintf (gRootMediaText + used, sizeof (gRootMediaText) - used,
-                      "media %.24s bytes=%llx uuid=%.36s\n",
-                      bsd ? bsd->getCStringNoCopy () : "-", size ? size->unsigned64BitValue () : 0ULL,
+  while (children && used < int (sizeof (gRootMediaText)) - 160 && count++ < 8) {
+    IOService *entry = OSDynamicCast (IOService, children->getNextObject ());
+    if (!entry) break;
+    OSString *id = OSDynamicCast (OSString, entry->getProperty ("UUID"));
+    OSString *bsd = OSDynamicCast (OSString, entry->getProperty (kIOBSDNameKey));
+    used += snprintf (gRootMediaText + used, sizeof (gRootMediaText) - used, "%.32s %.12s busy=%u matched=%u uuid=%.36s\n",
+                      entry->getMetaClass ()->getClassName (), bsd ? bsd->getCStringNoCopy () : "-", entry->getBusyState (),
+                      entry->isInactive () ? 2u : (entry->getState () & kIOServiceMatchedState) ? 1u : 0u,
                       id ? id->getCStringNoCopy () : "-");
   }
-  OSSafeReleaseNULL (iterator);
-  OSSafeReleaseNULL (matching);
+  OSSafeReleaseNULL (children);
 }
 
 // Used only for objects that were never started/published. Started objects
@@ -2073,10 +2722,19 @@ static void publishThread (void *, wait_result_t)
       for (unsigned tick = 0; tick <= 300; ++tick) {
         ready = mediaWithUuidExists (uuid, device);
         if (ready || tick == 300) break;
+        if (tick && tick % 50 == 0) {
+          // Every 5 s: what the IOKit side has published so far, and whether the window's own matching is still busy.
+          captureMissingMedia (uuid, device);
+          IOLog ("NativeUfs: %s volume %s still missing after %u s, window busy %u\n%s", device->windowLabel (), uuid,
+                 tick / 10, device->getBusyState (), gRootMediaText);
+        }
         IOSleep (100);
       }
       IOLog ("NativeUfs: %s volume %s %s\n", device->windowLabel (), uuid, ready ? "ready" : "not ready");
-      if (!ready) captureMissingMedia (uuid);
+      if (!ready) {
+        captureMissingMedia (uuid, device);
+        IOLog ("NativeUfs: media at timeout, window busy %u\n%s", device->getBusyState (), gRootMediaText);
+      }
       return ready;
     }
     void discard (unsigned index) { discardPendingWindow (index); }
