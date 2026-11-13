@@ -4950,3 +4950,19 @@ The way to initialise it is `sheng-data-reset=1` (the boot menu's Install and bo
 One boot with it writes this seed into the store; a second boot without it should then report the store's own header
 instead of 'holds no Data of this seed', and the containers, preferences and LaunchServices state that this port has
 been recreating at every boot should survive.
+## 19:15: the store initialisation ran
+
+Booted the image carrying `sheng-data-reset=1` (sha `d1064ce17e450cf77d86c8dc2e9d3857b2cd9b0903afa28c92b4b6c2f9dfbc0c`):
+
+    NativeRamBlock: attachStore gate: mode=2 ... open=1 read=1 write=1 sync=1 gpt=1
+    (no 'holds no Data of this seed' line this time)
+    frames: 3, no panic
+
+so the request to start the store over was taken: the run that previously reported an empty store of this seed now
+reports nothing because the seed was written into it.
+
+The verification image is staged without the switch
+(`boot-verify.img`, sha `2d719030c8b51e60f8d8e0e2bcfe2a3960146e2db39cb9c272fdcc48a75f6ef8`): a boot with it should
+either stay silent (the store holds this seed) or name a different header, and — the point of the whole exercise —
+the containers, preferences and LaunchServices state that this port has been rebuilding at every boot should then
+survive a second boot.
