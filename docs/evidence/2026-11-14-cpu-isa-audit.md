@@ -64,3 +64,44 @@ SM8250 同理。所以补丁注释把 4/3/1 挂在 `MAX_CPUS` 上描述**容易�
 1. 改 `zzz-max-cpus-8.patch` 注释为：`8 cores, flat MPIDR 0x000..0x700; the 4/3/1 grouping is cache topology`；
 2. 增加一次 `ml_get_cpu_number` 映射打印，确认 8 核选择覆盖全部物理核；
 3. 若确认真机 cpu7 是 A77，则在设备清单里注明"prime 核 MIDR 报 A77"而不是 X1。
+
+## 追加：ARM 架构特性寄存器是否被篡改（QEMU 结论的核对）
+
+说法：若内核向用户态暴露的 ID_AA64ISAR0_EL1（LSE 原子）、CTR_EL0（缓存行）与实际硬件不符，
+libdispatch 可能走到不同的原子操作路径，从而出现「消息入队却不唤醒」这类症状。
+
+逐层核对，本端口不存在这个机制。
+
+### 固件（Silicium SEC, uefi-instantnoodlep）
+
+SetupExceptionLevel2 只做三件事：
+- sctlr_el2 = 0
+- hcr_el2 |= FIQ|IRQ|SERROR（把中断路由到 EL2）
+- cptr_el2 = AARCH64_CPTR_DEFAULT（放行 FP/SIMD）
+没有设置 HCR_EL2.TID0/TID2/TID3，因此 ID 寄存器不被 trap。
+ArmLib.c 用 CTR_EL0.DminLine 做缓存维护，这是读硬件，不是覆盖。
+
+### 内核（XNU）
+
+- ID_AA64ISAR0_EL1 只在 proc_reg.h 定义位域，没有任何写入
+- CTR_EL0 同样没有写入
+- SCTLR_UCT_ENABLED（bit 15，trap 用户态读 CTR_EL0）定义了但从未使用
+- arm64 代码里完全没有 HCR_EL2 操作（EL2 不归内核管）
+
+结论：用户态读到的就是硬件值，内核没有中间层。
+
+### 板级常量
+
+board_config.h（BCM2837 段）MAX_L2_CLINE = 6，即 64 字节，与 SM8250 的 A77/A55 L1D 一致，
+不存在 Apple 128 字节假设。
+
+### 结论
+
+这条假设在本端口不成立：从 SEC 固件到 XNU 再到用户态，两个寄存器都是直接读硬件。
+若 QEMU 夹具观察到差异，更可能是夹具自身的 CPU 模型不同，而不是真机路径。
+
+### 仍值得做的一次确认
+
+真机早期打印 ID_AA64ISAR0_EL1 与 CTR_EL0 原始值，确认：
+- ID_AA64ISAR0_EL1.Atomic（bits 23:20）>= 2，即支持 LSE
+- CTR_EL0.DminLine（bits 19:16）= 4，即 64 字节
