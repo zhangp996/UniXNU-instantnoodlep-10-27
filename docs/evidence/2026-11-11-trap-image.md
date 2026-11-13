@@ -5769,3 +5769,33 @@ Not Mach port registration (armed), not the message queue (it holds the message)
 have knotes).  The wake path from `ipc_mqueue_post` into the **kqueue workloop** is the one component common to both
 failures, and the earlier `MPOST` trace already showed that branch never fires with a klist during a boot - which is
 consistent with the wake being attempted through the turnstile path instead, and failing there.
+## 00:10: the QEMU fixture inventory
+
+`qemu-system-aarch64` 6.2.0 is installed, and the framework carries a fixture harness under
+`scripts/qemu-entry/` (`entry.S`, `link.ld`, `bootshim-fixture.S`, `make-dt.py`, `native-user.S`, the
+`native-apfs-*.inc` instruments, `thread_snapshot.py`, `gdb-stop.py`, `ufs_allocation.py`, `verified-root-probe.c`).
+
+Three scripts use it:
+
+| script | what it does | runs here? |
+| --- | --- | --- |
+| `probe-stock-entry.py` | boots an unchanged Mach-O on QEMU virt (`-M virt -accel tcg`, `-device loader,...`), tests the instruction entry boundary | yes (Linux-safe) |
+| `build-native-user-fixture.py` | builds an ordinary ARM64 static Darwin process for EL0/SVC tests, including `--apfs-launchd-devices OS CACHE` which mounts two read-only APFS volumes, chroots, and execs **launchd** | yes (pure Python + clang) |
+| `probe-darwinboot-xnu.py` | boots the **real XNU kernel** after the DarwinBoot handoff, for offline kernel observation | **no** - it shells out to `xcrun nm`, so it is macOS-only as written |
+
+So a launchd fixture is not something to invent: `build-native-user-fixture.py --apfs-launchd-devices` **is** that
+fixture, and `native-apfs-launchd.inc` is its entry sequence.  What is missing on this host is a Linux runner for the
+kernel side of the pair.
+
+### What a launchd fixture would and would not buy
+
+- it would exercise `mount`, `chroot`, `exec`, thread switching and the EL0/SVC boundary against a real kernel,
+  with a GDB stub and a thread snapshot available, at QEMU speed;
+- it would **not** reproduce the ChronoServices stall: that needs the real dyld cache, libdispatch and the iOS
+  userland, which the fixture deliberately does not carry.
+
+### The smallest useful step
+
+Port `probe-darwinboot-xnu.py` to the Linux toolchain (replace `xcrun nm` with the bundled `llvm-nm`, as
+`build-xnu-4k-baseline.sh` already does), then boot this port's `mach.development.bcm2837.unstripped` in QEMU virt.
+Until that runs, the fixture harness cannot touch the kernel this port builds.
