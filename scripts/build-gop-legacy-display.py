@@ -215,7 +215,9 @@ while i<len(args):
     i+=1
 cmd+=['-Wall','-Wextra','-Wno-unused-parameter','-Wno-unnecessary-virtual-specifier','-Wno-c99-designator','-Wno-reorder-init-list',
       '-Wno-missing-designated-field-initializers','-Wno-error',
-      '-Wno-deprecated-enum-enum-conversion','-I',str(ROOT/'.cache/xnu-work/osfmk')]
+      '-Wno-deprecated-enum-enum-conversion','-I',str(ROOT/'.cache/xnu-work/osfmk'),
+      # IOUserClient2022 (the interface IOSurfaceRootUserClient answers on) is declared inside this guard.
+      '-DKERNEL_PRIVATE=1']
 run(cmd,cwd=r['directory'])
 # skipped for this board: hid_source=ROOT/'kits/sheng/HidInputProbe.cpp'
 hid_obj=OUT/'HidInputProbe.o'

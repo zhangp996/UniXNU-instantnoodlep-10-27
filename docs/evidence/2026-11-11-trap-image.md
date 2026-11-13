@@ -4175,3 +4175,22 @@ blockers:
 The comparison therefore confirms what the display page already states: the remaining work is the **default surface
 from the original IOSurfaceRoot factory**.  Nothing else in sheng is missing from this port's swap path - the
 presenter layer they add is the GPU handoff, which this board does not have yet.
+## 11:20: IOSurfaceRoot from the kernel - the client opens, the methods are refused
+
+With `-DKERNEL_PRIVATE=1` the probe can see `IOUserClient2022`, and the two-argument virtual removes the
+assertion the base-class entry hit:
+
+    DISPLAY: IOSurfaceRoot 0xfffffff6022b1700 newUserClient=0 client=0xfffffff51c00f9f0
+    DISPLAY: iosurf selector 0 rc=0xe00002c2 out=512
+    DISPLAY: iosurf selector 1 rc=0xe00002c2 out=512
+    DISPLAY: iosurf selector 2 rc=0xe00002c2 out=512
+    DISPLAY: iosurf selector 3 rc=0xe00002c2 out=512
+
+`newUserClient` returns success, but every selector answers `kIOReturnBadArgument` with the same value and the
+output buffer untouched, so the rejection happens before the selector is dispatched - a check on the arguments or
+on the calling context, not on our descriptor.  The XML descriptor itself names the keys the kext carries
+(`IOSurfaceWidth`, `IOSurfaceHeight`, `IOSurfaceBytesPerRow`, `IOSurfaceAllocSize`, `IOSurfacePixelFormat`,
+`IOSurfaceName`), so the key set is not the problem either.
+
+So the factory path is open at the connection but closed at the method.  `iosurface-create` is left off by default:
+the call costs a boot and does not change the surface the family uses.

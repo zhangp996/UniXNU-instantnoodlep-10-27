@@ -77,6 +77,14 @@ complete_swap_later(void)
  * renderer is not reached on this port, so the probe starts its own printer. */
 extern "C" char boot_process_rows[10][120];
 extern "C" char boot_ui_trace_rows[14][120];
+/* Both row arrays are only refreshed by these snapshot calls, which the diagnostic page makes; the page is
+ * not rendered here, so the printer performs them itself. */
+extern "C" void boot_process_snapshot(void);
+extern "C" void boot_ui_trace_snapshot(unsigned seconds);
+extern "C" int native_ls_store_drop_late(void);
+extern "C" int native_owner_setup_skip(void);
+extern "C" int native_probe_iosurface_root(void);
+extern "C" int native_create_iosurface(uint32_t, uint32_t, uint32_t, uint32_t);
 
 static void
 probe_rows_thread(void *, wait_result_t)
@@ -84,6 +92,35 @@ probe_rows_thread(void *, wait_result_t)
 	static char lastp[10][120], lastu[14][120];
 	for (;;) {
 		delay(4000000);
+		{
+			static unsigned tick;
+			boot_process_snapshot();
+			boot_ui_trace_snapshot(tick += 4);
+			/* The container tree only exists once the Data volume is up, so the LaunchServices store is
+			 * dropped from here as well, a minute into the boot. */
+			if (tick == 8) {
+				native_probe_iosurface_root();
+			}
+			if (tick == 12) {
+				unsigned create = 0;
+				/* Off by default: an IOUserClient2022 rejects the base-class externalMethod entry with
+				 * "wrong externalMethod" and panics in a development kernel. */
+				PE_parse_boot_argn("iosurface-create", &create, sizeof(create));
+				if (create == 1) {
+					native_create_iosurface(1080, 2376, 4352, 10342400);
+				}
+			}
+			/* Retry the drop every 40 s: the containers only appear once containermanagerd has made
+			 * them, which is well after the Data volume is mounted. */
+			if (tick >= 20 && (tick % 40) == 0) {
+				/* Re-run the Setup skip here: the early call runs before the Data volume covers
+				 * /private/var, so the container tree it creates is hidden by the mount. */
+				printf("DISPLAY: re-run the Setup skip on the mounted Data volume: %d\n",
+				    native_owner_setup_skip());
+				int st = native_ls_store_drop_late();
+				printf("DISPLAY: late ls-store drop status=%d (containers=%d)\n", st, st / 1000 >= 0 ? st % 1000 : -1);
+			}
+		}
 		for (unsigned i = 0; i < 10; i++) {
 			const char *row = boot_process_rows[i];
 			if (!row[0] || row[0] == ' ') continue;
@@ -926,4 +963,112 @@ native_owner_setup_skip(void)
 	printf("DISPLAY: setup-skip containers made=%u present=%u failed=%u prefs=%d/%d/%d\n",
 	    made, present, failed, purple_error, spring_error, migration_error);
 	return (failed || purple_error || spring_error || migration_error) ? 1 : 0;
+}
+
+/* Checklist step 4: supply the default surface through the original IOSurfaceRoot factory.  Its creation
+ * entry point is an IOUserClient external method, but both calls needed to reach it - IOService::newUserClient
+ * and IOUserClient::externalMethod - are virtual, so the kernel can dispatch them without linking any kext
+ * symbol.  First question: does IOSurfaceRoot hand a user client to the kernel task at all? */
+#include <IOKit/IOService.h>
+#include <IOKit/IOUserClient.h>
+
+extern "C" int
+native_probe_iosurface_root(void)
+{
+	IOService *root = IOService::waitForMatchingService(IOService::serviceMatching("IOSurfaceRoot"), 1000000000ULL);
+	if (!root) {
+		printf("DISPLAY: IOSurfaceRoot not found\n");
+		return -1;
+	}
+	IOUserClient *client = nullptr;
+	IOReturn status = root->newUserClient(current_task(), nullptr, 0, nullptr, &client);
+	printf("DISPLAY: IOSurfaceRoot %p newUserClient=%d client=%p\n", root, (int)status, client);
+	if (client) {
+		client->release();
+	}
+	root->release();
+	return (int)status;
+}
+
+/* Second half of the factory path: ask the client to create the surface with the GOP geometry.  The
+ * descriptor is the serialized property dictionary IOSurfaceRootUserClient takes in structureInput; the
+ * reply carries the surface number.  A wrong descriptor shows up as a specific error, which is itself the
+ * answer we need from the first attempt. */
+extern "C" int
+native_create_iosurface(uint32_t width, uint32_t height, uint32_t stride, uint32_t alloc)
+{
+	static const char plist_head[] =
+	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+	    "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">"
+	    "<plist version=\"1.0\"><dict>"
+	    "<key>IOSurfaceWidth</key><integer>";
+	static const char plist_mid1[] = "</integer><key>IOSurfaceHeight</key><integer>";
+	static const char plist_mid2[] = "</integer><key>IOSurfaceBytesPerElement</key><integer>4</integer>"
+	    "<key>IOSurfaceBytesPerRow</key><integer>";
+	static const char plist_mid3[] = "</integer><key>IOSurfaceAllocSize</key><integer>";
+	static const char plist_tail[] = "</integer><key>IOSurfacePixelFormat</key><integer>1111970369</integer>"
+	    "<key>IOSurfaceName</key><string>PurpleGfxMem</string>"
+	    "<key>IOSurfaceMemoryRegion</key><string>PurpleGfxMem</string>"
+	    "</dict></plist>";
+	char plist[768];
+	int len = snprintf(plist, sizeof(plist), "%s%u%s%u%s%u%s%u%s",
+	    plist_head, (unsigned)width, plist_mid1, (unsigned)height, plist_mid2,
+	    (unsigned)stride, plist_mid3, (unsigned)alloc, plist_tail);
+	if (len <= 0 || (size_t)len >= sizeof(plist)) {
+		printf("DISPLAY: iosurface descriptor too long\n");
+		return -1;
+	}
+
+	IOService *root = IOService::waitForMatchingService(IOService::serviceMatching("IOSurfaceRoot"), 1000000000ULL);
+	if (!root) {
+		printf("DISPLAY: IOSurfaceRoot not found\n");
+		return -1;
+	}
+	IOUserClient *client = nullptr;
+	IOReturn status = root->newUserClient(current_task(), nullptr, 0, nullptr, &client);
+	if (status || !client) {
+		printf("DISPLAY: newUserClient failed %d\n", (int)status);
+		root->release();
+		return (int)status;
+	}
+	char reply[512];
+	IOExternalMethodArguments args = {};
+	args.version = kIOExternalMethodArgumentsCurrentVersion;
+	args.selector = 0;	/* kIOSurfaceRootUserClientCreateSurface */
+	args.structureInput = plist;
+	args.structureInputSize = (IOByteCount)len;
+	args.structureOutput = reply;
+	args.structureOutputSize = sizeof(reply);
+	/* IOSurfaceRootUserClient is an IOUserClient2022, which answers on its own two-argument virtual
+	 * instead of the legacy externalMethod(selector, args, dispatch, ...) entry. */
+#if defined(KERNEL_PRIVATE) && KERNEL_PRIVATE
+	IOReturn rc = kIOReturnError;
+	for (uint32_t sel = 0; sel < 4; sel++) {
+		IOExternalMethodArguments probe = {};
+		probe.version = kIOExternalMethodArgumentsCurrentVersion;
+		probe.selector = sel;
+		probe.structureInput = plist;
+		probe.structureInputSize = (IOByteCount)len;
+		probe.structureOutput = reply;
+		probe.structureOutputSize = sizeof(reply);
+		IOReturn r = ((IOUserClient2022 *)client)->externalMethod(sel,
+		    (IOExternalMethodArgumentsOpaque *)(void *)&probe);
+		printf("DISPLAY: iosurf selector %u rc=0x%x out=%llu\n", (unsigned)sel, (unsigned)r,
+		    (unsigned long long)probe.structureOutputSize);
+		if (sel == 0) {
+			rc = r;
+		}
+	}
+#else
+	IOReturn rc = client->externalMethod(0, &args, nullptr, nullptr);
+#endif
+	printf("DISPLAY: createSurface selector 0 rc=0x%x in=%u out=%llu\n", (unsigned)rc, (unsigned)len,
+	    (unsigned long long)args.structureOutputSize);
+	if (rc == kIOReturnSuccess && args.structureOutputSize > 0) {
+		reply[sizeof(reply) - 1] = 0;
+		printf("DISPLAY: createSurface reply: %.160s\n", reply);
+	}
+	client->release();
+	root->release();
+	return (int)rc;
 }
