@@ -4821,3 +4821,24 @@ path is the feed's `ShengUfs`.
 Both are configuration-level, not display- or kernel-level, and both are cheap to correct: register and select the
 driver that is actually maintained here (or move the diagnostics into `ShengUfs`), and make the store window open
 before adding any further userland workaround.
+## 18:00: selecting the maintained driver is blocked by a compiler crash, not by configuration
+
+`KonaUfs` was registered in the framework catalog and selected in `board.toml` (component in `include`, archive
+switched from `component:ShengUfs`).  The build then failed inside the component step:
+
+    clang-24: error: clang frontend command failed due to signal
+    ... clang::Parser::ParseExternalDeclaration ... ParseAST ...
+
+an ICE in the parser while compiling `drivers/KonaUfs/NativeUfs.cpp` through `build-arm-driver.py`.  The archive
+builds fine by other routes, so the source is not obviously wrong; the component path's flag set is what trips
+clang-24.  That is the same shape as the failure seen when registering `Adreno650` as a component earlier today.
+
+Configuration is therefore done - catalog entry added, board selects it - and the remaining blocker is the build
+path.  The board is back on `ShengUfs` (green: kernel `09a58210...`, the driver that actually runs today) so the
+port stays bootable while that is settled.
+
+Two ways forward, and they are not equivalent:
+
+1. make `drivers/KonaUfs/NativeUfs.cpp` parse under the component flag set (bisect the flags, or split the file);
+2. retire `drivers/KonaUfs` and carry the store-window diagnostics in the `ShengUfs` feed this board already runs,
+   which is what the reference board does with its own drivers.
