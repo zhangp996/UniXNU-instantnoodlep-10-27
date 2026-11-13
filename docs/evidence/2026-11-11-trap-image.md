@@ -5859,3 +5859,26 @@ It is now **runnable on this host** - macOS toolchain dependency removed, firmwa
 and one small step from attempting the boot: export (or teach the probe to skip) those two symbols.  Worth noting that
 even when it boots, the fixture cannot reproduce the ChronoServices stall: it carries neither the dyld cache nor
 libdispatch, which is where the stall lives.
+## 00:35: the QEMU probe reaches its GDB inspection step and stops there
+
+Ported the probe's host tools (LLVM `nm`/`dwarfdump` instead of `xcrun`, with `UNIXNU_NM`/`UNIXNU_DWARFDUMP`
+overrides), supplied `UniXNU.efi` and `DarwinBoot.efi` from this machine's own UEFI build, filtered the inspected
+globals to the ones this kernel actually exports, installed `gdb-multiarch` (absent until now), and linked it as `gdb`.
+
+The probe now gets through the kernel audit, builds the synthetic QEMU device tree (1084 bytes, 62.5 MHz timebase),
+and fails at its GDB memory-inspection step: a command carrying several hundred `--read-memory <addr>:<len>`
+arguments exits with status 2 before QEMU ever runs the kernel.
+
+So the QEMU route is **close but not running**: the remaining work is inside the probe's own inspection harness
+(argument delivery to GDB), not in this port's kernel or firmware.
+
+### Honest assessment
+
+The fixture harness is a research tool with assumptions from the reference board's build (global names, GDB wiring,
+firmware layout).  Making it boot this port's kernel is a project of its own, and even then it cannot reproduce the
+ChronoServices stall, which needs the dyld cache and libdispatch that the fixture deliberately excludes.  The phone
+remains the only environment where that question can be answered.
+
+Framework-side changes made for this (in `UniXNU/scripts`, not the device repo): `_host_tool()` in
+`probe-darwinboot-xnu.py` and `audit-xnu-kernel.py`, filtered global inspection, and the two display globals now
+conditional.
