@@ -4929,3 +4929,24 @@ window stays closed: the decision has moved out of the driver and into `RamBlock
 
 with `mode` from `sheng-data-persist=2`.  Printing those five inputs from `attachStore` is the next measurement, and
 it is a change to the RamBlock submodule rather than to this repository.
+## 19:10: the persistent store opens; what it lacks is a first initialisation
+
+The gate diagnostic answers it in one line:
+
+    NativeRamBlock: attachStore gate: mode=2 pages=... isBig=0 open=1 read=1 write=1 sync=1 gpt=1
+
+(the `pages` field is a pointer to the seed's page table, not a count - reading it as a number was my mistake), and
+immediately after it:
+
+    NativeRamBlock: the persistent store holds no Data of this seed (header 1); kept, Data runs from the seed:
+                    use Install and boot to start it over
+
+so every entry point the driver must provide is present, the window opens, and the store is read - it simply holds
+no data for this seed yet, and by design the system does not overwrite an existing store on its own.  Persistence is
+not broken; it has never been initialised.
+
+The way to initialise it is `sheng-data-reset=1` (the boot menu's Install and boot), which this image now carries
+(`bootEU.img` sha 19411158e72aedd1b86015adfc6e6f62b0e271b29b13f22867e7cbaac59784bc, command line 817 bytes).
+One boot with it writes this seed into the store; a second boot without it should then report the store's own header
+instead of 'holds no Data of this seed', and the containers, preferences and LaunchServices state that this port has
+been recreating at every boot should survive.
