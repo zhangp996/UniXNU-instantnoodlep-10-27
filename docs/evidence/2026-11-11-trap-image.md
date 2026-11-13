@@ -4460,3 +4460,28 @@ and what this port has that j716f does not: `amfi_get_out_of_my_way=1`, `native-
 
 So the record does not contradict this port's state - it reaches the desktop with a GPU path this board does not have
 yet - but it does not explain the ChronoServices stall either, because that stall happens before any drawing.
+## 15:45: what a direct port from j716f would actually take
+
+Both reference repositories were inspected.
+
+**uefi-j716f** publishes its display the same way this port does: `J716fInheritedFbDxe` inherits the framebuffer
+and states in its header that it programs 'no clock, panel, DSI, PMIC or SMMU'.  So the reference reaches the
+desktop with the same firmware hand-off, and its desktop therefore comes from the kernel-side GPU stack.
+
+**UniXNU-j716f** carries that stack:
+
+| piece | in this port? |
+| --- | --- |
+| `AdrenoPM4`, `AdrenoFirmware`, `ArmSmmu4K`, `AirNir` components | **yes**, all four are in the framework catalog |
+| `drivers/Adreno650` (532 KB, the A650 kernel driver) | **no** - the framework only ships `Adreno740` |
+| `scripts/build-adreno650.py` | no |
+| `scripts/build-j716f-gpu-addon.py` (NativeAdrenoMetal.bundle, owner-trust.bundle, gpu-addon-clients.bin, NGPUADD2) | no |
+| `pipa-gpu=12`, `sheng-fb-gpu=1`, `pipa-gpu-dcvs=1` arguments | no (`sheng-gpu-addon=1` is already set) |
+| device-tree GPU/SMMU/panel nodes | no |
+
+So a direct port is not a configuration change: it is the GPU subsystem - a kernel driver adaptation, a firmware
+and SMMU description for this board, and a userspace Metal addon with its own trust bundle.  The components that
+the framework already provides are the smaller half.
+
+It also would not by itself explain the current stall: SpringBoard blocks in a synchronous ChronoServices call
+before any drawing happens, and a GPU stack changes how frames are produced, not whether chronod is started.
