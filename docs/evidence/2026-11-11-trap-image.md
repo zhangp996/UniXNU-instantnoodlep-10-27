@@ -4336,3 +4336,24 @@ every time in the state the packer left the seed in.
 
 That is consistent with the ChronoServices deadlock: widget-extension registration is state that a real device
 keeps across boots, and here it is thrown away before whatever registers it can finish.
+## 13:10: sheng-no-lc and kprintf spam change nothing; the job write hit a read-only volume
+
+The build with `sheng-no-lc=1` (launch constraints cleared) and `-enable_kprintf_spam` boots exactly like the
+previous one:
+
+    SpringBoard p27  ipc_mqueue_receive_continue  peer=102 (= lsd)
+    lsd         p102 filt_wlwait_continue
+    frames: 3, UIT rows 232, PROC rows 213, chronod absent
+
+and the attempt to place a `RunAtLoad` copy of the chronod job on the writable Data volume failed before writing:
+
+    DISPLAY: chronod job on the Data volume: 30      (errno 30 = EROFS)
+
+`/Library` resolves into the read-only union of the root, not into the writable Data volume, so launchd never sees a
+second job definition.  The launch-constraint switch was never exercised: chronod is not spawned at all.
+
+### What is left for this thread
+
+Overlay a modified `/System/Library/LaunchDaemons/com.apple.chronod.plist` through the port's existing read-only
+union mount (`native_gpu_addon_mount`) so the job itself carries `RunAtLoad`, or teach the kernel to send the
+bootstrap lookup itself.  Neither is guaranteed: without knowing why launchd stays silent, both are probes.
