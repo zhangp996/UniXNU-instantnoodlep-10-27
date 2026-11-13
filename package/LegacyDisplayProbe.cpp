@@ -30,6 +30,21 @@ extern "C" IOService *native_legacy_display_allocate(void);
 extern "C" void native_legacy_display_probe(void);
 extern "C" void native_legacy_display_late_probe(void);
 extern "C" OSReturn OSKextLoadKextWithIdentifier(const char *);
+/* Board diagnostic: the logical index the kernel assigns to each physical MPIDR.  The staged SMP
+ * gate selects cores by logical index, so this mapping decides whether all eight physical cores are
+ * covered by sheng-smp-max.  Printed once, the first time the probe runs. */
+extern int ml_get_cpu_number(uint32_t phys);
+static void print_cpu_map_once(void)
+{
+	static bool done;
+	if (done) {
+		return;
+	}
+	done = true;
+	for (unsigned i = 0; i < 8; i++) {
+		printf("CPUMAP phys=%#x logical=%d\n", 0x100u * i, ml_get_cpu_number(0x100u * i));
+	}
+}
 static IOService *pendingDisplay;
 /* The published display, kept for the swap-completion call. */
 static IOService *gDisplay;
@@ -652,6 +667,7 @@ native_legacy_display_late_probe(void)
 	 * done by offline-mobile-graphics-load (offline-component-load-probes.patch), which then calls
 	 * native_legacy_display_probe(); this entry only records that ordering. */
 	printf("DISPLAY: late probe (load handled by offline-mobile-graphics-load)\n");
+	print_cpu_map_once();
 }
 
 

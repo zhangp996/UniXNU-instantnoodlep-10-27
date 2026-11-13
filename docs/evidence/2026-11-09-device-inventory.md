@@ -18,7 +18,7 @@ Commands below were run as root through Magisk.
 ## CPUs
 
 8 cores, MPIDR 0x000..0x700. cpu0-3: implementer 0x51, part 0x805 (Kryo 585
-Silver, A55 class). cpu4-7: implementer 0x41, part 0xd0d (Cortex-A77).
+Silver, A55 class). cpu4-7: implementer 0x41, part 0xd0d (Cortex-A77)。 （prime 核 MIDR 报 A77，非 X1；4/3/1 属缓存拓扑，见 2026-11-14-cpu-isa-audit.md）
 timebase 19.2 MHz (SoC DTSI). No FEAT_PAuth: the SoC is Armv8.2-A, so this
 board uses the arm64 profile, not arm64e.
 

@@ -105,3 +105,32 @@ board_config.h（BCM2837 段）MAX_L2_CLINE = 6，即 64 字节，与 SM8250 的
 真机早期打印 ID_AA64ISAR0_EL1 与 CTR_EL0 原始值，确认：
 - ID_AA64ISAR0_EL1.Atomic（bits 23:20）>= 2，即支持 LSE
 - CTR_EL0.DminLine（bits 19:16）= 4，即 64 字节
+
+## 01:10 (Nov 14): the CPU/ISA audit items are closed
+
+Three changes, all measured:
+
+1. **`zzz-max-cpus-8.patch` comment** now says:
+   `8 cores, flat MPIDR 0x000..0x700; the 4/3/1 grouping is cache topology`
+2. **A CPU mapping print** runs once from the board probe (`print_cpu_map_once` in
+   `package/LegacyDisplayProbe.cpp`); the first boot with it shows an identity mapping:
+
+       CPUMAP phys=0x000 logical=0
+       CPUMAP phys=0x100 logical=1
+       CPUMAP phys=0x200 logical=2
+       CPUMAP phys=0x300 logical=3
+       CPUMAP phys=0x400 logical=4
+       CPUMAP phys=0x500 logical=5
+       CPUMAP phys=0x600 logical=6
+       CPUMAP phys=0x700 logical=7
+
+   so `sheng-smp-max=7` **does** cover every physical core on this board, and the sibling port's
+   `ml_get_cpu_number(0x400) == 2` does not hold here.
+3. **The device inventory** now notes that the prime core's MIDR reports **A77**, not X1, and that the 4/3/1 grouping
+   belongs to cache topology.
+
+Image: `72cba24899ac3fcaf27d260bc8a1b37ef9caa6316f366320de7e2bd6bfb9ff86`.
+
+A useful negative result: `ml_cpu_init_completed()` is **never called** in this XNU tree (only declared and defined),
+so the first attempt at the mapping print, placed there, produced nothing at all - the probe is the reliable place for
+board-time instrumentation.

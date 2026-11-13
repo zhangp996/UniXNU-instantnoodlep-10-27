@@ -5,7 +5,7 @@
  
  #define MAX_L2_CLINE                   6
 -#define MAX_CPUS                       4
-+#define MAX_CPUS                       8 /* SM8250 has eight cores: four little, three big, one prime */
++#define MAX_CPUS                       8 /* 8 cores, flat MPIDR 0x000..0x700; the 4/3/1 grouping is cache topology */
  #define MAX_CPU_CLUSTERS               1
  
  #define CORE_NCTRS                     8 /* Placeholder; KPC is not enabled for this target */
