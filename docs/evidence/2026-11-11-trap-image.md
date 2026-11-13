@@ -5164,3 +5164,24 @@ The merged driver builds:
 
 Upstream still takes the SMMU over unconditionally (its `smmuBypassStream` call site is ungated), so the gate remains
 this board's only deviation - and the only reason it needs a local driver at all.
+## 20:15: the argument names were this port's, not the documented ones
+
+With the driver rebased on upstream, the first boot reported
+
+    NativeRamBlock: attachStore gate: mode=0 ...
+
+`mode` comes from the driver's `storeMode()`, and the upstream implementation reads **`data-persist`** - the name the
+reference documentation uses - while this board has been passing `sheng-data-persist` all along, a name only the
+forked driver ever read.  The same holds for `sheng-log` (`log`) and `sheng-log-reserve` (`log-reserve`), and upstream
+adds arguments this port has never passed (`native-vroot-cache`, `native-ufs-spin-us`, `native-ufs-wait`).
+
+So the command line has been speaking the fork's dialect.  Corrected to the documented names and extended with the
+verified-root table cache:
+
+    data-persist=2  log=1  native-vroot-cache=1
+
+command line 856 bytes, image `8adfa6e171bc8e09ca9e7611f8300e41c661345821a252fef750d22d274cfcc8`.
+
+This is the second place where the fork had drifted from the reference - the driver itself was 665 lines behind, and
+the arguments carried its private spelling.  Both are now aligned with upstream, with the SMMU gate as the board's
+only remaining deviation.
