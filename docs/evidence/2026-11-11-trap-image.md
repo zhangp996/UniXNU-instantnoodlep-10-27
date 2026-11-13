@@ -5430,3 +5430,31 @@ system completes: the log grows sixfold and SpringBoard carries nine threads ins
 With SMP, persistence, the upstream UFS driver, the documented argument names and the same Data-seed tool, this port's
 foundation now matches theirs.  What it does not have is PMGR, and the ChronoServices stall is unchanged by
 everything else.
+## 22:15: PMGR loads, and the stall survives it
+
+Implemented the PMGR step this port had never taken, in the only form possible without the missing ABI header:
+`package/PmgrLoad.c` loads the prelinked `com.apple.driver.ApplePMGR` kext when `sheng-pmgr` is non-zero, wired
+through `zzz-pmgr-run.patch` (the call in `bsd_init` before the calendar initialises), `CONFIG_XNU_SHENG_PMGR=y`, and a
+`build/sheng-platform-power/libShengPlatformPower.a` archive the kernel build force-loads.
+
+First boot with it:
+
+    PMGR: load result=0x0 mode=2        (KERN_SUCCESS)
+    6351 log lines, three frames
+    SpringBoard p27 n6-n7 r0 w6-w7, kernel side ipc_mqueue_receive_continue
+    chronod: absent
+
+so the platform now has its PMGR provider - the kext loads and the boot is stable - and the ChronoServices stall is
+unchanged.  That closes the last of the three things the sibling port has and this one did not (the other two were
+staged SMP, now working for three cores, and the Data seed, which this framework already builds the same way).
+
+Image: `97c97deb63ddad685a9de8f28275587a57451842b8c18e502b5e036f8f4ae86e`.
+
+### Where that leaves the port
+
+Foundation: SMP (three cores, staged selector), persistence, upstream UFS driver, documented argument names, PMGR
+loading.  Remaining difference to the sibling port: its 87-patch ladder (owner-root audit, c2 IPC tracing, r22-r31 GUI,
+r59-r74 Metal) - and the fact that its desktop is drawn through a GPU stack this port does not have.
+
+Open question, unchanged since the queue probe: a synchronous message on lsd's port (`q=1`) with no waiter and no
+turnstile (`w=0 t=0`) while lsd sits in `_kevent_id`.

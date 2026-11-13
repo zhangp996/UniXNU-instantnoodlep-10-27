@@ -228,6 +228,20 @@ for _i,_v in enumerate(_ks_cmd):
     elif str(_v).endswith('LegacyDisplayProbe.o'):
         _ks_cmd[_i]=str(OUT/'KeyStoreProbe.o')
 run(_ks_cmd,cwd=r['directory'])
+# PMGR loader: the framework's sheng-platform-power patch calls sheng_pmgr_run() under XNU_SHENG_PMGR.
+_pmgr_cmd=list(cmd)
+for _i,_v in enumerate(_pmgr_cmd):
+    if str(_v).endswith('LegacyDisplayProbe.cpp'):
+        _pmgr_cmd[_i]=str(ROOT/'package'/'PmgrLoad.c')
+    elif str(_v).endswith('LegacyDisplayProbe.o'):
+        _pmgr_cmd[_i]=str(OUT/'PmgrLoad.o')
+run(_pmgr_cmd,cwd=r['directory'])
+# The kernel build script force-loads build/sheng-platform-power/libShengPlatformPower.a
+# when SHENG_PMGR=1, so publish this object under that name.
+_pmgr_dir = ROOT/'build'/'sheng-platform-power'
+_pmgr_dir.mkdir(parents=True, exist_ok=True)
+run(['llvm-ar','rcs',str(_pmgr_dir/'libShengPlatformPower.a'), str(OUT/'PmgrLoad.o')])
+print('PASS: PMGR archive published')
 # The keybag kit's own source provides the initializer and the allocation entry point the probe calls.
 _ke_src=str(ROOT/'drivers'/'AppleKeyStoreState'/'NativeKeyStoreEvents.cpp')
 _ke_cmd=[a for a in _ks_cmd]
