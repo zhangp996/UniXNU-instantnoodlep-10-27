@@ -39,6 +39,10 @@ jobs:
       - name: Install host tools
         run: brew install llvm lld mtools dtc unifdef
 
+      - name: Configure the kernel
+        working-directory: framework
+        run: ./unixnu defconfig instantnoodlep_defconfig -D ../device
+
       - name: Build kernel
         working-directory: framework
         env:

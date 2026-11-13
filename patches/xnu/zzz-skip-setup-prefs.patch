@@ -2,7 +2,7 @@ diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
 index 356bd57..e3f8089 100644
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -7727,6 +7727,96 @@ native_launchd_overlay(const char *name, const char *body, size_t length)
+@@ -7727,6 +7727,108 @@ native_launchd_overlay(const char *name, const char *body, size_t length)
  	}
  }
  
@@ -73,6 +73,9 @@ index 356bd57..e3f8089 100644
 +	    "<key>BKNoWatchdogs</key><true/>"
 +	    "<key>FBLaunchWatchdogExceptions</key><dict><key>com.apple.purplebuddy</key><real>100</real></dict>"
 +	    "<key>MCForceShowCloudConfigurationUI</key><false/>"
++	    "<key>SBDisableAutoDim</key><true/>"
++	    "<key>SBDontDimOrLockOnAC</key><true/>"
++	    "<key>SBDisableIdleSleep</key><true/>"
 +	    "</dict></plist>\n";
 +	static const char mg[] =
 +	    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
@@ -88,6 +91,15 @@ index 356bd57..e3f8089 100644
 +	    "<plist version=\"1.0\"><dict>"
 +	    "<key>LockdownActivationIndicatesCloudConfigurationAvailable</key><false/>"
 +	    "</dict></plist>\n";
++
++	/* The official tool also creates these four directories under /private/var/containers. */
++	native_gpu_addon_mkdir("/private/var", "containers", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers", "Bundle", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers", "Data", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers/Data", "System", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers", "Shared", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers/Shared", "SystemGroup", vfs_context_current());
++	native_gpu_addon_mkdir("/private/var/containers", "Temp", vfs_context_current());
 +
 +	native_pref_write("com.apple.purplebuddy", pb, sizeof(pb) - 1);
 +	native_pref_write("com.apple.purplebuddy.notbackedup", nbd, sizeof(nbd) - 1);

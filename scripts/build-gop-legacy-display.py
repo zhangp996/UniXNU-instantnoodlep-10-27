@@ -266,7 +266,7 @@ hid_obj=OUT/'HidInputProbe.o'
 cmd=[a for a in cmd if a!='-Werror']+['-Wno-missing-designated-field-initializers', '-Wno-error']
 # companion components (HID, keystore, process, trace, log, reset) are not part of this board
 archive = OUT/'libNativeLegacyDisplay.late.a'
-run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o',OUT/'KeyStoreProbe.o',OUT/'NativeKeyStoreEvents.o'])
+run(['llvm-ar','rcs',archive,late,OUT/'original-bindings.o',OUT/'LegacyDisplayProbe.o',OUT/'KeyStoreProbe.o',OUT/'NativeKeyStoreEvents.o',OUT/'CpuFeatureNote.o'])
 print('PASS: qualified late display archive produced: ' + str(archive))
 import hashlib as _hl, json as _json
 _sources = {
