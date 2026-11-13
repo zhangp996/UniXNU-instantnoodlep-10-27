@@ -5250,3 +5250,40 @@ predates that, so today the old names still work here - but they will stop the m
 Neither repository addresses the Mach wake stall.  What they do say is that this port is one framework snapshot and a
 handful of argument renames away from being exactly upstream, which is worth doing in one step rather than discovering
 each rename one boot at a time.
+## 20:45: alignment done, and where the blocker actually lives
+
+The three framework patches upstream changed in the last three days were taken as-is, and the arguments renamed to
+the official spelling (`gpu-addon`, `staged-apps`, `no-lc`; `data-persist` and `log` were already renamed an hour
+ago).  `sheng-aks` stays: that one is read by this board's own `KeyStoreProbe.cpp`, not by the framework.  The
+aligned kernel builds: `3128a44d065ae1c5e6137798d14df2faf57970bed73f4577ed7f448fe1577ea5`.
+
+### Ownership of the remaining blocker
+
+The stall is a Mach message queued on a port (`q=1`) that has no waiter and no turnstile (`w=0 t=0`) while the
+receiver waits in `_kevent_id`.  In this tree:
+
+- `osfmk/ipc/ipc_pset.c` registers `machport_attach_filtops`/`mach_port_filtops` (`filt_machportattach`,
+  `filt_portevent`), and `ipc_mqueue.c` carries 32 turnstile references - the wake machinery is present;
+- `bsd/kern/kern_event.c` handles `EVFILT_MACHPORT` and the workloop side;
+- the waiting side is **libdispatch** (`dispatch_mach` on a kqueue), which is Apple's binary in the OS image and is
+  patched by **no** UniXNU repository: the framework's patch directories are `libpthread`, `mesa`, `xnu`,
+  `xnu-12377` - identical upstream and here, and none of them touches libdispatch.
+
+So the blocker is split across the kernel IPC/kevent boundary, which lives in **XNU** (the framework's `patches/xnu`,
+unchanged from upstream), and **libdispatch**, which lives in the OS image and is not part of any repository this port
+uses.
+
+### What a repository could contribute
+
+| if the fault is | the repository that would help |
+| --- | --- |
+| a kernel wake defect (`ipc_mqueue` turnstile -> workloop) | an **XNU fork/branch** carrying fixes to `ipc_pset.c` /
+  `ipc_mqueue.c` / `kern_event.c` for the machport filter |
+| libdispatch arming a port that never wakes | a **libdispatch port** for this OS profile (Apple's
+  swift-corelibs-libdispatch, or a UniXNU libdispatch patch set if one exists) - none is referenced by this
+  framework |
+| a kext or component that should own the port | nothing missing: the prelink carries sandbox, AMFI, PMGR and APFS |
+
+The single most useful thing to find is a **libdispatch built or patched for ipados-17.7.11-21H461**, because every
+daemon that waits for Mach messages through dispatch - lsd first among them - goes through it, and this port has never
+touched it.
