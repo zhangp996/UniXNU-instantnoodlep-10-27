@@ -5139,3 +5139,28 @@ volumes through the framework's `offline-owner-*` patches instead.
 
 So the official repository cannot explain the stall either - consistent with the reference boards running the same
 framework series this port runs.
+## 20:10: this port's ShengUfs pin was stale; upstream already has the persistence API
+
+Comparing the official `UniXNU/ShengUfs` repository against the revision this framework pins:
+
+| | upstream HEAD | this port's feed (`ShengUfs-38c19c2b`) |
+| --- | --- | --- |
+| `NativeUfs.cpp` | 3044 lines | 2379 lines |
+| `native_ufs_store_write_cached` | present, implemented as `storeWrite(rel, blocks, src, false)` | absent |
+| `native_ufs_store_sync` | four sites | one |
+| `VerifiedTableCache.h` | present - a bounded cache of verified-root hash-table pages | absent |
+| `CompletionWait.h` | present | absent |
+
+So the entry point this port had to write by hand (`native_ufs_store_write_cached`, added as a wrapper yesterday when
+the link demanded it) exists upstream, with the real forced-unit write behind it, and the newer revision also carries
+the verified-root table cache - the code that keeps an owner-signed window's hash pages in memory instead of
+re-reading them through the transport.
+
+That makes the driver this board runs a rebase rather than a fork: upstream HEAD, with this board's one adaptation
+left in place (`smmuBypassStream` behind `native-ufs-smmu=1`, its mapping hoisted so callers always hold a valid map).
+The merged driver builds:
+
+    kernel.macho sha256 a6d199fb466f129f4c539b588fb483ce7768e0b7e7a3f5521620029016485e44
+
+Upstream still takes the SMMU over unconditionally (its `smmuBypassStream` call site is ungated), so the gate remains
+this board's only deviation - and the only reason it needs a local driver at all.
