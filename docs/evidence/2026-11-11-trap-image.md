@@ -4417,3 +4417,24 @@ and launchd reacts by failing its first boot task:
 so the cache is the right lever but the copy is not accepted as it stands - either the write is not byte-exact or
 the loader validates the file (or its tree state) and kills itself when it does not match.  The patch is removed
 from the series until that is understood; the stable image is rebuilt from the overlay-only series.
+## 15:25: the reference board record says this is reachable, and lists its switches
+
+`docs/zh/devices/j716f` records a Lenovo TB-J716F (SM8250-AC, the same SoC family as this board) booting
+iPadOS 17.7.11 (21H461, the same OS profile) **to the interactive desktop**, flashed as `boot_b` only:
+
+    bash scripts/package.sh --no-deps --uefi ../uefi-j716f
+    fastboot flash boot_b boot.img && fastboot reboot
+
+and lists the switches it enabled along the way: `armcpu-edge`, `pipa-cpufreq`, `pipa-gpu-dcvs`,
+`sheng-backlight`, `sheng-aks-sls=3`, `appsync=1` and `owner-staged-apps=1`.
+
+Two of those name things this port already implements but never enables:
+
+- `zzy-staged-system-apps.patch` (applied here) reads `sheng-staged-apps`; its own comment says that until the
+  staged system apps are copied into Data 'the widgets of those apps stay blank' - and widgets are what chronod
+  serves; `sheng-staged-apps=1` is now on the command line;
+- `sheng-platform-power.patch` calls `sheng_pmgr_run()` under `XNU_SHENG_PMGR`; the symbol exists nowhere in this
+  port's feeds, so that patch would compile to nothing here - it is not this port's difference.
+
+The board record therefore keeps the ChronoServices thread open rather than closing it: the same OS on the same SoC
+does reach the desktop, so the difference is configuration, not capability.

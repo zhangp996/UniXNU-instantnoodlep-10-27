@@ -1,15 +1,16 @@
 diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
-index 3e7bde9..8a7eeb0 100644
+index 3e7bde9..4afede0 100644
 --- a/bsd/kern/kern_exec.c
 +++ b/bsd/kern/kern_exec.c
-@@ -7744,6 +7744,68 @@ native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
+@@ -7744,6 +7744,92 @@ native_gpu_addon_prepare(proc_t p, user_addr_t scratch)
  	/* A job of our own on top of the system daemons: the union below shadows any name it carries, so a
  	 * copy of com.apple.chronod.plist with RunAtLoad makes launchd start the service whose absence keeps
  	 * SpringBoard blocked in its synchronous ChronoServices subscription. */
 +	/* launchd loads its jobs from the precompiled cache /System/Library/xpc/launchd.plist, not from the
-+	 * LaunchDaemons directory.  The cache is a binary plist; in this build com.apple.chronod's RunAtLoad
-+	 * value slot is at file offset 0xfc6e0 and references the shared false object 2464 (0x09a0).  Writing
-+	 * 0x021a there - the index of an existing true object - turns RunAtLoad on for that job alone. */
++	 * LaunchDaemons directory.  In this build com.apple.chronod's RunAtLoad value slot sits at file offset
++	 * 0xfc6e0 and references the shared false object 2464 (0x09a0); 0x021a is an existing true object, so
++	 * rewriting those two bytes turns RunAtLoad on for that job alone.  The copy is read back and compared
++	 * before it is mounted, so a bad write cannot be mistaken for a rejected cache. */
 +	{
 +		static const char cache_path[] = "/System/Library/xpc/launchd.plist";
 +		static const char overlay_path[] = "/private/var/ngpu/xpc/launchd.plist";
@@ -19,7 +20,8 @@ index 3e7bde9..8a7eeb0 100644
 +		native_gpu_addon_mkdir("/private/var", "ngpu", cctx);
 +		native_gpu_addon_mkdir("/private/var/ngpu", "xpc", cctx);
 +		char *buffer = (char *)kalloc_data(cache_bytes, Z_WAITOK);
-+		if (!buffer) {
++		char *readback = (char *)kalloc_data(cache_bytes, Z_WAITOK);
++		if (!buffer || !readback) {
 +			printf("launchd cache: allocation failed\n");
 +		} else {
 +			vnode_t cvp = NULLVP;
@@ -37,7 +39,14 @@ index 3e7bde9..8a7eeb0 100644
 +			printf("launchd cache: open=%d read=%d magic=%.8s\n", open_error, read_error,
 +			    read_error ? "" : buffer);
 +			if (!open_error && !read_error && buffer[0] == 'b') {
-+				if ((unsigned char)buffer[slot] == 0x09 && (unsigned char)buffer[slot + 1] == 0xa0) {
++			/* launchd-cache-raw=1 mounts an unmodified copy: it tells whether the overlay itself or
++			 * the two patched bytes is what launchd_cache_loader rejects. */
++			uint32_t raw_mode = 0;
++			PE_parse_boot_argn("launchd-cache-raw", &raw_mode, sizeof(raw_mode));
++			if (raw_mode == 1) {
++				printf("launchd cache: raw mode, no byte patch\n");
++			}
++			if (raw_mode != 1 && (unsigned char)buffer[slot] == 0x09 && (unsigned char)buffer[slot + 1] == 0xa0) {
 +					buffer[slot] = 0x02;
 +					buffer[slot + 1] = 0x1a;
 +					vnode_t ovp = NULLVP;
@@ -53,6 +62,27 @@ index 3e7bde9..8a7eeb0 100644
 +						}
 +						(void)vnode_close(ovp, FWRITE, cctx);
 +						printf("launchd cache: patched copy written (%d)\n", write_error);
++						/* Read it back and compare: a short or garbled write must not look like a rejected cache. */
++						vnode_t rvp = NULLVP;
++						if (!vnode_open(overlay_path, FREAD, 0, 0, &rvp, cctx)) {
++							uio_t rr = uio_create(1, 0, UIO_SYSSPACE, UIO_READ);
++							int rb_error = EIO;
++							if (rr) {
++								bzero(readback, cache_bytes);
++								uio_addiov(rr, CAST_USER_ADDR_T(readback), cache_bytes);
++								rb_error = VNOP_READ(rvp, rr, 0, cctx);
++								uio_free(rr);
++							}
++							(void)vnode_close(rvp, FREAD, cctx);
++							size_t diff = 0;
++							if (!rb_error) {
++								while (diff < cache_bytes && readback[diff] == buffer[diff]) {
++									diff++;
++								}
++							}
++							printf("launchd cache: readback=%d first-diff=%zu of %zu\n",
++							    rb_error, diff, cache_bytes);
++						}
 +					}
 +				} else {
 +					printf("launchd cache: slot holds %02x %02x\n",
@@ -60,6 +90,7 @@ index 3e7bde9..8a7eeb0 100644
 +				}
 +			}
 +			kfree_data(buffer, cache_bytes);
++			kfree_data(readback, cache_bytes);
 +		}
 +		static const char xpc_source[] = "/private/var/ngpu/xpc", xpc_point[] = "/System/Library/xpc";
 +		static volatile int xpc_stage, xpc_status;
