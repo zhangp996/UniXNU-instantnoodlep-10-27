@@ -241,6 +241,14 @@ run(_pmgr_cmd,cwd=r['directory'])
 _pmgr_dir = ROOT/'build'/'sheng-platform-power'
 _pmgr_dir.mkdir(parents=True, exist_ok=True)
 run(['llvm-ar','rcs',str(_pmgr_dir/'libShengPlatformPower.a'), str(OUT/'PmgrLoad.o')])
+# CPU feature registers the kernel sees (userland atomics/cache-line paths depend on them).
+_cpu_cmd=list(cmd)
+for _i,_v in enumerate(_cpu_cmd):
+    if str(_v).endswith('LegacyDisplayProbe.cpp'):
+        _cpu_cmd[_i]=str(ROOT/'package'/'CpuFeatureNote.c')
+    elif str(_v).endswith('LegacyDisplayProbe.o'):
+        _cpu_cmd[_i]=str(OUT/'CpuFeatureNote.o')
+run(_cpu_cmd,cwd=r['directory'])
 
 print('PASS: PMGR archive published')
 # The keybag kit's own source provides the initializer and the allocation entry point the probe calls.

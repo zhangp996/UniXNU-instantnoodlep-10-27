@@ -23,7 +23,6 @@ zzz-staged-apps-union.patch
 zzz-knote-trace.patch
 zzz-smp-core-gate.patch
 zzz-arm64-mpidr-aff1.patch
-zzz-pmgr-run.patch
 zzz-machport-event-trace.patch
 zzz-knote-post-trace.patch
 zzz-inheritor-trace.patch
